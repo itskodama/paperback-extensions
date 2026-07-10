@@ -1,138 +1,179 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2025 Inkdex */
-
-// TODO:
-// - Add extension specific settings
+/* Copyright © 2026 Kodama */
 
 import {
   AdvancedSearchForm,
-  ButtonRow,
-  Form,
   InputRow,
-  LabelRow,
-  NavigationRow,
   Section,
   SelectRow,
-  ToggleRow,
+  StepperRow,
   type SearchQuery,
 } from "@paperback/types";
 
-import { MODE_OPTIONS, type AsuraScansSearchMetadata } from "./models";
+import {
+  GENRES,
+  SORT_DIRECTIONS,
+  STATUS_OPTIONS,
+  TYPE_OPTIONS,
+  type AsuraScansSearchMetadata,
+} from "./models";
 
-export class SettingsForm extends Form {
-  override getSections() {
-    return [
-      Section("playground", [
-        NavigationRow("playground", {
-          title: "SourceUI Playground",
-          form: new SourceUIPlaygroundForm(),
-        }),
-      ]),
-    ];
+const MAX_MIN_CHAPTERS = 500;
+
+export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
+  private genres: string[];
+  private status: string;
+  private type: string;
+  private direction: string;
+  private minChapters: number;
+  private author: string;
+  private artist: string;
+
+  constructor(searchQuery: SearchQuery<AsuraScansSearchMetadata>) {
+    super();
+
+    const metadata = searchQuery.metadata;
+    this.genres = metadata?.genres ?? [];
+    this.status = metadata?.status ?? "all";
+    this.type = metadata?.type ?? "all";
+    this.direction = metadata?.direction ?? "desc";
+    this.minChapters = metadata?.minChapters ?? 0;
+    this.author = metadata?.author ?? "";
+    this.artist = metadata?.artist ?? "";
   }
-}
-
-class SourceUIPlaygroundForm extends Form {
-  private inputValue = "";
-  private rowsVisible = false;
-  private items: string[] = [];
 
   override getSections() {
     return [
-      Section("hideStuff", [
-        ToggleRow("toggle", {
-          title: "Toggles can hide rows",
-          value: this.rowsVisible,
+      Section("genres", [
+        SelectRow("genres", {
+          title: "Genres",
+          subtitle: "Matches titles in any of the selected genres",
+          layout: "flow",
+          value: this.genres,
+          items: GENRES,
+          minItemCount: 0,
+          maxItemCount: GENRES.length,
           onValueChange: Application.Selector(
-            this as SourceUIPlaygroundForm,
-            "handleRowsVisibleChange",
+            this as AsuraScansAdvancedSearchForm,
+            "handleGenresChange",
           ),
         }),
       ]),
 
-      ...(this.rowsVisible
-        ? [
-            Section("hiddenSection", [
-              InputRow("input", {
-                title: "Dynamic Input",
-                value: this.inputValue,
-                onValueChange: Application.Selector(
-                  this as SourceUIPlaygroundForm,
-                  "handleInputChange",
-                ),
-              }),
-
-              LabelRow("boundLabel", {
-                title: "Bound label to input",
-                subtitle: "This label updates with the input",
-                value: this.inputValue,
-              }),
-            ]),
-
-            Section("items", [
-              ...this.items.map((item) =>
-                LabelRow(item, {
-                  title: item,
-                }),
-              ),
-
-              ButtonRow("addNewItem", {
-                title: "Add New Item",
-                onSelect: Application.Selector(this as SourceUIPlaygroundForm, "addNewItem"),
-              }),
-            ]),
-          ]
-        : []),
-    ];
-  }
-
-  async handleRowsVisibleChange(value: boolean): Promise<void> {
-    this.rowsVisible = value;
-    this.reloadForm();
-  }
-
-  async handleInputChange(value: string): Promise<void> {
-    this.inputValue = value;
-    this.reloadForm();
-  }
-
-  async addNewItem(): Promise<void> {
-    this.items.push("Item " + (this.items.length + 1));
-    this.reloadForm();
-  }
-}
-
-export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
-  private mode: "include" | "exclude";
-
-  constructor(searchQuery: SearchQuery<AsuraScansSearchMetadata>) {
-    super();
-    this.mode = searchQuery.metadata?.mode ?? "include";
-  }
-
-  override getSections() {
-    return [
-      Section("filter", [
-        SelectRow("mode", {
-          title: "Search Filter Template",
-          value: [this.mode],
-          options: MODE_OPTIONS,
+      Section("filters", [
+        SelectRow("status", {
+          title: "Status",
+          layout: "list",
+          value: [this.status],
+          items: STATUS_OPTIONS,
           minItemCount: 1,
           maxItemCount: 1,
           onValueChange: Application.Selector(
             this as AsuraScansAdvancedSearchForm,
-            "handleModeChange",
+            "handleStatusChange",
+          ),
+        }),
+
+        SelectRow("type", {
+          title: "Type",
+          layout: "list",
+          value: [this.type],
+          items: TYPE_OPTIONS,
+          minItemCount: 1,
+          maxItemCount: 1,
+          onValueChange: Application.Selector(
+            this as AsuraScansAdvancedSearchForm,
+            "handleTypeChange",
+          ),
+        }),
+
+        SelectRow("direction", {
+          title: "Sort Direction",
+          layout: "list",
+          value: [this.direction],
+          items: SORT_DIRECTIONS,
+          minItemCount: 1,
+          maxItemCount: 1,
+          onValueChange: Application.Selector(
+            this as AsuraScansAdvancedSearchForm,
+            "handleDirectionChange",
+          ),
+        }),
+
+        StepperRow("minChapters", {
+          title: "Minimum Chapters",
+          value: this.minChapters,
+          minValue: 0,
+          maxValue: MAX_MIN_CHAPTERS,
+          stepValue: 1,
+          loopOver: false,
+          onValueChange: Application.Selector(
+            this as AsuraScansAdvancedSearchForm,
+            "handleMinChaptersChange",
+          ),
+        }),
+      ]),
+
+      Section("credits", [
+        InputRow("author", {
+          title: "Author",
+          value: this.author,
+          onValueChange: Application.Selector(
+            this as AsuraScansAdvancedSearchForm,
+            "handleAuthorChange",
+          ),
+        }),
+
+        InputRow("artist", {
+          title: "Artist",
+          value: this.artist,
+          onValueChange: Application.Selector(
+            this as AsuraScansAdvancedSearchForm,
+            "handleArtistChange",
           ),
         }),
       ]),
     ];
   }
 
-  async handleModeChange(value: string[]): Promise<void> {
-    this.mode = value[0] === "exclude" ? "exclude" : "include";
+  async handleGenresChange(value: string[]): Promise<void> {
+    this.genres = value;
+  }
+
+  async handleStatusChange(value: string[]): Promise<void> {
+    this.status = value[0] ?? "all";
+  }
+
+  async handleTypeChange(value: string[]): Promise<void> {
+    this.type = value[0] ?? "all";
+  }
+
+  async handleDirectionChange(value: string[]): Promise<void> {
+    this.direction = value[0] === "asc" ? "asc" : "desc";
+  }
+
+  async handleMinChaptersChange(value: number): Promise<void> {
+    this.minChapters = value;
+  }
+
+  async handleAuthorChange(value: string): Promise<void> {
+    this.author = value;
+  }
+
+  async handleArtistChange(value: string): Promise<void> {
+    this.artist = value;
   }
 
   override getSearchQueryMetadata(): AsuraScansSearchMetadata {
-    return { mode: this.mode };
+    return {
+      genres: this.genres.length > 0 ? this.genres : undefined,
+      status: this.status !== "all" ? this.status : undefined,
+      type: this.type !== "all" ? this.type : undefined,
+      direction: this.direction !== "desc" ? this.direction : undefined,
+      minChapters: this.minChapters > 0 ? this.minChapters : undefined,
+      author: this.author.length > 0 ? this.author : undefined,
+      artist: this.artist.length > 0 ? this.artist : undefined,
+    };
   }
 }

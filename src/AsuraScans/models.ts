@@ -6,13 +6,14 @@ import type { SortingOption, Tag } from "@paperback/types";
 
 export const ASURA_DOMAIN = "https://asurascans.com";
 
-export const MODE_OPTIONS: Tag[] = [
-  { id: "include", title: "Include" },
-  { id: "exclude", title: "Exclude" },
-];
-
 export type AsuraScansSearchMetadata = {
-  mode?: "include" | "exclude";
+  genres?: string[];
+  status?: string;
+  type?: string;
+  direction?: string;
+  minChapters?: number;
+  author?: string;
+  artist?: string;
 };
 
 export const GENRES: Tag[] = [

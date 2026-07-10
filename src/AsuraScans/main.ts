@@ -15,7 +15,6 @@ import {
   type DiscoverSection,
   type DiscoverSectionItem,
   type ExtensionImpl,
-  type Form,
   type PagedResults,
   type SearchQuery,
   type SearchResultItem,
@@ -26,8 +25,8 @@ import {
 // Template content file
 import content from "./content.json";
 // Extension forms file
-import { AsuraScansAdvancedSearchForm, SettingsForm } from "./forms";
-import type { AsuraScansSearchMetadata } from "./models";
+import { AsuraScansAdvancedSearchForm } from "./forms";
+import { SORT_FIELDS, type AsuraScansSearchMetadata } from "./models";
 // Extension network file
 import { MainInterceptor, fetchPage } from "./network";
 import {
@@ -57,11 +56,6 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   async initialise(): Promise<void> {
     this.mainRateLimiter.registerInterceptor();
     this.mainInterceptor.registerInterceptor();
-  }
-
-  // Implements the settings form, check SettingsForm.ts for more info
-  async getSettingsForm(): Promise<Form> {
-    return new SettingsForm();
   }
 
   async getDiscoverSections(): Promise<DiscoverSection[]> {
@@ -141,17 +135,33 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     return new AsuraScansAdvancedSearchForm(query);
   }
 
+  // Populates the sort field picker shown alongside search
+  async getSortingOptions(query: SearchQuery<AsuraScansSearchMetadata>): Promise<SortingOption[]> {
+    void query;
+
+    return SORT_FIELDS;
+  }
+
   // Populates search
   async getSearchResults(
     query: SearchQuery<AsuraScansSearchMetadata>,
     metadata?: number,
     sortingOption?: SortingOption,
   ): Promise<PagedResults<SearchResultItem>> {
+    const filters = query.metadata;
+
     const page = await fetchPage(
       browseUrl({
         search: query.title,
         page: metadata ?? 1,
         sort: sortingOption?.id,
+        direction: filters?.direction,
+        genres: filters?.genres,
+        status: filters?.status,
+        type: filters?.type,
+        minChapters: filters?.minChapters,
+        author: filters?.author,
+        artist: filters?.artist,
       }),
     );
 
