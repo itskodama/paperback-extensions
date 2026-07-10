@@ -161,8 +161,7 @@ The hoist is identified by all of: no search text (`initialQuery` empty), the or
 entry for the active direction. Only then is it dropped, leaving 19 results on page 1. Under any
 other sort field, a name search, or page 2 and beyond, nothing is removed.
 
-This is distinct from the homepage's `is_featured`, which defines the Trending section rather than
-contaminating a ranking.
+The homepage's Trending list is promoted the same way, and is **not** corrected. See below.
 
 ## Homepage sections
 
@@ -177,6 +176,22 @@ rather than by the island key alone:
 
 `banner_url` is a poor marker for Trending: it is present but empty on roughly a third of entries,
 so the image falls back to `cover_url`.
+
+### Trending is promoted, and is left alone
+
+`is_featured` does not mark the section — it marks promotion within it. Nine of the thirty entries
+carry `is_featured: true`, and they occupy indices 0–8 as a contiguous block at the front. Their
+order inside that block is editorial too: the leading entry has 219k views while one below it has
+16.9M.
+
+The remaining twenty-one are Asura's actual trending ranking. That ranking is expressed **only** as
+the order of the array. It matches none of `view_count`, `rating`, `last_chapter_at`, or
+`popularity_rank`, in either direction, so it cannot be reconstructed or verified from any field the
+payload exposes.
+
+The promotion is therefore left in place. Demoting the nine would reorder a list whose true order is
+unknowable, and dropping them would hide genuinely popular series — one of them has 83M views.
+Unlike the browse hoist, there is no ordering invariant to check the correction against.
 
 A third `items` island holds a single entry whose `public_url` points at `/novels/`. It carries
 neither marker, so it is skipped. No novel chapters appear in the updates feed.
