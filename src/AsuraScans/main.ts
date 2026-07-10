@@ -31,9 +31,11 @@ import type { AsuraScansSearchMetadata } from "./models";
 // Extension network file
 import { MainInterceptor, fetchPage } from "./network";
 import {
+  browseUrl,
   chapterUrl,
   parseChapterDetails,
   parseChapterList,
+  parseSearchResults,
   parseSeriesDetails,
   seriesUrl,
 } from "./parser";
@@ -145,32 +147,15 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     metadata?: number,
     sortingOption?: SortingOption,
   ): Promise<PagedResults<SearchResultItem>> {
-    void metadata;
-    void sortingOption;
+    const page = await fetchPage(
+      browseUrl({
+        search: query.title,
+        page: metadata ?? 1,
+        sort: sortingOption?.id,
+      }),
+    );
 
-    // Filter values now arrive via the advanced search form metadata instead of `query.filters`
-    const mode = query.metadata?.mode ?? "include";
-    const search = query.title.toLowerCase();
-
-    const results: PagedResults<SearchResultItem> = { items: [] };
-
-    for (const manga of content) {
-      if (!manga.titleId) continue;
-
-      const matches =
-        manga.primaryTitle.toLowerCase().includes(search) ||
-        manga.secondaryTitles.some((title) => title.toLowerCase().includes(search));
-
-      if (mode === "include" ? matches : !matches) {
-        results.items.push({
-          mangaId: manga.titleId,
-          title: manga.primaryTitle ? manga.primaryTitle : "Unknown Title",
-          subtitle: manga.secondaryTitles[0] ?? "",
-          imageUrl: manga.thumbnailUrl ? manga.thumbnailUrl : "",
-        });
-      }
-    }
-    return results;
+    return parseSearchResults(page.html);
   }
 
   // Populates the title details

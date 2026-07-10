@@ -131,3 +131,9 @@ export function readArray(source: Island, key: string): Island[] {
       typeof entry === "object" && entry !== null && !Array.isArray(entry),
   );
 }
+
+export function readStringArray(source: Island, key: string): string[] {
+  const value = source[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string");
+}

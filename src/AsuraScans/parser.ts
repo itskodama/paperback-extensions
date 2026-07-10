@@ -5,6 +5,8 @@ import {
   ContentRating,
   type Chapter,
   type ChapterDetails,
+  type PagedResults,
+  type SearchResultItem,
   type SourceManga,
   type Tag,
   type TagSection,
@@ -17,15 +19,90 @@ import {
   readBoolean,
   readNumber,
   readString,
+  readStringArray,
+  type Island,
 } from "./astro";
 import { ASURA_DOMAIN, statusLabel } from "./models";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
 const CHAPTER_KEYS = ["pages", "chapterId"];
+const BROWSE_KEYS = ["initialSeries", "initialTotalPages"];
+
+export type BrowseQuery = {
+  search?: string;
+  page?: number;
+  sort?: string;
+  direction?: string;
+  genres?: string[];
+  status?: string;
+  type?: string;
+  minChapters?: number;
+  author?: string;
+  artist?: string;
+};
+
+// The series page joins alternative titles with a bullet; browse returns them as an array
+function alternativeTitles(source: Island, key: string): string[] {
+  const joined = readString(source, key);
+  const titles = joined ? joined.split("•") : readStringArray(source, key);
+  return titles.map((title) => title.trim()).filter((title) => title.length > 0);
+}
 
 export function seriesUrl(mangaId: string): string {
   return `${ASURA_DOMAIN}/comics/${mangaId}`;
+}
+
+export function browseUrl(query: BrowseQuery): string {
+  const params: string[] = [];
+  const append = (key: string, value: string) => {
+    params.push(`${key}=${encodeURIComponent(value)}`);
+  };
+
+  if (query.search) append("search", query.search);
+  if (query.genres && query.genres.length > 0) append("genres", query.genres.join(","));
+  if (query.status && query.status !== "all") append("status", query.status);
+  if (query.type && query.type !== "all") append("type", query.type);
+  // Asura's `sort` selects the field and `order` selects the direction
+  if (query.sort) append("sort", query.sort);
+  if (query.direction) append("order", query.direction);
+  if (query.minChapters !== undefined && query.minChapters > 0) {
+    append("min_chapters", String(query.minChapters));
+  }
+  if (query.author) append("author", query.author);
+  if (query.artist) append("artist", query.artist);
+  if (query.page !== undefined && query.page > 1) append("page", String(query.page));
+
+  return params.length > 0
+    ? `${ASURA_DOMAIN}/browse?${params.join("&")}`
+    : `${ASURA_DOMAIN}/browse`;
+}
+
+export function parseSearchResults(html: string): PagedResults<SearchResultItem> {
+  const island = findIsland(html, BROWSE_KEYS);
+
+  const items: SearchResultItem[] = readArray(island, "initialSeries").flatMap((series) => {
+    const mangaId = readString(series, "slug");
+    if (!mangaId) return [];
+
+    return [
+      {
+        mangaId,
+        title: readString(series, "title") ?? "Unknown Title",
+        subtitle: alternativeTitles(series, "alt_titles")[0],
+        imageUrl: readString(series, "cover") ?? "",
+        contentRating: ContentRating.MATURE,
+      },
+    ];
+  });
+
+  const currentPage = readNumber(island, "initialCurrentPage") ?? 1;
+  const totalPages = readNumber(island, "initialTotalPages") ?? 1;
+
+  return {
+    items,
+    metadata: currentPage < totalPages ? currentPage + 1 : undefined,
+  };
 }
 
 export function chapterUrl(chapter: Chapter): string {
@@ -38,13 +115,7 @@ export function parseSeriesDetails(html: string, mangaId: string): SourceManga {
   const details = findIsland(html, SERIES_DETAILS_KEYS);
   const chapters = findIsland(html, SERIES_CHAPTERS_KEYS);
 
-  const alternativeTitles = readString(details, "alternativeTitles");
-  const secondaryTitles = alternativeTitles
-    ? alternativeTitles
-        .split("•")
-        .map((title) => title.trim())
-        .filter((title) => title.length > 0)
-    : [];
+  const secondaryTitles = alternativeTitles(details, "alternativeTitles");
 
   const genres: Tag[] = readArray(details, "genres").flatMap((genre) => {
     const id = readString(genre, "slug");
