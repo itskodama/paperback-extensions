@@ -292,6 +292,8 @@ export function parseChapterList(html: string, sourceManga: SourceManga): Chapte
       sourceManga,
       langCode: "en",
       chapNum,
+      // Asura has no volumes; leaving this unset makes the app label every chapter "Vol. TBA"
+      volume: 0,
       title: readString(entry, "title"),
       publishDate: publishDate && !Number.isNaN(publishDate.getTime()) ? publishDate : undefined,
       additionalInfo,

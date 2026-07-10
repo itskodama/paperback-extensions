@@ -99,6 +99,10 @@ Two islands. The details island carries `title`, `description`, `alternativeTitl
 One island: `pages[{url,width,height}]`, `chapterId`, `chapterNumber`, `isLocked`, `isPremium`,
 `unlockTime`, `prevChapter`, `nextChapter`, and a redundant full `chapterList`.
 
+Asura has no volumes. Leaving `Chapter.volume` unset makes Paperback label every chapter
+`Vol. TBA`, so chapters are built with `volume: 0`, which is what other published extensions do for
+volumeless sources.
+
 ### Locked chapters
 
 A locked chapter returns **`200`, not `403` or `404`**, with `isLocked: true`, an `unlockTime`, and
