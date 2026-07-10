@@ -2,12 +2,16 @@
 
 ## Bump the version
 
-Every change to the extension's behaviour must bump `version` in
-[`src/AsuraScans/pbconfig.ts`](src/AsuraScans/pbconfig.ts).
+Every change to an extension's behaviour must bump `version` in that extension's `pbconfig.ts`, for
+example [`src/AsuraScans/pbconfig.ts`](src/AsuraScans/pbconfig.ts).
 
 Paperback compares that value against the one it has installed to decide whether an update is
 available. If it does not change, users keep running the old bundle no matter what is deployed, and
 the bug you just fixed stays fixed only for you.
+
+Versions follow `1.0.0-alpha.N`, matching every other published Paperback extension. Increment `N`
+once per set of changes you ship, not once per commit. The `1.0.0` stays put; the alpha counter is
+the real version.
 
 Documentation, CI, and tooling changes do not need a bump.
 
