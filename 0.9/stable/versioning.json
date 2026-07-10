@@ -1,23 +1,22 @@
 {
-  "buildTime": "2026-07-10T00:24:37.078Z",
+  "buildTime": "2026-07-10T02:32:56.256Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
   },
   "repository": {
-    "name": "Template Extensions (0.9)",
-    "description": "Paperback extensions designed as templates to help developers get started quickly. Maintained by Inkdex."
+    "name": "Asura Scans (0.9)",
+    "description": "Paperback extension for reading manhwa, manhua, and manga from asurascans.com."
   },
   "sources": [
     {
-      "name": "Content Template",
-      "description": "Template that shows the functionality of content providing extensions.",
-      "version": "1.0.0-alpha.4",
+      "name": "Asura Scans",
+      "description": "Read manhwa, manhua, and manga from asurascans.com.",
+      "version": "0.1.0",
       "icon": "icon.png",
       "language": "en",
-      "contentRating": "SAFE",
+      "contentRating": "MATURE",
       "capabilities": [
-        32,
         4,
         64,
         1
@@ -25,12 +24,11 @@
       "badges": [],
       "developers": [
         {
-          "name": "Celarye",
-          "website": "https://celarye.dev",
-          "github": "https://github.com/Celarye"
+          "name": "Kodama",
+          "github": "https://github.com/itskodama"
         }
       ],
-      "id": "ContentTemplate"
+      "id": "AsuraScans"
     }
   ]
 }
