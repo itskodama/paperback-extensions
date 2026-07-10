@@ -73,6 +73,12 @@ function ratingFraction(source: Island, key: string): number | undefined {
   return Math.min(Math.max(rating / ASURA_RATING_MAX, 0), 1);
 }
 
+// This extension provides comics. Asura serves novels from the same payloads, under /novels/.
+function isNovel(entry: Island): boolean {
+  const path = readString(entry, "public_url") ?? readString(entry, "comic_public_url");
+  return path !== undefined && path.startsWith("/novels/");
+}
+
 // The series page joins alternative titles with a bullet; browse returns them as an array
 function alternativeTitles(source: Island, key: string): string[] {
   const joined = readString(source, key);
@@ -130,7 +136,7 @@ function discoverEntries(
 function featuredItems(islands: Island[]): DiscoverSectionItem[] {
   return discoverEntries(islands, "items", "is_featured").flatMap((series) => {
     const mangaId = readString(series, "slug");
-    if (!mangaId) return [];
+    if (!mangaId || isNovel(series)) return [];
 
     const description = readString(series, "description");
 
@@ -154,7 +160,7 @@ function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
     .flatMap((chapter) => {
       const mangaId = readString(chapter, "comic_slug");
       const chapNum = readNumber(chapter, "number");
-      if (!mangaId || chapNum === undefined) return [];
+      if (!mangaId || chapNum === undefined || isNovel(chapter)) return [];
 
       const publishedAt = readString(chapter, "published_at");
       const parsed = publishedAt ? new Date(publishedAt) : undefined;
@@ -192,7 +198,7 @@ function seriesCarouselItems(
 ): DiscoverSectionItem[] {
   return entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
-    if (!mangaId) return [];
+    if (!mangaId || isNovel(series)) return [];
 
     const latest = readNumber(series, "latest_chapter_number");
 
@@ -258,7 +264,7 @@ export function parseSearchResults(html: string): PagedResults<SearchResultItem>
 
   const items: SearchResultItem[] = entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
-    if (!mangaId) return [];
+    if (!mangaId || isNovel(series)) return [];
 
     return [
       {
