@@ -23,6 +23,7 @@ import { SORT_FIELDS, type AsuraScansSearchMetadata } from "./models";
 // Extension network file
 import { MainInterceptor, fetchPage } from "./network";
 import {
+  DISCOVER_FEATURED,
   DISCOVER_LATEST_UPDATES,
   DISCOVER_POPULAR,
   DISCOVER_TRENDING,
@@ -59,14 +60,20 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   async getDiscoverSections(): Promise<DiscoverSection[]> {
     return [
       {
-        id: DISCOVER_TRENDING,
-        title: "Trending",
+        id: DISCOVER_FEATURED,
+        title: "Featured",
         type: DiscoverSectionType.featured,
       },
       {
         id: DISCOVER_LATEST_UPDATES,
         title: "Latest Updates",
+        subtitle: "The newest chapter of each series",
         type: DiscoverSectionType.chapterUpdates,
+      },
+      {
+        id: DISCOVER_TRENDING,
+        title: "Trending",
+        type: DiscoverSectionType.prominentCarousel,
       },
       {
         id: DISCOVER_POPULAR,

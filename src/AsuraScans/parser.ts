@@ -33,6 +33,7 @@ const BROWSE_KEYS = ["initialSeries", "initialTotalPages"];
 
 const ASURA_RATING_MAX = 10;
 
+export const DISCOVER_FEATURED = "featured";
 export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_POPULAR = "popular";
@@ -97,9 +98,17 @@ export function browseUrl(query: BrowseQuery): string {
     : `${ASURA_DOMAIN}/browse`;
 }
 
-// The homepage renders several islands of the same shape, told apart by the fields their entries carry
-function discoverEntries(islands: Island[], key: string, marker: string): Island[] {
+// Several islands share the `items` key. Entries tell most of them apart, but the two ten-entry
+// lists are identical in shape: Trending carries the site's own `title`, Popular an `editorsPick`.
+function discoverEntries(
+  islands: Island[],
+  key: string,
+  marker: string,
+  islandMarker?: string,
+): Island[] {
   for (const island of islands) {
+    if (islandMarker !== undefined && !(islandMarker in island)) continue;
+
     const entries = readArray(island, key);
     const first = entries[0];
     if (first && marker in first) return entries;
@@ -107,7 +116,7 @@ function discoverEntries(islands: Island[], key: string, marker: string): Island
   return [];
 }
 
-function trendingItems(islands: Island[]): DiscoverSectionItem[] {
+function featuredItems(islands: Island[]): DiscoverSectionItem[] {
   return discoverEntries(islands, "items", "is_featured").flatMap((series) => {
     const mangaId = readString(series, "slug");
     if (!mangaId) return [];
@@ -166,8 +175,11 @@ function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
   return items;
 }
 
-function popularItems(islands: Island[]): DiscoverSectionItem[] {
-  return discoverEntries(islands, "items", "latest_chapter_number").flatMap((series) => {
+function seriesCarouselItems(
+  entries: Island[],
+  type: "simpleCarouselItem" | "prominentCarouselItem",
+): DiscoverSectionItem[] {
+  return entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
     if (!mangaId) return [];
 
@@ -175,7 +187,7 @@ function popularItems(islands: Island[]): DiscoverSectionItem[] {
 
     return [
       {
-        type: "simpleCarouselItem" as const,
+        type,
         mangaId,
         title: readString(series, "title") ?? "Unknown Title",
         subtitle: latest === undefined ? undefined : `Chapter ${latest}`,
@@ -190,12 +202,20 @@ export function parseDiscoverItems(html: string, sectionId: string): DiscoverSec
   const islands = extractIslands(html);
 
   switch (sectionId) {
+    case DISCOVER_FEATURED:
+      return featuredItems(islands);
     case DISCOVER_TRENDING:
-      return trendingItems(islands);
+      return seriesCarouselItems(
+        discoverEntries(islands, "items", "latest_chapter_number", "title"),
+        "prominentCarouselItem",
+      );
     case DISCOVER_LATEST_UPDATES:
       return latestUpdateItems(islands);
     case DISCOVER_POPULAR:
-      return popularItems(islands);
+      return seriesCarouselItems(
+        discoverEntries(islands, "items", "latest_chapter_number", "editorsPick"),
+        "simpleCarouselItem",
+      );
     default:
       return [];
   }
