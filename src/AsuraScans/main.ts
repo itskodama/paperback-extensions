@@ -24,11 +24,13 @@ import { SORT_FIELDS, type AsuraScansSearchMetadata } from "./models";
 import { MainInterceptor, fetchPage } from "./network";
 import {
   DISCOVER_FEATURED,
+  DISCOVER_GENRES,
   DISCOVER_LATEST_UPDATES,
   DISCOVER_POPULAR,
   DISCOVER_TRENDING,
   browseUrl,
   chapterUrl,
+  genreItems,
   homeUrl,
   parseChapterDetails,
   parseChapterList,
@@ -80,6 +82,11 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         title: "Popular",
         type: DiscoverSectionType.simpleCarousel,
       },
+      {
+        id: DISCOVER_GENRES,
+        title: "Genres",
+        type: DiscoverSectionType.genres,
+      },
     ];
   }
 
@@ -90,6 +97,10 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   ): Promise<PagedResults<DiscoverSectionItem>> {
     // Asura renders every section into the homepage, so there is nothing to page through
     void metadata;
+
+    if (section.id === DISCOVER_GENRES) {
+      return { items: genreItems() };
+    }
 
     const page = await fetchPage(homeUrl());
     return { items: parseDiscoverItems(page.html, section.id) };

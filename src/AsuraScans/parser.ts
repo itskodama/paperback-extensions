@@ -24,7 +24,7 @@ import {
   readStringArray,
   type Island,
 } from "./astro";
-import { ASURA_DOMAIN, statusLabel } from "./models";
+import { ASURA_DOMAIN, GENRES, statusLabel } from "./models";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
@@ -37,6 +37,17 @@ export const DISCOVER_FEATURED = "featured";
 export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_POPULAR = "popular";
+export const DISCOVER_GENRES = "genres";
+
+// Genres are a constant, so this section costs no request
+export function genreItems(): DiscoverSectionItem[] {
+  return GENRES.map((genre) => ({
+    type: "genresCarouselItem",
+    name: genre.title,
+    searchQuery: { title: "", metadata: { genres: [genre.id] } },
+    contentRating: ContentRating.MATURE,
+  }));
+}
 
 export function homeUrl(): string {
   return `${ASURA_DOMAIN}/`;
