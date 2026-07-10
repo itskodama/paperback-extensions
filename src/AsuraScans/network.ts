@@ -82,7 +82,6 @@ function rememberPage(url: string, page: FetchedPage): void {
   pageCache.set(url, { fetchedAt: Date.now(), page });
 }
 
-// Discover asks for three sections of one homepage, and opening a title reads the series page twice
 export async function fetchPage(url: string): Promise<FetchedPage> {
   const cached = cachedPage(url);
   if (cached) return cached;

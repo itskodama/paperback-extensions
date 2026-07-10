@@ -39,7 +39,6 @@ export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_POPULAR = "popular";
 export const DISCOVER_GENRES = "genres";
 
-// Genres are a constant, so this section costs no request
 export function genreItems(): DiscoverSectionItem[] {
   return GENRES.map((genre) => ({
     type: "genresCarouselItem",
@@ -73,7 +72,7 @@ function ratingFraction(source: Island, key: string): number | undefined {
   return Math.min(Math.max(rating / ASURA_RATING_MAX, 0), 1);
 }
 
-// This extension provides comics. Asura serves novels from the same payloads, under /novels/.
+// Asura serves novels from the same payloads as comics, under /novels/
 function isNovel(entry: Island): boolean {
   const path = readString(entry, "public_url") ?? readString(entry, "comic_public_url");
   return path !== undefined && path.startsWith("/novels/");
@@ -280,7 +279,6 @@ export function parseSearchResults(html: string): PagedResults<SearchResultItem>
   const currentPage = readNumber(island, "initialCurrentPage") ?? 1;
   const totalPages = readNumber(island, "initialTotalPages") ?? 1;
 
-  // Omit the key entirely on the last page rather than set it to undefined
   return currentPage < totalPages ? { items, metadata: currentPage + 1 } : { items };
 }
 
