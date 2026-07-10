@@ -5,6 +5,7 @@ import {
   ContentRating,
   type Chapter,
   type ChapterDetails,
+  type DiscoverSectionItem,
   type PagedResults,
   type SearchResultItem,
   type SourceManga,
@@ -13,6 +14,7 @@ import {
 } from "@paperback/types";
 
 import {
+  extractIslands,
   findIsland,
   htmlToPlainText,
   readArray,
@@ -28,6 +30,14 @@ const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
 const CHAPTER_KEYS = ["pages", "chapterId"];
 const BROWSE_KEYS = ["initialSeries", "initialTotalPages"];
+
+export const DISCOVER_TRENDING = "trending";
+export const DISCOVER_LATEST_UPDATES = "latest-updates";
+export const DISCOVER_POPULAR = "popular";
+
+export function homeUrl(): string {
+  return `${ASURA_DOMAIN}/`;
+}
 
 export type BrowseQuery = {
   search?: string;
@@ -76,6 +86,95 @@ export function browseUrl(query: BrowseQuery): string {
   return params.length > 0
     ? `${ASURA_DOMAIN}/browse?${params.join("&")}`
     : `${ASURA_DOMAIN}/browse`;
+}
+
+// The homepage renders several islands of the same shape, told apart by the fields their entries carry
+function discoverEntries(islands: Island[], key: string, marker: string): Island[] {
+  for (const island of islands) {
+    const entries = readArray(island, key);
+    const first = entries[0];
+    if (first && marker in first) return entries;
+  }
+  return [];
+}
+
+function trendingItems(islands: Island[]): DiscoverSectionItem[] {
+  return discoverEntries(islands, "items", "is_featured").flatMap((series) => {
+    const mangaId = readString(series, "slug");
+    if (!mangaId) return [];
+
+    const description = readString(series, "description");
+
+    return [
+      {
+        type: "featuredCarouselItem" as const,
+        mangaId,
+        title: readString(series, "title") ?? "Unknown Title",
+        imageUrl: readString(series, "banner_url") ?? readString(series, "cover_url") ?? "",
+        summary: description ? htmlToPlainText(description) : undefined,
+        contentRating: ContentRating.MATURE,
+      },
+    ];
+  });
+}
+
+function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
+  return discoverEntries(islands, "chapters", "comic_slug").flatMap((chapter) => {
+    const mangaId = readString(chapter, "comic_slug");
+    const chapNum = readNumber(chapter, "number");
+    if (!mangaId || chapNum === undefined) return [];
+
+    const publishedAt = readString(chapter, "published_at");
+    const publishDate = publishedAt ? new Date(publishedAt) : undefined;
+
+    return [
+      {
+        type: "chapterUpdatesCarouselItem" as const,
+        mangaId,
+        chapterId: String(chapNum),
+        title: readString(chapter, "comic_name") ?? "Unknown Title",
+        subtitle: `Chapter ${readString(chapter, "name") ?? String(chapNum)}`,
+        imageUrl: readString(chapter, "comic_cover") ?? "",
+        publishDate: publishDate && !Number.isNaN(publishDate.getTime()) ? publishDate : undefined,
+        contentRating: ContentRating.MATURE,
+      },
+    ];
+  });
+}
+
+function popularItems(islands: Island[]): DiscoverSectionItem[] {
+  return discoverEntries(islands, "items", "latest_chapter_number").flatMap((series) => {
+    const mangaId = readString(series, "slug");
+    if (!mangaId) return [];
+
+    const latest = readNumber(series, "latest_chapter_number");
+
+    return [
+      {
+        type: "simpleCarouselItem" as const,
+        mangaId,
+        title: readString(series, "title") ?? "Unknown Title",
+        subtitle: latest === undefined ? undefined : `Chapter ${latest}`,
+        imageUrl: readString(series, "cover_url") ?? "",
+        contentRating: ContentRating.MATURE,
+      },
+    ];
+  });
+}
+
+export function parseDiscoverItems(html: string, sectionId: string): DiscoverSectionItem[] {
+  const islands = extractIslands(html);
+
+  switch (sectionId) {
+    case DISCOVER_TRENDING:
+      return trendingItems(islands);
+    case DISCOVER_LATEST_UPDATES:
+      return latestUpdateItems(islands);
+    case DISCOVER_POPULAR:
+      return popularItems(islands);
+    default:
+      return [];
+  }
 }
 
 export function parseSearchResults(html: string): PagedResults<SearchResultItem> {

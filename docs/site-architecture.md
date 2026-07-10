@@ -143,10 +143,20 @@ Violence, Demon, and Tragedy. The extension declares `ContentRating.MATURE`.
 
 ## Homepage sections
 
-Sections are identified by island prop keys:
+Several islands share the `items` key, so a section is identified by a field its _entries_ carry
+rather than by the island key alone:
 
-| Section        | Island                       | Notes                                              |
-| -------------- | ---------------------------- | -------------------------------------------------- |
-| Trending       | `items` with `banner_url`    | 30 entries                                         |
-| Latest Updates | `chapters`                   | ~298 entries; carries `comic_slug`, no series id   |
-| Popular        | `items` with `chapter_count` | 10 entries; two such islands exist, take the first |
+| Section        | Island     | Entry marker            | Notes                                              |
+| -------------- | ---------- | ----------------------- | -------------------------------------------------- |
+| Trending       | `items`    | `is_featured`           | 30 entries                                         |
+| Latest Updates | `chapters` | `comic_slug`            | ~298 entries                                       |
+| Popular        | `items`    | `latest_chapter_number` | 10 entries; two such islands exist, take the first |
+
+`banner_url` is a poor marker for Trending: it is present but empty on roughly a third of entries,
+so the image falls back to `cover_url`.
+
+A third `items` island holds a single entry whose `public_url` points at `/novels/`. It carries
+neither marker, so it is skipped. No novel chapters appear in the updates feed.
+
+The updates feed carries `comic_slug` and `comic_cover` but **no series id**, which is what forces
+`mangaId` to be the slug. Its entries also expose `is_premium` and `early_access_until`.

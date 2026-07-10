@@ -1,11 +1,6 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2025 Inkdex */
 
-// TODO:
-// - Replace the discover sections with the homepage islands
-// - Replace search with the browse endpoint
-// - Remove the content.json file
-
 import {
   BasicRateLimiter,
   DiscoverSectionType,
@@ -22,18 +17,21 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-// Template content file
-import content from "./content.json";
 // Extension forms file
 import { AsuraScansAdvancedSearchForm } from "./forms";
 import { SORT_FIELDS, type AsuraScansSearchMetadata } from "./models";
 // Extension network file
 import { MainInterceptor, fetchPage } from "./network";
 import {
+  DISCOVER_LATEST_UPDATES,
+  DISCOVER_POPULAR,
+  DISCOVER_TRENDING,
   browseUrl,
   chapterUrl,
+  homeUrl,
   parseChapterDetails,
   parseChapterList,
+  parseDiscoverItems,
   parseSearchResults,
   parseSeriesDetails,
   seriesUrl,
@@ -59,73 +57,35 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   }
 
   async getDiscoverSections(): Promise<DiscoverSection[]> {
-    // First template discover section, gets populated by the getDiscoverSectionItems method
-    const discover_section_template1: DiscoverSection = {
-      id: "discover-section-template1",
-      title: "Discover Section Template 1",
-      subtitle: "This is a template",
-      type: DiscoverSectionType.featured,
-    };
-
-    // Second template discover section, gets populated by the getDiscoverSectionItems method
-    const discover_section_template2: DiscoverSection = {
-      id: "discover-section-template2",
-      title: "Discover Section Template 2",
-      subtitle: "This is another template",
-      type: DiscoverSectionType.prominentCarousel,
-    };
-
-    // Second template discover section, gets populated by the getDiscoverSectionItems method
-    const discover_section_template3: DiscoverSection = {
-      id: "discover-section-template3",
-      title: "Discover Section Template 3",
-      subtitle: "This is yet another template",
-      type: DiscoverSectionType.simpleCarousel,
-    };
-
-    return [discover_section_template1, discover_section_template2, discover_section_template3];
+    return [
+      {
+        id: DISCOVER_TRENDING,
+        title: "Trending",
+        type: DiscoverSectionType.featured,
+      },
+      {
+        id: DISCOVER_LATEST_UPDATES,
+        title: "Latest Updates",
+        type: DiscoverSectionType.chapterUpdates,
+      },
+      {
+        id: DISCOVER_POPULAR,
+        title: "Popular",
+        type: DiscoverSectionType.simpleCarousel,
+      },
+    ];
   }
 
-  // Populates both the discover sections
+  // Populates the discover sections, all of which come from the homepage
   async getDiscoverSectionItems(
     section: DiscoverSection,
     metadata: number | undefined,
   ): Promise<PagedResults<DiscoverSectionItem>> {
+    // Asura renders every section into the homepage, so there is nothing to page through
     void metadata;
 
-    const half = Math.ceil(content.length / 2);
-
-    let start = 0;
-    let end = content.length;
-    let type: "featuredCarouselItem" | "simpleCarouselItem" | "prominentCarouselItem" =
-      "simpleCarouselItem";
-    switch (section.id) {
-      case "discover-section-template1":
-        end = half;
-        type = "featuredCarouselItem";
-        break;
-      case "discover-section-template2":
-        start = half;
-        type = "prominentCarouselItem";
-        break;
-      case "discover-section-template3":
-        type = "simpleCarouselItem";
-        break;
-    }
-
-    return {
-      items: content.slice(start, end).map((manga): DiscoverSectionItem => {
-        const item = {
-          mangaId: manga.titleId,
-          title: manga.primaryTitle ? manga.primaryTitle : "Unknown Title",
-          imageUrl: manga.thumbnailUrl ? manga.thumbnailUrl : "",
-        };
-
-        return type === "featuredCarouselItem"
-          ? { ...item, type, summary: manga.synopsis }
-          : { ...item, type, subtitle: manga.secondaryTitles[0] };
-      }),
-    };
+    const page = await fetchPage(homeUrl());
+    return { items: parseDiscoverItems(page.html, section.id) };
   }
 
   // Populates search filters in a form
