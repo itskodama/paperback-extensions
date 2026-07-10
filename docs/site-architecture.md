@@ -150,7 +150,7 @@ rather than by the island key alone:
 | Section        | Island     | Entry marker            | Notes                                              |
 | -------------- | ---------- | ----------------------- | -------------------------------------------------- |
 | Trending       | `items`    | `is_featured`           | 30 entries                                         |
-| Latest Updates | `chapters` | `comic_slug`            | ~298 entries                                       |
+| Latest Updates | `chapters` | `comic_slug`            | ~298 entries across ~100 series                    |
 | Popular        | `items`    | `latest_chapter_number` | 10 entries; two such islands exist, take the first |
 
 `banner_url` is a poor marker for Trending: it is present but empty on roughly a third of entries,
@@ -159,5 +159,23 @@ so the image falls back to `cover_url`.
 A third `items` island holds a single entry whose `public_url` points at `/novels/`. It carries
 neither marker, so it is skipped. No novel chapters appear in the updates feed.
 
-The updates feed carries `comic_slug` and `comic_cover` but **no series id**, which is what forces
-`mangaId` to be the slug. Its entries also expose `is_premium` and `early_access_until`.
+### The latest updates feed
+
+This feed is one entry **per chapter**, not per series, and it needs reshaping before it can back a
+`chapterUpdates` carousel. Two things about its ordering are easy to miss.
+
+**It is grouped by series, not sorted by publish time.** A series contributes up to three
+consecutive entries, one per recent chapter, so the same title appears three rows in a row at
+chapters 114, 113, and 112. Roughly 298 entries cover roughly 100 series. Deduplicating by
+`comic_slug` collapses each run to its newest chapter.
+
+**One entry is pinned to the top.** Exactly one carries `is_pinned: true`, and it is not
+necessarily recent — an entry published three days before the true newest chapter has been observed
+leading the feed. On every other entry `is_pinned` is the `[0]` undefined marker, not `false`.
+
+Together these mean first-occurrence order is not publish order. Sort by `published_at` descending
+first, then deduplicate by `comic_slug` keeping the first of each. That yields one row per series,
+newest chapter first, and drops the pinned entry to its rightful position.
+
+The feed carries `comic_slug` and `comic_cover` but **no series id**, which is what forces `mangaId`
+to be the slug. Its entries also expose `is_premium` and `early_access_until`.

@@ -127,28 +127,43 @@ function trendingItems(islands: Island[]): DiscoverSectionItem[] {
   });
 }
 
+// Asura groups the feed by series and pins one entry to the top, so it is neither
+// one entry per series nor in publish order
 function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
-  return discoverEntries(islands, "chapters", "comic_slug").flatMap((chapter) => {
-    const mangaId = readString(chapter, "comic_slug");
-    const chapNum = readNumber(chapter, "number");
-    if (!mangaId || chapNum === undefined) return [];
+  const chapters = discoverEntries(islands, "chapters", "comic_slug")
+    .flatMap((chapter) => {
+      const mangaId = readString(chapter, "comic_slug");
+      const chapNum = readNumber(chapter, "number");
+      if (!mangaId || chapNum === undefined) return [];
 
-    const publishedAt = readString(chapter, "published_at");
-    const publishDate = publishedAt ? new Date(publishedAt) : undefined;
+      const publishedAt = readString(chapter, "published_at");
+      const parsed = publishedAt ? new Date(publishedAt) : undefined;
+      const publishDate = parsed && !Number.isNaN(parsed.getTime()) ? parsed : undefined;
 
-    return [
-      {
-        type: "chapterUpdatesCarouselItem" as const,
-        mangaId,
-        chapterId: String(chapNum),
-        title: readString(chapter, "comic_name") ?? "Unknown Title",
-        subtitle: `Chapter ${readString(chapter, "name") ?? String(chapNum)}`,
-        imageUrl: readString(chapter, "comic_cover") ?? "",
-        publishDate: publishDate && !Number.isNaN(publishDate.getTime()) ? publishDate : undefined,
-        contentRating: ContentRating.MATURE,
-      },
-    ];
-  });
+      return [{ chapter, mangaId, chapNum, publishDate }];
+    })
+    .sort((a, b) => (b.publishDate?.getTime() ?? 0) - (a.publishDate?.getTime() ?? 0));
+
+  const seen = new Set<string>();
+  const items: DiscoverSectionItem[] = [];
+
+  for (const { chapter, mangaId, chapNum, publishDate } of chapters) {
+    if (seen.has(mangaId)) continue;
+    seen.add(mangaId);
+
+    items.push({
+      type: "chapterUpdatesCarouselItem",
+      mangaId,
+      chapterId: String(chapNum),
+      title: readString(chapter, "comic_name") ?? "Unknown Title",
+      subtitle: `Chapter ${readString(chapter, "name") ?? String(chapNum)}`,
+      imageUrl: readString(chapter, "comic_cover") ?? "",
+      publishDate,
+      contentRating: ContentRating.MATURE,
+    });
+  }
+
+  return items;
 }
 
 function popularItems(islands: Island[]): DiscoverSectionItem[] {
