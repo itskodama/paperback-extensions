@@ -17,7 +17,7 @@ import {
   type SearchQuery,
 } from "@paperback/types";
 
-import { MODE_OPTIONS, type ContentTemplateSearchMetadata } from "./models";
+import { MODE_OPTIONS, type AsuraScansSearchMetadata } from "./models";
 
 export class SettingsForm extends Form {
   override getSections() {
@@ -102,10 +102,10 @@ class SourceUIPlaygroundForm extends Form {
   }
 }
 
-export class ContentTemplateAdvancedSearchForm extends AdvancedSearchForm {
+export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
   private mode: "include" | "exclude";
 
-  constructor(searchQuery: SearchQuery<ContentTemplateSearchMetadata>) {
+  constructor(searchQuery: SearchQuery<AsuraScansSearchMetadata>) {
     super();
     this.mode = searchQuery.metadata?.mode ?? "include";
   }
@@ -120,7 +120,7 @@ export class ContentTemplateAdvancedSearchForm extends AdvancedSearchForm {
           minItemCount: 1,
           maxItemCount: 1,
           onValueChange: Application.Selector(
-            this as ContentTemplateAdvancedSearchForm,
+            this as AsuraScansAdvancedSearchForm,
             "handleModeChange",
           ),
         }),
@@ -132,7 +132,7 @@ export class ContentTemplateAdvancedSearchForm extends AdvancedSearchForm {
     this.mode = value[0] === "exclude" ? "exclude" : "include";
   }
 
-  override getSearchQueryMetadata(): ContentTemplateSearchMetadata {
+  override getSearchQueryMetadata(): AsuraScansSearchMetadata {
     return { mode: this.mode };
   }
 }

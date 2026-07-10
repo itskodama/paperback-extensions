@@ -8,6 +8,6 @@ export const MODE_OPTIONS: Tag[] = [
   { id: "exclude", title: "Exclude" },
 ];
 
-export type ContentTemplateSearchMetadata = {
+export type AsuraScansSearchMetadata = {
   mode?: "include" | "exclude";
 };

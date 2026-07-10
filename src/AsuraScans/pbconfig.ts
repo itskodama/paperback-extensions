@@ -1,15 +1,16 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Inkdex */
+/* Copyright © 2026 Kodama */
 
 import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/types";
 
 export default {
-  name: "Content Template",
-  description: "Template that shows the functionality of content providing extensions.",
-  version: "1.0.0-alpha.4",
+  name: "Asura Scans",
+  description: "Read manhwa, manhua, and manga from asurascans.com.",
+  version: "0.1.0",
   icon: "icon.png",
   language: "en",
-  contentRating: ContentRating.EVERYONE,
+  contentRating: ContentRating.MATURE,
   capabilities: [
     SourceIntents.SETTINGS_FORM_PROVIDING,
     SourceIntents.DISCOVER_SECTION_PROVIDING,
@@ -19,9 +20,8 @@ export default {
   badges: [],
   developers: [
     {
-      name: "Celarye",
-      website: "https://celarye.dev",
-      github: "https://github.com/Celarye",
+      name: "Kodama",
+      github: "https://github.com/itskodama",
     },
   ],
 } satisfies ExtensionInfo;

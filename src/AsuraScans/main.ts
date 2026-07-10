@@ -31,14 +31,14 @@ import {
 // Template content file
 import content from "./content.json";
 // Extension forms file
-import { ContentTemplateAdvancedSearchForm, SettingsForm } from "./forms";
-import type { ContentTemplateSearchMetadata } from "./models";
+import { AsuraScansAdvancedSearchForm, SettingsForm } from "./forms";
+import type { AsuraScansSearchMetadata } from "./models";
 // Extension network file
 import { MainInterceptor } from "./network";
-import type ContentTemplateConfig from "./pbconfig";
+import type AsuraScansConfig from "./pbconfig";
 
 // Main extension class
-export class ContentTemplateExtension implements ExtensionImpl<typeof ContentTemplateConfig> {
+export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfig> {
   // Implementation of the main rate limiter
   mainRateLimiter = new BasicRateLimiter("main", {
     numberOfRequests: 15,
@@ -132,14 +132,14 @@ export class ContentTemplateExtension implements ExtensionImpl<typeof ContentTem
 
   // Populates search filters in a form
   async getAdvancedSearchForm(
-    query: SearchQuery<ContentTemplateSearchMetadata>,
+    query: SearchQuery<AsuraScansSearchMetadata>,
   ): Promise<AdvancedSearchForm> {
-    return new ContentTemplateAdvancedSearchForm(query);
+    return new AsuraScansAdvancedSearchForm(query);
   }
 
   // Populates search
   async getSearchResults(
-    query: SearchQuery<ContentTemplateSearchMetadata>,
+    query: SearchQuery<AsuraScansSearchMetadata>,
     metadata?: number,
     sortingOption?: SortingOption,
   ): Promise<PagedResults<SearchResultItem>> {
@@ -298,4 +298,4 @@ export class ContentTemplateExtension implements ExtensionImpl<typeof ContentTem
   }
 }
 
-export const ContentTemplate = new ContentTemplateExtension();
+export const AsuraScans = new AsuraScansExtension();
