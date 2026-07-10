@@ -165,15 +165,18 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
     this.artist = value;
   }
 
+  // Metadata reaches the app as a raw JSValue, where an undefined property becomes nil and throws
   override getSearchQueryMetadata(): AsuraScansSearchMetadata {
-    return {
-      genres: this.genres.length > 0 ? this.genres : undefined,
-      status: this.status !== "all" ? this.status : undefined,
-      type: this.type !== "all" ? this.type : undefined,
-      direction: this.direction !== "desc" ? this.direction : undefined,
-      minChapters: this.minChapters > 0 ? this.minChapters : undefined,
-      author: this.author.length > 0 ? this.author : undefined,
-      artist: this.artist.length > 0 ? this.artist : undefined,
-    };
+    const metadata: AsuraScansSearchMetadata = {};
+
+    if (this.genres.length > 0) metadata.genres = this.genres;
+    if (this.status !== "all") metadata.status = this.status;
+    if (this.type !== "all") metadata.type = this.type;
+    if (this.direction !== "desc") metadata.direction = this.direction;
+    if (this.minChapters > 0) metadata.minChapters = this.minChapters;
+    if (this.author.length > 0) metadata.author = this.author;
+    if (this.artist.length > 0) metadata.artist = this.artist;
+
+    return metadata;
   }
 }

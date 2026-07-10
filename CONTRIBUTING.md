@@ -43,6 +43,26 @@ and the test suite:
 
 Neither failed a test. Both were found by printing the values and looking at them.
 
+## Never put `undefined` inside a `Metadata`
+
+`Metadata` — the type of `SearchQuery.metadata`, `PagedResults.metadata`, and the return of
+`getSearchQueryMetadata` — crosses into the app as a raw `JSValue`. An `undefined` property becomes
+`nil` there, and the app throws:
+
+```
+Expected value of type `JSValue`, found `nil` instead.
+```
+
+Build these objects by assigning only the keys you have, or omit the field entirely. Do not write
+`{ status: condition ? value : undefined }`.
+
+Typed values are safe by contrast: `Chapter.title`, `SearchResultItem.subtitle`, and the other
+optional struct fields are decoded rather than bridged, and tolerate `undefined`. The rule applies
+to `Metadata` alone.
+
+Nothing catches this locally. The test runner is Node, which has no such bridge, so a suite that
+passes can still crash on device.
+
 ## Keep the architecture doc true
 
 Each extension has a doc under `docs/<Extension>/`, mirroring its directory under `src/`. For Asura

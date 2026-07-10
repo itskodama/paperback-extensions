@@ -222,10 +222,8 @@ export function parseSearchResults(html: string): PagedResults<SearchResultItem>
   const currentPage = readNumber(island, "initialCurrentPage") ?? 1;
   const totalPages = readNumber(island, "initialTotalPages") ?? 1;
 
-  return {
-    items,
-    metadata: currentPage < totalPages ? currentPage + 1 : undefined,
-  };
+  // Omit the key entirely on the last page rather than set it to undefined
+  return currentPage < totalPages ? { items, metadata: currentPage + 1 } : { items };
 }
 
 export function chapterUrl(chapter: Chapter): string {
