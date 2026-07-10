@@ -32,6 +32,9 @@ A `pre-push` hook runs `npm run conformance`.
 Because the tests exercise the live site, they will fail if Asura changes its markup. That is
 intentional: a scheduled workflow runs them hourly so drift surfaces before users hit it.
 
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) before making changes — in particular, every behavioural
+change must bump `version` in `pbconfig.ts` or Paperback will not offer users the update.
+
 ## Architecture
 
 The extension uses no HTML parser. Asura is server-rendered by Astro, which embeds each component's
