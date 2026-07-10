@@ -31,6 +31,8 @@ const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
 const CHAPTER_KEYS = ["pages", "chapterId"];
 const BROWSE_KEYS = ["initialSeries", "initialTotalPages"];
 
+const ASURA_RATING_MAX = 10;
+
 export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_POPULAR = "popular";
@@ -51,6 +53,13 @@ export type BrowseQuery = {
   author?: string;
   artist?: string;
 };
+
+// Paperback renders `rating` as a percentage, so it expects a 0-1 fraction
+function ratingFraction(source: Island, key: string): number | undefined {
+  const rating = readNumber(source, key);
+  if (rating === undefined) return undefined;
+  return Math.min(Math.max(rating / ASURA_RATING_MAX, 0), 1);
+}
 
 // The series page joins alternative titles with a bullet; browse returns them as an array
 function alternativeTitles(source: Island, key: string): string[] {
@@ -240,7 +249,7 @@ export function parseSeriesDetails(html: string, mangaId: string): SourceManga {
       status: statusLabel(readString(details, "status")),
       author: readString(details, "author"),
       artist: readString(details, "artist"),
-      rating: readNumber(details, "rating"),
+      rating: ratingFraction(details, "rating"),
       tagGroups,
       artworkUrls: thumbnailUrl ? [thumbnailUrl] : [],
       shareUrl: publicUrl ? `${ASURA_DOMAIN}${publicUrl}` : seriesUrl(mangaId),

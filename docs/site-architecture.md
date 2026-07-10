@@ -90,8 +90,9 @@ Two islands. The details island carries `title`, `description`, `alternativeTitl
 
 - `description` is raw HTML with Tailwind classes. Strip tags and decode entities for the synopsis.
 - `alternativeTitles` is one string joined with `•`, not an array. Split it for `secondaryTitles`.
-- `rating` is on a 0–10 scale. Paperback's `MangaInfo.rating` has no documented scale; this is
-  passed through unchanged pending confirmation against a known-good published extension.
+- `rating` is on a 0–10 scale. Paperback's `MangaInfo.rating` is an undocumented bare `number`, but
+  the app renders it as a percentage, so it expects a 0–1 fraction. Asura's value is divided by ten.
+  Passing it through unchanged renders a 9.22 rating as 922%.
 
 ### Chapter page
 
