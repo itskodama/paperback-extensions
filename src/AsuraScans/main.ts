@@ -2,15 +2,12 @@
 /* Copyright © 2025 Inkdex */
 
 // TODO:
-// - Add the English name to the title view
-// - Add additional info to the title view
-// - Make getChapterDetails only return new chapters
-// - Add content settings support to search
-// - Remove the content.json file and switch to cheerio
+// - Replace the discover sections with the homepage islands
+// - Replace search with the browse endpoint
+// - Remove the content.json file
 
 import {
   BasicRateLimiter,
-  ContentRating,
   DiscoverSectionType,
   type AdvancedSearchForm,
   type Chapter,
@@ -24,8 +21,6 @@ import {
   type SearchResultItem,
   type SortingOption,
   type SourceManga,
-  type Tag,
-  type TagSection,
 } from "@paperback/types";
 
 // Template content file
@@ -34,7 +29,14 @@ import content from "./content.json";
 import { AsuraScansAdvancedSearchForm, SettingsForm } from "./forms";
 import type { AsuraScansSearchMetadata } from "./models";
 // Extension network file
-import { MainInterceptor } from "./network";
+import { MainInterceptor, fetchPage } from "./network";
+import {
+  chapterUrl,
+  parseChapterDetails,
+  parseChapterList,
+  parseSeriesDetails,
+  seriesUrl,
+} from "./parser";
 import type AsuraScansConfig from "./pbconfig";
 
 // Main extension class
@@ -173,128 +175,23 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
 
   // Populates the title details
   async getMangaDetails(mangaId: string): Promise<SourceManga> {
-    for (let i = 0; i < content.length; i++) {
-      const manga = content[i];
-      if (!manga) continue;
-      if (mangaId == manga.titleId) {
-        let contentRating: ContentRating;
-        switch (manga.contentRating) {
-          case "ADULT":
-            contentRating = ContentRating.ADULT;
-            break;
-          case "MATURE":
-            contentRating = ContentRating.MATURE;
-            break;
-          default:
-            contentRating = ContentRating.EVERYONE;
-            break;
-        }
-
-        const genres: TagSection = {
-          id: "genres",
-          title: "Genres",
-          tags: [],
-        };
-        for (let j = 0; j < manga.genres.length; j++) {
-          const genre = manga.genres[j];
-          if (!genre) continue;
-          const tagItem: Tag = {
-            id: genre.toLowerCase().replaceAll(" ", "-"),
-            title: genre,
-          };
-          genres.tags.push(tagItem);
-        }
-
-        const tags: TagSection = {
-          id: "tags",
-          title: "Tags",
-          tags: [],
-        };
-        for (let j = 0; j < manga.tags.length; j++) {
-          const tag = manga.tags[j];
-          if (!tag) continue;
-          const tagItem: Tag = {
-            id: tag.toLowerCase().replaceAll(" ", "-"),
-            title: tag,
-          };
-          tags.tags.push(tagItem);
-        }
-
-        return {
-          mangaId,
-          mangaInfo: {
-            thumbnailUrl: manga.thumbnailUrl ? manga.thumbnailUrl : "",
-            synopsis: manga.synopsis ? manga.synopsis : "No synopsis.",
-            primaryTitle: manga.primaryTitle ? manga.primaryTitle : "Unknown Title",
-            secondaryTitles: manga.secondaryTitles ? manga.secondaryTitles : [],
-            contentRating,
-            status: manga.status,
-            author: manga.author,
-            rating: manga.rating,
-            tagGroups: [genres, tags],
-            artworkUrls: manga.thumbnailUrl ? [manga.thumbnailUrl] : [],
-            shareUrl: manga.url,
-          },
-        };
-      }
-    }
-    throw new Error("No title with this id exists");
+    const page = await fetchPage(seriesUrl(mangaId));
+    return parseSeriesDetails(page.html, mangaId);
   }
 
   // Populates the chapter list
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
-    // Can be used to only return new chapters. Not used here, instead the whole chapter list gets returned
+    // Asura embeds every chapter in the series page, so the whole list gets returned
     void sinceDate;
 
-    for (let i = 0; i < content.length; i++) {
-      const manga = content[i];
-      if (!manga) continue;
-      if (sourceManga.mangaId == manga.titleId) {
-        const chapters: Chapter[] = [];
-
-        for (let j = 0; j < manga.chapters.length; j++) {
-          const chaptersData = manga.chapters[j];
-          if (!chaptersData) continue;
-          if (chaptersData.chapterId) {
-            const chapter: Chapter = {
-              chapterId: chaptersData.chapterId,
-              sourceManga,
-              langCode: chaptersData.languageCode ? chaptersData.languageCode : "EN",
-              chapNum: chaptersData.chapterNumber ? chaptersData.chapterNumber : j + 1,
-              title: manga.primaryTitle,
-              volume: chaptersData.volumeNumber,
-            };
-            chapters.push(chapter);
-          }
-        }
-        return chapters;
-      }
-    }
-    throw new Error("No title with this id exists");
+    const page = await fetchPage(seriesUrl(sourceManga.mangaId));
+    return parseChapterList(page.html, sourceManga);
   }
 
   // Populates a chapter with images
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
-    for (let i = 0; i < content.length; i++) {
-      const manga = content[i];
-      if (!manga) continue;
-      if (chapter.sourceManga.mangaId == manga.titleId) {
-        for (let j = 0; j < manga.chapters.length; j++) {
-          const chapterData = manga.chapters[j];
-          if (!chapterData) continue;
-          if (chapter.chapterId == chapterData.chapterId) {
-            const chapterDetails: ChapterDetails = {
-              id: chapter.chapterId,
-              mangaId: chapter.sourceManga.mangaId,
-              pages: chapterData.pages,
-            };
-            return chapterDetails;
-          }
-        }
-        throw new Error("No chapter with this id exists");
-      }
-    }
-    throw new Error("No title with this id exists");
+    const page = await fetchPage(chapterUrl(chapter));
+    return parseChapterDetails(page.html, chapter);
   }
 }
 
