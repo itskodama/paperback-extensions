@@ -165,36 +165,47 @@ The homepage's Trending list is promoted the same way, and is **not** corrected.
 
 ## Homepage sections
 
-Several islands share the `items` key, so a section is identified by a field its _entries_ carry
-rather than by the island key alone:
+Four islands share the `items` key. Most are told apart by a field their _entries_ carry, but the
+two ten-entry lists have identical entry shapes and are told apart at the **island** level instead:
 
-| Section        | Island     | Entry marker            | Notes                                              |
-| -------------- | ---------- | ----------------------- | -------------------------------------------------- |
-| Trending       | `items`    | `is_featured`           | 30 entries                                         |
-| Latest Updates | `chapters` | `comic_slug`            | ~298 entries across ~100 series                    |
-| Popular        | `items`    | `latest_chapter_number` | 10 entries; two such islands exist, take the first |
+| Section        | Island     | Entry marker            | Island marker | Notes                              |
+| -------------- | ---------- | ----------------------- | ------------- | ---------------------------------- |
+| Featured       | `items`    | `is_featured`           | —             | 30 entries; the hero carousel      |
+| Latest Updates | `chapters` | `comic_slug`            | —             | ~298 entries across ~100 series    |
+| Trending       | `items`    | `latest_chapter_number` | `title`       | 10 entries; site calls it this     |
+| Popular        | `items`    | `latest_chapter_number` | `editorsPick` | 10 entries; overlaps Trending ~70% |
 
-`banner_url` is a poor marker for Trending: it is present but empty on roughly a third of entries,
+Do not take "the first island with `latest_chapter_number`" — that silently returns Trending when
+Popular was wanted. Only Trending carries the site's own `title` prop (`"Trending Comics"`); only
+Popular carries `editorsPick`, a single promoted series.
+
+`banner_url` is a poor marker for Featured: it is present but empty on roughly a third of entries,
 so the image falls back to `cover_url`.
 
-### Trending is promoted, and is left alone
+Genres are compiled in rather than scraped, so that section issues no request.
 
-`is_featured` does not mark the section — it marks promotion within it. Nine of the thirty entries
-carry `is_featured: true`, and they occupy indices 0–8 as a contiguous block at the front. Their
-order inside that block is editorial too: the leading entry has 219k views while one below it has
-16.9M.
+### Featured is promoted, and is left alone
 
-The remaining twenty-one are Asura's actual trending ranking. That ranking is expressed **only** as
-the order of the array. It matches none of `view_count`, `rating`, `last_chapter_at`, or
-`popularity_rank`, in either direction, so it cannot be reconstructed or verified from any field the
-payload exposes.
+`is_featured` does not name the section — it marks promotion within it. Nine of the thirty entries
+carry `is_featured: true` and occupy indices 0–8 as a contiguous block at the front. Their order
+inside that block is editorial too: the leading entry has 219k views while one below it has 16.9M.
+
+The remaining twenty-one are a real ranking, expressed **only** as the order of the array. It
+matches none of `view_count`, `rating`, `last_chapter_at`, or `popularity_rank`, in either
+direction, so it cannot be reconstructed or verified from any field the payload exposes.
 
 The promotion is therefore left in place. Demoting the nine would reorder a list whose true order is
-unknowable, and dropping them would hide genuinely popular series — one of them has 83M views.
-Unlike the browse hoist, there is no ordering invariant to check the correction against.
+unknowable, and dropping them would hide genuinely popular series — one has 83M views. Unlike the
+browse hoist, there is no ordering invariant to check a correction against.
 
-A third `items` island holds a single entry whose `public_url` points at `/novels/`. It carries
-neither marker, so it is skipped. No novel chapters appear in the updates feed.
+### Novels
+
+Asura serves novels from the same payloads, under `/novels/`. They are kept apart today: a separate
+`items` island titled "Trending Novels", a separate `novelChapters` array beside the updates feed,
+and browse returns them only for `type=novel`, which the type filter does not offer.
+
+Nothing currently leaks, but nothing structurally prevents it either, so entries whose `public_url`
+or `comic_public_url` begins `/novels/` are dropped from every section and from search.
 
 ### The latest updates feed
 
