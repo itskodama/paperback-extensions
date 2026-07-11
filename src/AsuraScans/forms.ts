@@ -10,13 +10,7 @@ import {
   type SearchQuery,
 } from "@paperback/types";
 
-import {
-  GENRES,
-  SORT_DIRECTIONS,
-  STATUS_OPTIONS,
-  TYPE_OPTIONS,
-  type AsuraScansSearchMetadata,
-} from "./models";
+import { GENRES, STATUS_OPTIONS, TYPE_OPTIONS, type AsuraScansSearchMetadata } from "./models";
 import { fetchCreators, type Creators } from "./network";
 
 const MAX_MIN_CHAPTERS = 500;
@@ -28,7 +22,6 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
   private genres: string[];
   private status: string;
   private type: string;
-  private direction: string;
   private minChapters: number;
   private author: string;
   private artist: string;
@@ -41,7 +34,6 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
     this.genres = metadata?.genres ?? [];
     this.status = metadata?.status ?? "all";
     this.type = metadata?.type ?? "all";
-    this.direction = metadata?.direction ?? "desc";
     this.minChapters = metadata?.minChapters ?? 0;
     this.author = metadata?.author ?? "";
     this.artist = metadata?.artist ?? "";
@@ -77,7 +69,7 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
         : undefined;
 
     return [
-      Section("genres", [
+      Section("filters", [
         SelectRow("genres", {
           title: "Genres",
           subtitle: "Matches titles in any of the selected genres",
@@ -89,21 +81,6 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
           onValueChange: Application.Selector(
             this as AsuraScansAdvancedSearchForm,
             "handleGenresChange",
-          ),
-        }),
-      ]),
-
-      Section("filters", [
-        SelectRow("status", {
-          title: "Status",
-          layout: "list",
-          value: [this.status],
-          items: STATUS_OPTIONS,
-          minItemCount: 1,
-          maxItemCount: 1,
-          onValueChange: Application.Selector(
-            this as AsuraScansAdvancedSearchForm,
-            "handleStatusChange",
           ),
         }),
 
@@ -120,16 +97,16 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
           ),
         }),
 
-        SelectRow("direction", {
-          title: "Sort Direction",
+        SelectRow("status", {
+          title: "Status",
           layout: "list",
-          value: [this.direction],
-          items: SORT_DIRECTIONS,
+          value: [this.status],
+          items: STATUS_OPTIONS,
           minItemCount: 1,
           maxItemCount: 1,
           onValueChange: Application.Selector(
             this as AsuraScansAdvancedSearchForm,
-            "handleDirectionChange",
+            "handleStatusChange",
           ),
         }),
 
@@ -145,9 +122,7 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
             "handleMinChaptersChange",
           ),
         }),
-      ]),
 
-      Section("creator", [
         SelectRow("creator", {
           title: "Creator",
           subtitle: "A single author or artist",
@@ -177,10 +152,6 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
     this.type = value[0] ?? "all";
   }
 
-  async handleDirectionChange(value: string[]): Promise<void> {
-    this.direction = value[0] === "asc" ? "asc" : "desc";
-  }
-
   async handleMinChaptersChange(value: number): Promise<void> {
     this.minChapters = value;
   }
@@ -207,7 +178,6 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
     if (this.genres.length > 0) metadata.genres = this.genres;
     if (this.status !== "all") metadata.status = this.status;
     if (this.type !== "all") metadata.type = this.type;
-    if (this.direction !== "desc") metadata.direction = this.direction;
     if (this.minChapters > 0) metadata.minChapters = this.minChapters;
     if (this.author.length > 0) metadata.author = this.author;
     if (this.artist.length > 0) metadata.artist = this.artist;

@@ -18,7 +18,7 @@ import {
 } from "@paperback/types";
 
 import { AsuraScansAdvancedSearchForm } from "./forms";
-import { SORT_FIELDS, type AsuraScansSearchMetadata } from "./models";
+import { DEFAULT_SORT, SORT_OPTIONS, type AsuraScansSearchMetadata } from "./models";
 import { MainInterceptor, fetchPage } from "./network";
 import {
   DISCOVER_FEATURED,
@@ -123,7 +123,7 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   async getSortingOptions(query: SearchQuery<AsuraScansSearchMetadata>): Promise<SortingOption[]> {
     void query;
 
-    return SORT_FIELDS;
+    return SORT_OPTIONS.map((option) => ({ id: option.id, label: option.label }));
   }
 
   async getSearchResults(
@@ -132,13 +132,14 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     sortingOption?: SortingOption,
   ): Promise<PagedResults<SearchResultItem>> {
     const filters = query.metadata;
+    const sort = SORT_OPTIONS.find((option) => option.id === sortingOption?.id) ?? DEFAULT_SORT;
 
     const page = await fetchPage(
       browseUrl({
         search: query.title,
         page: metadata ?? 1,
-        sort: sortingOption?.id,
-        direction: filters?.direction,
+        sort: sort.sort,
+        direction: sort.direction,
         genres: filters?.genres,
         status: filters?.status,
         type: filters?.type,

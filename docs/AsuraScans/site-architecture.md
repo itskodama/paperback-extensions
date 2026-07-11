@@ -146,7 +146,10 @@ Two things that will bite:
 
 **`sort` selects the field and `order` selects the direction** — the opposite of what the island's
 own `initialOrder` / `initialSortDirection` prop names suggest. Verified by observing that
-`?sort=rating&order=asc` returns ascending ratings.
+`?sort=rating&order=asc` returns ascending ratings. Paperback's sort control is a flat list with no
+direction of its own, so the extension enumerates field+direction pairs as combined options ("Rating
+— High to Low", "Title — A to Z", …) rather than a separate direction control. `SORT_OPTIONS` in
+`models.ts` holds that mapping; the default is Title A–Z.
 
 **Multiple genres are OR'd, not AND'd.** Measured: `action` returns 310 titles, `romance` returns
 12, and `action,romance` returns 318. An intersection would have capped at 12. The advanced search
