@@ -23,14 +23,11 @@ import { MainInterceptor, fetchPage } from "./network";
 import {
   DISCOVER_COMPLETED,
   DISCOVER_FEATURED,
-  DISCOVER_GENRES,
   DISCOVER_LATEST_UPDATES,
-  DISCOVER_POPULAR,
   DISCOVER_RECENTLY_ADDED,
   DISCOVER_TRENDING,
   browseUrl,
   chapterUrl,
-  genreItems,
   homeUrl,
   parseBrowseCarousel,
   parseChapterDetails,
@@ -66,17 +63,11 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       {
         id: DISCOVER_LATEST_UPDATES,
         title: "Latest Updates",
-        subtitle: "The newest chapter of each series",
         type: DiscoverSectionType.chapterUpdates,
       },
       {
         id: DISCOVER_TRENDING,
         title: "Trending",
-        type: DiscoverSectionType.prominentCarousel,
-      },
-      {
-        id: DISCOVER_POPULAR,
-        title: "Popular",
         type: DiscoverSectionType.simpleCarousel,
       },
       {
@@ -89,11 +80,6 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         title: "Completed & Top-Rated",
         type: DiscoverSectionType.simpleCarousel,
       },
-      {
-        id: DISCOVER_GENRES,
-        title: "Genres",
-        type: DiscoverSectionType.genres,
-      },
     ];
   }
 
@@ -103,10 +89,8 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   ): Promise<PagedResults<DiscoverSectionItem>> {
     void metadata;
 
-    // Genres are compiled in; the two browse-backed sections come from a query rather than the homepage
+    // The browse-backed sections come from a query rather than the homepage
     switch (section.id) {
-      case DISCOVER_GENRES:
-        return { items: genreItems() };
       case DISCOVER_RECENTLY_ADDED:
         return {
           items: parseBrowseCarousel((await fetchPage(browseUrl({ sort: "newest" }))).html),

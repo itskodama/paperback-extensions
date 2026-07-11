@@ -24,7 +24,7 @@ import {
   readStringArray,
   type Island,
 } from "./astro";
-import { ASURA_DOMAIN, GENRES, statusLabel } from "./models";
+import { ASURA_DOMAIN, statusLabel } from "./models";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
@@ -36,19 +36,8 @@ const ASURA_RATING_MAX = 10;
 export const DISCOVER_FEATURED = "featured";
 export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
-export const DISCOVER_POPULAR = "popular";
 export const DISCOVER_RECENTLY_ADDED = "recently-added";
 export const DISCOVER_COMPLETED = "completed";
-export const DISCOVER_GENRES = "genres";
-
-export function genreItems(): DiscoverSectionItem[] {
-  return GENRES.map((genre) => ({
-    type: "genresCarouselItem",
-    name: genre.title,
-    searchQuery: { title: "", metadata: { genres: [genre.id] } },
-    contentRating: ContentRating.MATURE,
-  }));
-}
 
 export function homeUrl(): string {
   return `${ASURA_DOMAIN}/`;
@@ -281,15 +270,10 @@ export function parseDiscoverItems(html: string, sectionId: string): DiscoverSec
     case DISCOVER_TRENDING:
       return seriesCarouselItems(
         discoverEntries(islands, "items", "latest_chapter_number", "title"),
-        "prominentCarouselItem",
+        "simpleCarouselItem",
       );
     case DISCOVER_LATEST_UPDATES:
       return latestUpdateItems(islands);
-    case DISCOVER_POPULAR:
-      return seriesCarouselItems(
-        discoverEntries(islands, "items", "latest_chapter_number", "editorsPick"),
-        "simpleCarouselItem",
-      );
     default:
       return [];
   }
