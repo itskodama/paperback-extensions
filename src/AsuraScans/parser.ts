@@ -80,6 +80,13 @@ function isNovel(entry: Island): boolean {
   return path !== undefined && path.startsWith("/novels/");
 }
 
+// Free chapters carry the epoch as their early-access deadline; a future one is still locked
+function isFutureDate(value: string | undefined): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() > Date.now();
+}
+
 // The series page joins alternative titles with a bullet; browse returns them as an array
 function alternativeTitles(source: Island, key: string): string[] {
   const joined = readString(source, key);
@@ -223,12 +230,16 @@ function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
     if (seen.has(mangaId)) continue;
     seen.add(mangaId);
 
+    const name = readString(chapter, "name") ?? String(chapNum);
+    const earlyAccess =
+      readBoolean(chapter, "is_premium") || isFutureDate(readString(chapter, "early_access_until"));
+
     items.push({
       type: "chapterUpdatesCarouselItem",
       mangaId,
       chapterId: String(chapNum),
       title: readString(chapter, "comic_name") ?? "Unknown Title",
-      subtitle: `Chapter ${readString(chapter, "name") ?? String(chapNum)}`,
+      subtitle: earlyAccess ? `Chapter ${name} - Early Access` : `Chapter ${name}`,
       imageUrl: readString(chapter, "comic_cover") ?? "",
       publishDate,
       contentRating: ContentRating.MATURE,

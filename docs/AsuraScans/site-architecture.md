@@ -234,4 +234,8 @@ first, then deduplicate by `comic_slug` keeping the first of each. That yields o
 newest chapter first, and drops the pinned entry to its rightful position.
 
 The feed carries `comic_slug` and `comic_cover` but **no series id**, which is what forces `mangaId`
-to be the slug. Its entries also expose `is_premium` and `early_access_until`.
+to be the slug. Its entries also expose `is_premium` and `early_access_until`. An entry is still in
+early access when `is_premium` is true or `early_access_until` is in the future; a public chapter
+carries the epoch (`1970-01-01`) as its deadline. Such entries stay in the carousel but their
+subtitle reads `Chapter N - Early Access`, matching the series view, which lists them and explains
+the wait rather than hiding them.
