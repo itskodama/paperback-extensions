@@ -21,17 +21,16 @@ import { AsuraScansAdvancedSearchForm } from "./forms";
 import { SORT_FIELDS, type AsuraScansSearchMetadata } from "./models";
 import { MainInterceptor, fetchPage } from "./network";
 import {
-  DISCOVER_COMPLETED,
   DISCOVER_FEATURED,
-  DISCOVER_GENRES,
   DISCOVER_LATEST_UPDATES,
-  DISCOVER_POPULAR,
+  DISCOVER_MEDIA,
   DISCOVER_RECENTLY_ADDED,
+  DISCOVER_STATUS,
   DISCOVER_TRENDING,
   browseUrl,
   chapterUrl,
-  genreItems,
   homeUrl,
+  mediaItems,
   parseBrowseCarousel,
   parseChapterDetails,
   parseChapterList,
@@ -39,6 +38,7 @@ import {
   parseSearchResults,
   parseSeriesDetails,
   seriesUrl,
+  statusItems,
 } from "./parser";
 import type AsuraScansConfig from "./pbconfig";
 
@@ -66,17 +66,11 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       {
         id: DISCOVER_LATEST_UPDATES,
         title: "Latest Updates",
-        subtitle: "The newest chapter of each series",
         type: DiscoverSectionType.chapterUpdates,
       },
       {
         id: DISCOVER_TRENDING,
         title: "Trending",
-        type: DiscoverSectionType.prominentCarousel,
-      },
-      {
-        id: DISCOVER_POPULAR,
-        title: "Popular",
         type: DiscoverSectionType.simpleCarousel,
       },
       {
@@ -85,13 +79,13 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         type: DiscoverSectionType.simpleCarousel,
       },
       {
-        id: DISCOVER_COMPLETED,
-        title: "Completed & Top-Rated",
-        type: DiscoverSectionType.simpleCarousel,
+        id: DISCOVER_STATUS,
+        title: "Status",
+        type: DiscoverSectionType.genres,
       },
       {
-        id: DISCOVER_GENRES,
-        title: "Genres",
+        id: DISCOVER_MEDIA,
+        title: "Media",
         type: DiscoverSectionType.genres,
       },
     ];
@@ -103,19 +97,15 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   ): Promise<PagedResults<DiscoverSectionItem>> {
     void metadata;
 
-    // Genres are compiled in; the two browse-backed sections come from a query rather than the homepage
+    // Status and Media chips are compiled in; Recently Added is a browse query; the rest are homepage
     switch (section.id) {
-      case DISCOVER_GENRES:
-        return { items: genreItems() };
+      case DISCOVER_STATUS:
+        return { items: statusItems() };
+      case DISCOVER_MEDIA:
+        return { items: mediaItems() };
       case DISCOVER_RECENTLY_ADDED:
         return {
           items: parseBrowseCarousel((await fetchPage(browseUrl({ sort: "newest" }))).html),
-        };
-      case DISCOVER_COMPLETED:
-        return {
-          items: parseBrowseCarousel(
-            (await fetchPage(browseUrl({ status: "completed", sort: "rating" }))).html,
-          ),
         };
     }
 

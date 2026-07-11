@@ -165,28 +165,33 @@ The homepage's Trending list is promoted the same way, and is **not** corrected.
 
 ## Homepage sections
 
-Four islands share the `items` key. Most are told apart by a field their _entries_ carry, but the
-two ten-entry lists have identical entry shapes and are told apart at the **island** level instead:
+Three homepage islands are surfaced, told apart by a field their _entries_ carry:
 
-| Section        | Island     | Entry marker            | Island marker | Notes                              |
-| -------------- | ---------- | ----------------------- | ------------- | ---------------------------------- |
-| Featured       | `items`    | `is_featured`           | —             | 30 entries; the hero carousel      |
-| Latest Updates | `chapters` | `comic_slug`            | —             | ~298 entries across ~100 series    |
-| Trending       | `items`    | `latest_chapter_number` | `title`       | 10 entries; site calls it this     |
-| Popular        | `items`    | `latest_chapter_number` | `editorsPick` | 10 entries; overlaps Trending ~70% |
+| Section        | Island     | Entry marker            | Island marker | Notes                           |
+| -------------- | ---------- | ----------------------- | ------------- | ------------------------------- |
+| Featured       | `items`    | `is_featured`           | —             | 30 entries; the hero carousel   |
+| Latest Updates | `chapters` | `comic_slug`            | —             | ~298 entries across ~100 series |
+| Trending       | `items`    | `latest_chapter_number` | `title`       | 10 entries, a simple carousel   |
 
-Do not take "the first island with `latest_chapter_number`" — that silently returns Trending when
-Popular was wanted. Only Trending carries the site's own `title` prop (`"Trending Comics"`); only
-Popular carries `editorsPick`, a single promoted series.
+The payload actually holds **two** ten-entry `items` islands of identical entry shape: the site's
+"Trending Comics" (carrying its own `title` prop) and a Popular list (carrying `editorsPick`). Only
+Trending is surfaced, selected by the `title` island marker — taking "the first island with
+`latest_chapter_number`" would risk returning the Popular one. Popular was dropped as a section
+because it overlapped Trending by ~70%.
 
 `banner_url` is a poor marker for Featured: it is present but empty on roughly a third of entries,
 so the image falls back to `cover_url`.
 
-Genres are compiled in rather than scraped, so that section issues no request.
+The remaining discover sections are not homepage islands. **Recently Added** (`/browse?sort=newest`)
+is a browse query reusing the results island, one request. **Status** is compiled in — a chip per
+site status (Ongoing, Completed, Hiatus, Dropped, Axed), each a `genresCarouselItem` whose
+`searchQuery` launches a filtered browse — so it issues no request. Note `status` is single-valued:
+`/browse?status=dropped,axed` returns nothing, so those are separate chips rather than one combined
+"no longer supported" entry.
 
-Two further discover sections do not come from the homepage at all — they are browse queries reusing
-the results island: **Recently Added** (`/browse?sort=newest`) and **Completed & Top-Rated**
-(`/browse?status=completed&sort=rating`), each one request, rendered as a simple carousel.
+**Media** is compiled in the same way — a chip per comic type (Manhwa, Manhua, Manga) filtering
+`/browse?type=`. Novel is omitted deliberately: Asura carries a single placeholder novel, and this
+extension does not read novels.
 
 ### Featured is promoted, and is left alone
 
