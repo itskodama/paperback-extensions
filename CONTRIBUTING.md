@@ -43,23 +43,56 @@ and the test suite:
 
 Neither failed a test. Both were found by printing the values and looking at them.
 
+## Never put `undefined` inside a `Metadata`
+
+`Metadata` — the type of `SearchQuery.metadata`, `PagedResults.metadata`, and the return of
+`getSearchQueryMetadata` — crosses into the app as a raw `JSValue`. An `undefined` property becomes
+`nil` there, and the app throws:
+
+```
+Expected value of type `JSValue`, found `nil` instead.
+```
+
+Build these objects by assigning only the keys you have, or omit the field entirely. Do not write
+`{ status: condition ? value : undefined }`.
+
+Typed values are safe by contrast: `Chapter.title`, `SearchResultItem.subtitle`, and the other
+optional struct fields are decoded rather than bridged, and tolerate `undefined`. The rule applies
+to `Metadata` alone.
+
+Nothing catches this locally. The test runner is Node, which has no such bridge, so a suite that
+passes can still crash on device.
+
 ## Keep the architecture doc true
 
-[`docs/site-architecture.md`](docs/site-architecture.md) is the record of how Asura serves its data
-and which of its behaviours are traps. If you learn something new about the site, or discover the
-doc is wrong, fix the doc in the same change.
+Each extension has a doc under `docs/<Extension>/`, mirroring its directory under `src/`. For Asura
+Scans that is [`docs/AsuraScans/site-architecture.md`](docs/AsuraScans/site-architecture.md): a
+record of how the site serves its data and which of its behaviours are traps.
 
-It exists so the next person does not have to rediscover that locked chapters return `200` with an
-empty page array.
+If you learn something new about a site, or discover the doc is wrong, fix the doc in the same
+change. It exists so the next person does not have to rediscover that locked chapters return `200`
+with an empty page array.
+
+## Adding an extension
+
+Create `src/<Extension>/` containing at least `pbconfig.ts`, `main.ts`, and `static/icon.png`. The
+bundler picks up any directory under `src/` holding both `pbconfig.ts` and `main.ts`, so nothing
+needs registering.
+
+The directory name becomes the extension's `id` in `versioning.json`, and Paperback keys a user's
+library off it. **Do not rename a shipped extension's directory** — it orphans every saved title.
+
+Generate its tests with `npx paperback-cli test --generate <Extension>`, and give it a doc at
+`docs/<Extension>/`.
 
 ## Add dependencies reluctantly
 
-The bundle is a single file that runs on a phone. Everything you import is inlined into it, and
-`Application.isResourceLimited` exists for a reason.
+The bundle is a single file per extension that runs on a phone. Everything you import is inlined
+into it, and `Application.isResourceLimited` exists for a reason.
 
-The extension currently has no runtime dependencies and bundles to roughly 18 KB. Adding an HTML
-parser would have cost around 280 KB, and it is unnecessary: Asura embeds its data as escaped JSON
-in the markup. Prefer reading structured data over parsing presentation.
+Asura Scans has no runtime dependencies and bundles to roughly 18 KB. Adding an HTML parser would
+have cost around 280 KB, and it was unnecessary: the site embeds its data as escaped JSON in the
+markup. Prefer reading structured data over parsing presentation.
 
 ## Commits
 

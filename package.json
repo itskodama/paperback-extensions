@@ -1,7 +1,7 @@
 {
-  "name": "Asura Scans (0.9)",
+  "name": "Kodama's Extensions (0.9)",
   "private": true,
-  "description": "Paperback extension for reading manhwa, manhua, and manga from asurascans.com.",
+  "description": "Paperback extensions maintained by Kodama.",
   "type": "module",
   "scripts": {
     "tsc": "tsc",
