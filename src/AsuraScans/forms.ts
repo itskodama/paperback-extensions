@@ -51,22 +51,27 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
 
   override getSections() {
     // One combined single-select list; the role suffix and id keep authors and artists apart
+    // Ids are index-based because a SelectRow id cannot contain spaces, which creator names do;
+    // the name is carried by the title and looked back up by index on selection
     const creatorItems = [
-      ...this.creators.authors.map((name) => ({
-        id: `${AUTHOR_PREFIX}${name}`,
+      ...this.creators.authors.map((name, index) => ({
+        id: `${AUTHOR_PREFIX}${index}`,
         title: `${name} (Author)`,
       })),
-      ...this.creators.artists.map((name) => ({
-        id: `${ARTIST_PREFIX}${name}`,
+      ...this.creators.artists.map((name, index) => ({
+        id: `${ARTIST_PREFIX}${index}`,
         title: `${name} (Artist)`,
       })),
     ].sort((a, b) => a.title.localeCompare(b.title));
 
-    const selectedCreator = this.author
-      ? `${AUTHOR_PREFIX}${this.author}`
-      : this.artist
-        ? `${ARTIST_PREFIX}${this.artist}`
-        : undefined;
+    const authorIndex = this.author ? this.creators.authors.indexOf(this.author) : -1;
+    const artistIndex = this.artist ? this.creators.artists.indexOf(this.artist) : -1;
+    const selectedCreator =
+      authorIndex >= 0
+        ? `${AUTHOR_PREFIX}${authorIndex}`
+        : artistIndex >= 0
+          ? `${ARTIST_PREFIX}${artistIndex}`
+          : undefined;
 
     return [
       Section("filters", [
@@ -160,10 +165,10 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
   async handleCreatorChange(value: string[]): Promise<void> {
     const pick = value[0];
     if (pick?.startsWith(AUTHOR_PREFIX)) {
-      this.author = pick.slice(AUTHOR_PREFIX.length);
+      this.author = this.creators.authors[Number(pick.slice(AUTHOR_PREFIX.length))] ?? "";
       this.artist = "";
     } else if (pick?.startsWith(ARTIST_PREFIX)) {
-      this.artist = pick.slice(ARTIST_PREFIX.length);
+      this.artist = this.creators.artists[Number(pick.slice(ARTIST_PREFIX.length))] ?? "";
       this.author = "";
     } else {
       this.author = "";
