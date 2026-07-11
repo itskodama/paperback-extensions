@@ -6,6 +6,7 @@ import {
   type Chapter,
   type ChapterDetails,
   type DiscoverSectionItem,
+  type Metadata,
   type PagedResults,
   type SearchResultItem,
   type SourceManga,
@@ -24,7 +25,7 @@ import {
   readStringArray,
   type Island,
 } from "./astro";
-import { ASURA_DOMAIN, GENRES, statusLabel } from "./models";
+import { ASURA_DOMAIN, STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
@@ -36,18 +37,28 @@ const ASURA_RATING_MAX = 10;
 export const DISCOVER_FEATURED = "featured";
 export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
-export const DISCOVER_POPULAR = "popular";
 export const DISCOVER_RECENTLY_ADDED = "recently-added";
-export const DISCOVER_COMPLETED = "completed";
-export const DISCOVER_GENRES = "genres";
+export const DISCOVER_STATUS = "status";
+export const DISCOVER_MEDIA = "media";
 
-export function genreItems(): DiscoverSectionItem[] {
-  return GENRES.map((genre) => ({
-    type: "genresCarouselItem",
-    name: genre.title,
-    searchQuery: { title: "", metadata: { genres: [genre.id] } },
-    contentRating: ContentRating.MATURE,
-  }));
+// A chip carousel whose taps launch a filtered browse, one chip per option
+function facetItems(options: Tag[], metadata: (id: string) => Metadata): DiscoverSectionItem[] {
+  return options
+    .filter((option) => option.id !== "all")
+    .map((option) => ({
+      type: "genresCarouselItem",
+      name: option.title,
+      searchQuery: { title: "", metadata: metadata(option.id) },
+      contentRating: ContentRating.MATURE,
+    }));
+}
+
+export function statusItems(): DiscoverSectionItem[] {
+  return facetItems(STATUS_OPTIONS, (id) => ({ status: id }));
+}
+
+export function mediaItems(): DiscoverSectionItem[] {
+  return facetItems(TYPE_OPTIONS, (id) => ({ type: id }));
 }
 
 export function homeUrl(): string {
@@ -281,15 +292,10 @@ export function parseDiscoverItems(html: string, sectionId: string): DiscoverSec
     case DISCOVER_TRENDING:
       return seriesCarouselItems(
         discoverEntries(islands, "items", "latest_chapter_number", "title"),
-        "prominentCarouselItem",
+        "simpleCarouselItem",
       );
     case DISCOVER_LATEST_UPDATES:
       return latestUpdateItems(islands);
-    case DISCOVER_POPULAR:
-      return seriesCarouselItems(
-        discoverEntries(islands, "items", "latest_chapter_number", "editorsPick"),
-        "simpleCarouselItem",
-      );
     default:
       return [];
   }
