@@ -25,7 +25,7 @@ import {
   readStringArray,
   type Island,
 } from "./astro";
-import { ASURA_DOMAIN, STATUS_OPTIONS, statusLabel } from "./models";
+import { ASURA_DOMAIN, STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
@@ -39,6 +39,7 @@ export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_RECENTLY_ADDED = "recently-added";
 export const DISCOVER_STATUS = "status";
+export const DISCOVER_MEDIA = "media";
 
 // A chip carousel whose taps launch a filtered browse, one chip per option
 function facetItems(options: Tag[], metadata: (id: string) => Metadata): DiscoverSectionItem[] {
@@ -54,6 +55,10 @@ function facetItems(options: Tag[], metadata: (id: string) => Metadata): Discove
 
 export function statusItems(): DiscoverSectionItem[] {
   return facetItems(STATUS_OPTIONS, (id) => ({ status: id }));
+}
+
+export function mediaItems(): DiscoverSectionItem[] {
+  return facetItems(TYPE_OPTIONS, (id) => ({ type: id }));
 }
 
 export function homeUrl(): string {

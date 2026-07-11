@@ -189,6 +189,10 @@ site status (Ongoing, Completed, Hiatus, Dropped, Axed), each a `genresCarouselI
 `/browse?status=dropped,axed` returns nothing, so those are separate chips rather than one combined
 "no longer supported" entry.
 
+**Media** is compiled in the same way — a chip per comic type (Manhwa, Manhua, Manga) filtering
+`/browse?type=`. Novel is omitted deliberately: Asura carries a single placeholder novel, and this
+extension does not read novels.
+
 ### Featured is promoted, and is left alone
 
 `is_featured` does not name the section — it marks promotion within it. Nine of the thirty entries

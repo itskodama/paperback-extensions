@@ -23,12 +23,14 @@ import { MainInterceptor, fetchPage } from "./network";
 import {
   DISCOVER_FEATURED,
   DISCOVER_LATEST_UPDATES,
+  DISCOVER_MEDIA,
   DISCOVER_RECENTLY_ADDED,
   DISCOVER_STATUS,
   DISCOVER_TRENDING,
   browseUrl,
   chapterUrl,
   homeUrl,
+  mediaItems,
   parseBrowseCarousel,
   parseChapterDetails,
   parseChapterList,
@@ -81,6 +83,11 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         title: "Status",
         type: DiscoverSectionType.genres,
       },
+      {
+        id: DISCOVER_MEDIA,
+        title: "Media",
+        type: DiscoverSectionType.genres,
+      },
     ];
   }
 
@@ -90,10 +97,12 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   ): Promise<PagedResults<DiscoverSectionItem>> {
     void metadata;
 
-    // Status chips are compiled in; Recently Added is a browse query; the rest come from the homepage
+    // Status and Media chips are compiled in; Recently Added is a browse query; the rest are homepage
     switch (section.id) {
       case DISCOVER_STATUS:
         return { items: statusItems() };
+      case DISCOVER_MEDIA:
+        return { items: mediaItems() };
       case DISCOVER_RECENTLY_ADDED:
         return {
           items: parseBrowseCarousel((await fetchPage(browseUrl({ sort: "newest" }))).html),
