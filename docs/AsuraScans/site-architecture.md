@@ -146,6 +146,24 @@ Genre ids are non-contiguous (`1, 4, 7, 9, 12, 76, 14, …`). Map by `slug`, nev
 are 31 genres and **none of them is an adult or mature category**; the strongest signals are
 Violence, Demon, and Tragedy. The extension declares `ContentRating.MATURE`.
 
+### The hoisted pin
+
+Asura promotes one series by lifting it to the top of the **default `update` ordering**, out of
+order with everything around it. Page 1 of an unfiltered browse is not descending by
+`last_chapter_at`; drop the first entry and it is.
+
+`is_pinned` marks the **series**, not the hoisted row. The same series carries `is_pinned: true`
+when it is the sole result of a name search, and it sits at its honest index 19 under
+`sort=rating`. Filtering on the flag alone would therefore make that series unfindable.
+
+The hoist is identified by all of: no search text (`initialQuery` empty), the ordering field is
+`update`, the first entry is pinned, and its `last_chapter_at` is out of order against the second
+entry for the active direction. Only then is it dropped, leaving 19 results on page 1. Under any
+other sort field, a name search, or page 2 and beyond, nothing is removed.
+
+This is distinct from the homepage's `is_featured`, which defines the Trending section rather than
+contaminating a ranking.
+
 ## Homepage sections
 
 Several islands share the `items` key, so a section is identified by a field its _entries_ carry

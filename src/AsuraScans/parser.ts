@@ -201,10 +201,31 @@ export function parseDiscoverItems(html: string, sectionId: string): DiscoverSec
   }
 }
 
+// Asura hoists a pinned series to the top of its default ordering, out of order with the rest.
+// `is_pinned` marks the series permanently rather than the hoisted row, so it cannot be filtered on
+// its own without making that series unfindable.
+function withoutHoistedPin(island: Island, entries: Island[]): Island[] {
+  if (readString(island, "initialQuery")) return entries;
+  if (readString(island, "initialOrder") !== "update") return entries;
+
+  const [hoisted, next] = entries;
+  if (!hoisted || !next || !readBoolean(hoisted, "is_pinned")) return entries;
+
+  const hoistedUpdate = readString(hoisted, "last_chapter_at");
+  const nextUpdate = readString(next, "last_chapter_at");
+  if (!hoistedUpdate || !nextUpdate) return entries;
+
+  const ascending = readString(island, "initialSortDirection") === "asc";
+  const outOfOrder = ascending ? hoistedUpdate > nextUpdate : hoistedUpdate < nextUpdate;
+
+  return outOfOrder ? entries.slice(1) : entries;
+}
+
 export function parseSearchResults(html: string): PagedResults<SearchResultItem> {
   const island = findIsland(html, BROWSE_KEYS);
+  const entries = withoutHoistedPin(island, readArray(island, "initialSeries"));
 
-  const items: SearchResultItem[] = readArray(island, "initialSeries").flatMap((series) => {
+  const items: SearchResultItem[] = entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
     if (!mangaId) return [];
 
@@ -222,10 +243,8 @@ export function parseSearchResults(html: string): PagedResults<SearchResultItem>
   const currentPage = readNumber(island, "initialCurrentPage") ?? 1;
   const totalPages = readNumber(island, "initialTotalPages") ?? 1;
 
-  return {
-    items,
-    metadata: currentPage < totalPages ? currentPage + 1 : undefined,
-  };
+  // Omit the key entirely on the last page rather than set it to undefined
+  return currentPage < totalPages ? { items, metadata: currentPage + 1 } : { items };
 }
 
 export function chapterUrl(chapter: Chapter): string {
