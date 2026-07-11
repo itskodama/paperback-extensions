@@ -1,0 +1,12 @@
+{
+  "name": "Paperback Extension Dev",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24",
+  "features": {},
+  "customizations": {
+    "vscode": {
+      "extensions": ["oxc.oxc-vscode"]
+    }
+  },
+  "postCreateCommand": "npm ci",
+  "remoteUser": "node"
+}
