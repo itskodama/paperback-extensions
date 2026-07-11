@@ -2,15 +2,15 @@
 /* Copyright © 2025 Inkdex */
 /* Copyright © 2026 Kodama */
 
-import type { SortingOption, Tag } from "@paperback/types";
+import type { Tag } from "@paperback/types";
 
 export const ASURA_DOMAIN = "https://asurascans.com";
+export const ASURA_API = "https://api.asurascans.com";
 
 export type AsuraScansSearchMetadata = {
   genres?: string[];
   status?: string;
   type?: string;
-  direction?: string;
   minChapters?: number;
   author?: string;
   artist?: string;
@@ -66,18 +66,30 @@ export const TYPE_OPTIONS: Tag[] = [
   { id: "manga", title: "Manga" },
 ];
 
-export const SORT_DIRECTIONS: Tag[] = [
-  { id: "desc", title: "Descending" },
-  { id: "asc", title: "Ascending" },
+// Asura's browse needs a field (`sort`) and a direction (`order`); Paperback's sort control models
+// one flat list, so field and direction are combined into a single option each
+export type SortOption = { id: string; label: string; sort: string; direction: string };
+
+const TITLE_ASC: SortOption = {
+  id: "title-asc",
+  label: "Title — A to Z",
+  sort: "name",
+  direction: "asc",
+};
+
+export const SORT_OPTIONS: SortOption[] = [
+  TITLE_ASC,
+  { id: "title-desc", label: "Title — Z to A", sort: "name", direction: "desc" },
+  { id: "update", label: "Latest Update", sort: "update", direction: "desc" },
+  { id: "popular", label: "Popularity", sort: "popular", direction: "desc" },
+  { id: "rating-desc", label: "Rating — High to Low", sort: "rating", direction: "desc" },
+  { id: "rating-asc", label: "Rating — Low to High", sort: "rating", direction: "asc" },
+  { id: "newest", label: "Newest", sort: "newest", direction: "desc" },
+  { id: "oldest", label: "Oldest", sort: "newest", direction: "asc" },
 ];
 
-export const SORT_FIELDS: SortingOption[] = [
-  { id: "update", label: "Latest Update" },
-  { id: "popular", label: "Popularity" },
-  { id: "rating", label: "Rating" },
-  { id: "newest", label: "Newest" },
-  { id: "name", label: "Title" },
-];
+// The default when the user has not chosen a sort
+export const DEFAULT_SORT = TITLE_ASC;
 
 export function statusLabel(status: string | undefined): string {
   const match = STATUS_OPTIONS.find((option) => option.id === status && option.id !== "all");

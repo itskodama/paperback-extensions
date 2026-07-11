@@ -14,8 +14,10 @@ deprecation warnings. The hourly `test.yaml` workflow exists to catch drift.
   No `CLOUDFLARE_BYPASS_PROVIDING`, no `executeInWebView`, no cookie handling.
 - `cdn.asurascans.com` serves page images with **no hotlink protection**. Verified `200` with no
   `Referer` and with a foreign one. The interceptor sets a user-agent; it does not need a referer.
-- `api.asurascans.com` appears only as a `preconnect` hint. It backs client-side auth and
-  promotion calls, its root `404`s, and nothing this extension needs touches it.
+- `api.asurascans.com` is the JSON API host. Its root `404`s, and most of it (auth, promotion)
+  is unused, but the advanced search reads `GET /api/creators` from it — `{ data: { authors: [],
+artists: [] } }`, ~300 authors and ~170 artists — to populate the Creator filter. This is the only
+  request the extension makes off the main `asurascans.com` host.
 
 ## Where the data lives
 
@@ -130,13 +132,24 @@ and `availableGenres`. Pagination is 20 per page.
 | `sort`         | `update`, `popular`, `rating`, `newest`, `name`            |
 | `order`        | `asc`, `desc`                                              |
 | `min_chapters` | integer                                                    |
+| `author`       | creator name, case-insensitive substring, single-valued    |
+| `artist`       | creator name, case-insensitive substring, single-valued    |
 | `page`         | 1-based                                                    |
+
+`author` and `artist` match a case-insensitive substring (`author=Hwa` returns everyone whose name
+contains "Hwa"). The advanced search does not expose them as free text, though: it offers a single
+**Creator** picker populated from `/api/creators`, since Asura lets you choose one author or one
+artist, not both. Each entry is tagged `(Author)` or `(Artist)` — a name can be both and then appears
+twice — and the pick sets whichever param matches.
 
 Two things that will bite:
 
 **`sort` selects the field and `order` selects the direction** — the opposite of what the island's
 own `initialOrder` / `initialSortDirection` prop names suggest. Verified by observing that
-`?sort=rating&order=asc` returns ascending ratings.
+`?sort=rating&order=asc` returns ascending ratings. Paperback's sort control is a flat list with no
+direction of its own, so the extension enumerates field+direction pairs as combined options ("Rating
+— High to Low", "Title — A to Z", …) rather than a separate direction control. `SORT_OPTIONS` in
+`models.ts` holds that mapping; the default is Title A–Z.
 
 **Multiple genres are OR'd, not AND'd.** Measured: `action` returns 310 titles, `romance` returns
 12, and `action,romance` returns 318. An intersection would have capped at 12. The advanced search
@@ -179,8 +192,9 @@ Trending is surfaced, selected by the `title` island marker — taking "the firs
 `latest_chapter_number`" would risk returning the Popular one. Popular was dropped as a section
 because it overlapped Trending by ~70%.
 
-`banner_url` is a poor marker for Featured: it is present but empty on roughly a third of entries,
-so the image falls back to `cover_url`.
+The featured image uses `cover_url`, not `banner_url`: the banner is a different image, empty on
+roughly a third of entries, and does not match what the series page shows. Using the cover keeps the
+hero card consistent with the series page and with its neighbours.
 
 The remaining discover sections are not homepage islands. **Recently Added** (`/browse?sort=newest`)
 is a browse query reusing the results island, one request. **Status** is compiled in — a chip per
@@ -189,9 +203,10 @@ site status (Ongoing, Completed, Hiatus, Dropped, Axed), each a `genresCarouselI
 `/browse?status=dropped,axed` returns nothing, so those are separate chips rather than one combined
 "no longer supported" entry.
 
-**Media** is compiled in the same way — a chip per comic type (Manhwa, Manhua, Manga) filtering
-`/browse?type=`. Novel is omitted deliberately: Asura carries a single placeholder novel, and this
-extension does not read novels.
+**Comic Type** is compiled in the same way — a chip for Manhwa, Manhua, and Manga, filtering
+`/browse?type=`. The section and the Advanced Search filter are both labelled "Comic Type", while
+the query param keeps Asura's name `type`. Novel is omitted deliberately: Asura carries a single
+placeholder novel, and this extension does not read novels.
 
 ### Featured is promoted, and is left alone
 

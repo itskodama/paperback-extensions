@@ -4,7 +4,7 @@
 
 import { PaperbackInterceptor, type Request, type Response } from "@paperback/types";
 
-import { ASURA_DOMAIN } from "./models";
+import { ASURA_API, ASURA_DOMAIN } from "./models";
 
 const USER_AGENT =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
@@ -133,4 +133,32 @@ async function requestPage(url: string): Promise<FetchedPage> {
   }
 
   throw new Error(`Asura Scans redirected ${url} too many times`);
+}
+
+export type Creators = { authors: string[]; artists: string[] };
+
+let creatorsCache: Creators | undefined;
+
+// The advanced search author/artist filters draw from this list, on the API host
+export async function fetchCreators(): Promise<Creators> {
+  if (creatorsCache) return creatorsCache;
+
+  const [response, data] = await Application.scheduleRequest({
+    url: `${ASURA_API}/api/creators`,
+    method: "GET",
+  });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Asura Scans returned HTTP ${response.status} for the creators list`);
+  }
+
+  const parsed = JSON.parse(Application.arrayBufferToUTF8String(data)) as {
+    data?: Partial<Creators>;
+  } & Partial<Creators>;
+  const source = parsed.data ?? parsed;
+
+  creatorsCache = {
+    authors: Array.isArray(source.authors) ? source.authors : [],
+    artists: Array.isArray(source.artists) ? source.artists : [],
+  };
+  return creatorsCache;
 }
