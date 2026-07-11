@@ -1,5 +1,14 @@
 # Contributing
 
+## How changes land
+
+Every change reaches the version branch (`0.9/stable`) through a pull request. Do not commit to it
+directly: a commit on the version branch is published to users immediately by `bundle-deploy`.
+
+Branch off the version branch, push the branch, open a PR against it, and **Squash and merge**.
+Squashing keeps the version branch at one commit per PR, while the PR retains the individual commits
+and its description — together they are the changelog. Conformance and the test suite run on the PR.
+
 ## Bump the version
 
 Every change to an extension's behaviour must bump `version` in that extension's `pbconfig.ts`, for
@@ -10,20 +19,20 @@ available. If it does not change, users keep running the old bundle no matter wh
 the bug you just fixed stays fixed only for you.
 
 Versions follow `1.0.0-alpha.N`, matching every other published Paperback extension. Increment `N`
-once per set of changes you ship, not once per commit. The `1.0.0` stays put; the alpha counter is
-the real version.
+once per release PR, not once per commit. The `1.0.0` stays put; the alpha counter is the real
+version.
 
 Documentation, CI, and tooling changes do not need a bump.
 
-## Before you push
+## Before you open a PR
 
 ```sh
 npm run conformance  # typecheck, lint, format — the gate CI runs
 npm test             # the extension suite, against the live site
 ```
 
-A `pre-push` hook runs `conformance` for you. It does not run the tests, because they hit the
-network; run them yourself.
+CI runs both on the PR. A `pre-push` hook also runs `conformance` locally on every push; it does not
+run the tests, because they hit the network, so run those yourself.
 
 Use the devcontainer if you can. It pins the Node version CI uses, so "works on my machine" and
 "passes CI" mean the same thing.
@@ -94,20 +103,28 @@ Asura Scans has no runtime dependencies and bundles to roughly 18 KB. Adding an 
 have cost around 280 KB, and it was unnecessary: the site embeds its data as escaped JSON in the
 markup. Prefer reading structured data over parsing presentation.
 
-## Commits
+## Commits and pull requests
 
-Write `type(Scope): summary`, for example `fix(AsuraScans): scale rating to the fraction Paperback
-expects`. Types in use here: `feat`, `fix`, `refactor`, `docs`, `chore`, `ci`, `test`.
+Commits on a branch use `type(Scope): summary`, for example `fix(AsuraScans): scale rating to the
+fraction Paperback expects`. Types in use here: `feat`, `fix`, `refactor`, `docs`, `chore`, `ci`,
+`test`.
+
+The squash-merge title is what lands on the version branch, so it takes one of two forms:
+
+- A **release** — a PR shipping a new extension version — is titled `<Extension> vX.Y.Z-alpha.N`,
+  for example `AsuraScans v1.0.0-alpha.4`, and bumps that extension's version. Its description is
+  the release changelog. GitHub appends the PR number on merge.
+- **Any other PR** (docs, CI, tooling, a refactor that ships no version) uses `type(Scope): summary`
+  and does not bump.
 
 Put the reasoning in the commit body, not in a code comment. A comment explaining why a change was
 made is addressed to the reviewer, and it becomes noise the moment the change merges. A comment
 stating a constraint the code cannot show is worth keeping.
 
-Split commits so each one can be reviewed and reverted on its own. Prefer a mechanical rename as its
-own commit over a rename buried inside a rewrite.
-
-Each commit should pass `conformance` and the test suite. If two changes cannot be green apart, they
-belong in one commit — say so in the message rather than committing a state you know is broken.
+Split commits so each one can be reviewed and reverted on its own; prefer a mechanical rename as its
+own commit over one buried in a rewrite. Each commit should pass `conformance` and the test suite —
+if two changes cannot be green apart, they belong in one commit — say so in the message rather than
+committing a state you know is broken.
 
 ## Licence and attribution
 
@@ -120,8 +137,7 @@ and it is not yours to change. Add your own notice below theirs.
 
 ## Branches and deployment
 
-Version branches are named `<paperback-api-version>/<channel>`, such as `0.9/stable`.
-
-Pushing one triggers `bundle-deploy`, which publishes the bundle to `gh-pages` under a directory
-named for the branch. That is the URL users install from, so a push to a version branch ships to
-users directly.
+Version branches are named `<paperback-api-version>/<channel>`, such as `0.9/stable`, and double as
+deploy branches. Squash-merging a PR into one triggers `bundle-deploy`, which publishes the bundle
+to `gh-pages` under a directory named for the branch — the URL users install from. Nothing else
+should push to a version branch, since any commit on it ships.
