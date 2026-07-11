@@ -39,7 +39,7 @@ export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_RECENTLY_ADDED = "recently-added";
 export const DISCOVER_STATUS = "status";
-export const DISCOVER_MEDIA = "media";
+export const DISCOVER_COMIC_TYPE = "comic-type";
 
 // A chip carousel whose taps launch a filtered browse, one chip per option
 function facetItems(options: Tag[], metadata: (id: string) => Metadata): DiscoverSectionItem[] {
@@ -57,7 +57,7 @@ export function statusItems(): DiscoverSectionItem[] {
   return facetItems(STATUS_OPTIONS, (id) => ({ status: id }));
 }
 
-export function mediaItems(): DiscoverSectionItem[] {
+export function comicTypeItems(): DiscoverSectionItem[] {
   return facetItems(TYPE_OPTIONS, (id) => ({ type: id }));
 }
 
@@ -206,7 +206,8 @@ function featuredItems(islands: Island[]): DiscoverSectionItem[] {
         type: "featuredCarouselItem" as const,
         mangaId,
         title: readString(series, "title") ?? "Unknown Title",
-        imageUrl: readString(series, "banner_url") ?? readString(series, "cover_url") ?? "",
+        // The cover matches the series page; banner_url is a different image and empty a third of the time
+        imageUrl: readString(series, "cover_url") ?? "",
         supertitle: supertitleParts.length > 0 ? supertitleParts.join(" · ") : undefined,
         infoItems:
           infoItems.length > 0 ? (infoItems as [InfoItem] | [InfoItem, InfoItem]) : undefined,
