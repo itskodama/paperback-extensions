@@ -198,6 +198,10 @@ The promotion is therefore left in place. Demoting the nine would reorder a list
 unknowable, and dropping them would hide genuinely popular series — one has 83M views. Unlike the
 browse hoist, there is no ordering invariant to check a correction against.
 
+Each featured entry also carries `type`, `status`, `rating` (0–10 here, not the fraction), and
+`view_count`, so the hero card renders a `Type · Status` supertitle and rating/view info items
+without any extra request.
+
 ### Novels
 
 Asura serves novels from the same payloads, under `/novels/`. They are kept apart today: a separate
