@@ -23,14 +23,14 @@ import { MainInterceptor, fetchPage } from "./network";
 import {
   DISCOVER_FEATURED,
   DISCOVER_LATEST_UPDATES,
-  DISCOVER_MEDIA,
+  DISCOVER_COMIC_TYPE,
   DISCOVER_RECENTLY_ADDED,
   DISCOVER_STATUS,
   DISCOVER_TRENDING,
   browseUrl,
   chapterUrl,
+  comicTypeItems,
   homeUrl,
-  mediaItems,
   parseBrowseCarousel,
   parseChapterDetails,
   parseChapterList,
@@ -84,8 +84,8 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         type: DiscoverSectionType.genres,
       },
       {
-        id: DISCOVER_MEDIA,
-        title: "Media",
+        id: DISCOVER_COMIC_TYPE,
+        title: "Comic Type",
         type: DiscoverSectionType.genres,
       },
     ];
@@ -101,8 +101,8 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     switch (section.id) {
       case DISCOVER_STATUS:
         return { items: statusItems() };
-      case DISCOVER_MEDIA:
-        return { items: mediaItems() };
+      case DISCOVER_COMIC_TYPE:
+        return { items: comicTypeItems() };
       case DISCOVER_RECENTLY_ADDED:
         return {
           items: parseBrowseCarousel((await fetchPage(browseUrl({ sort: "newest" }))).html),

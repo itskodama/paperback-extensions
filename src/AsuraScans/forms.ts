@@ -76,7 +76,7 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
         }),
 
         SelectRow("type", {
-          title: "Type",
+          title: "Comic Type",
           layout: "list",
           value: [this.type],
           items: TYPE_OPTIONS,
