@@ -5,6 +5,7 @@
 import type { SortingOption, Tag } from "@paperback/types";
 
 export const ASURA_DOMAIN = "https://asurascans.com";
+export const ASURA_API = "https://api.asurascans.com";
 
 export type AsuraScansSearchMetadata = {
   genres?: string[];

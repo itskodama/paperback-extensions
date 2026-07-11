@@ -4,7 +4,6 @@
 
 import {
   AdvancedSearchForm,
-  InputRow,
   Section,
   SelectRow,
   StepperRow,
@@ -18,8 +17,12 @@ import {
   TYPE_OPTIONS,
   type AsuraScansSearchMetadata,
 } from "./models";
+import { fetchCreators, type Creators } from "./network";
 
 const MAX_MIN_CHAPTERS = 500;
+
+const AUTHOR_PREFIX = "author:";
+const ARTIST_PREFIX = "artist:";
 
 export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
   private genres: string[];
@@ -29,6 +32,7 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
   private minChapters: number;
   private author: string;
   private artist: string;
+  private creators: Creators = { authors: [], artists: [] };
 
   constructor(searchQuery: SearchQuery<AsuraScansSearchMetadata>) {
     super();
@@ -43,7 +47,35 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
     this.artist = metadata?.artist ?? "";
   }
 
+  // Asura draws the creator list from its API rather than a free-text box
+  override async formDidAppear(): Promise<void> {
+    try {
+      this.creators = await fetchCreators();
+      this.reloadForm();
+    } catch {
+      // Leave the creator picker empty if the list cannot be loaded
+    }
+  }
+
   override getSections() {
+    // One combined single-select list; the role suffix and id keep authors and artists apart
+    const creatorItems = [
+      ...this.creators.authors.map((name) => ({
+        id: `${AUTHOR_PREFIX}${name}`,
+        title: `${name} (Author)`,
+      })),
+      ...this.creators.artists.map((name) => ({
+        id: `${ARTIST_PREFIX}${name}`,
+        title: `${name} (Artist)`,
+      })),
+    ].sort((a, b) => a.title.localeCompare(b.title));
+
+    const selectedCreator = this.author
+      ? `${AUTHOR_PREFIX}${this.author}`
+      : this.artist
+        ? `${ARTIST_PREFIX}${this.artist}`
+        : undefined;
+
     return [
       Section("genres", [
         SelectRow("genres", {
@@ -115,22 +147,18 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
         }),
       ]),
 
-      Section("credits", [
-        InputRow("author", {
-          title: "Author",
-          value: this.author,
+      Section("creator", [
+        SelectRow("creator", {
+          title: "Creator",
+          subtitle: "A single author or artist",
+          layout: "list",
+          value: selectedCreator ? [selectedCreator] : [],
+          items: creatorItems,
+          minItemCount: 0,
+          maxItemCount: 1,
           onValueChange: Application.Selector(
             this as AsuraScansAdvancedSearchForm,
-            "handleAuthorChange",
-          ),
-        }),
-
-        InputRow("artist", {
-          title: "Artist",
-          value: this.artist,
-          onValueChange: Application.Selector(
-            this as AsuraScansAdvancedSearchForm,
-            "handleArtistChange",
+            "handleCreatorChange",
           ),
         }),
       ]),
@@ -157,12 +185,19 @@ export class AsuraScansAdvancedSearchForm extends AdvancedSearchForm {
     this.minChapters = value;
   }
 
-  async handleAuthorChange(value: string): Promise<void> {
-    this.author = value;
-  }
-
-  async handleArtistChange(value: string): Promise<void> {
-    this.artist = value;
+  // A creator is one author or one artist; picking either clears the other
+  async handleCreatorChange(value: string[]): Promise<void> {
+    const pick = value[0];
+    if (pick?.startsWith(AUTHOR_PREFIX)) {
+      this.author = pick.slice(AUTHOR_PREFIX.length);
+      this.artist = "";
+    } else if (pick?.startsWith(ARTIST_PREFIX)) {
+      this.artist = pick.slice(ARTIST_PREFIX.length);
+      this.author = "";
+    } else {
+      this.author = "";
+      this.artist = "";
+    }
   }
 
   // Metadata reaches the app as a raw JSValue, where an undefined property becomes nil and throws

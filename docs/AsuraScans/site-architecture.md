@@ -14,8 +14,10 @@ deprecation warnings. The hourly `test.yaml` workflow exists to catch drift.
   No `CLOUDFLARE_BYPASS_PROVIDING`, no `executeInWebView`, no cookie handling.
 - `cdn.asurascans.com` serves page images with **no hotlink protection**. Verified `200` with no
   `Referer` and with a foreign one. The interceptor sets a user-agent; it does not need a referer.
-- `api.asurascans.com` appears only as a `preconnect` hint. It backs client-side auth and
-  promotion calls, its root `404`s, and nothing this extension needs touches it.
+- `api.asurascans.com` is the JSON API host. Its root `404`s, and most of it (auth, promotion)
+  is unused, but the advanced search reads `GET /api/creators` from it — `{ data: { authors: [],
+artists: [] } }`, ~300 authors and ~170 artists — to populate the Creator filter. This is the only
+  request the extension makes off the main `asurascans.com` host.
 
 ## Where the data lives
 
@@ -130,7 +132,15 @@ and `availableGenres`. Pagination is 20 per page.
 | `sort`         | `update`, `popular`, `rating`, `newest`, `name`            |
 | `order`        | `asc`, `desc`                                              |
 | `min_chapters` | integer                                                    |
+| `author`       | creator name, case-insensitive substring, single-valued    |
+| `artist`       | creator name, case-insensitive substring, single-valued    |
 | `page`         | 1-based                                                    |
+
+`author` and `artist` match a case-insensitive substring (`author=Hwa` returns everyone whose name
+contains "Hwa"). The advanced search does not expose them as free text, though: it offers a single
+**Creator** picker populated from `/api/creators`, since Asura lets you choose one author or one
+artist, not both. Each entry is tagged `(Author)` or `(Artist)` — a name can be both and then appears
+twice — and the pick sets whichever param matches.
 
 Two things that will bite:
 
