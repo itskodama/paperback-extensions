@@ -142,6 +142,11 @@ contains "Hwa"). The advanced search does not expose them as free text, though: 
 artist, not both. Each entry is tagged `(Author)` or `(Artist)` — a name can be both and then appears
 twice — and the pick sets whichever param matches.
 
+The picker's item ids are the creator's **index** in its list, not the name: a Paperback `SelectRow`
+id may only be alphanumeric or contain `._-@()[]%?#+=/&:`, and creator names contain spaces (and
+slashes, ampersands, parentheses), so a name-based id like `author:Ah Nyunsung (D&C ...) / Yeombi` is
+rejected at runtime. The name is carried by the row title and resolved back from the index on pick.
+
 Two things that will bite:
 
 **`sort` selects the field and `order` selects the direction** — the opposite of what the island's
