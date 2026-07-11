@@ -184,6 +184,10 @@ so the image falls back to `cover_url`.
 
 Genres are compiled in rather than scraped, so that section issues no request.
 
+Two further discover sections do not come from the homepage at all — they are browse queries reusing
+the results island: **Recently Added** (`/browse?sort=newest`) and **Completed & Top-Rated**
+(`/browse?status=completed&sort=rating`), each one request, rendered as a simple carousel.
+
 ### Featured is promoted, and is left alone
 
 `is_featured` does not name the section — it marks promotion within it. Nine of the thirty entries
@@ -197,6 +201,10 @@ direction, so it cannot be reconstructed or verified from any field the payload 
 The promotion is therefore left in place. Demoting the nine would reorder a list whose true order is
 unknowable, and dropping them would hide genuinely popular series — one has 83M views. Unlike the
 browse hoist, there is no ordering invariant to check a correction against.
+
+Each featured entry also carries `type`, `status`, `rating` (0–10 here, not the fraction), and
+`view_count`, so the hero card renders a `Type · Status` supertitle and rating/view info items
+without any extra request.
 
 ### Novels
 
@@ -226,4 +234,8 @@ first, then deduplicate by `comic_slug` keeping the first of each. That yields o
 newest chapter first, and drops the pinned entry to its rightful position.
 
 The feed carries `comic_slug` and `comic_cover` but **no series id**, which is what forces `mangaId`
-to be the slug. Its entries also expose `is_premium` and `early_access_until`.
+to be the slug. Its entries also expose `is_premium` and `early_access_until`. An entry is still in
+early access when `is_premium` is true or `early_access_until` is in the future; a public chapter
+carries the epoch (`1970-01-01`) as its deadline. Such entries stay in the carousel but their
+subtitle reads `Chapter N - Early Access`, matching the series view, which lists them and explains
+the wait rather than hiding them.

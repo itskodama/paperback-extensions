@@ -37,6 +37,8 @@ export const DISCOVER_FEATURED = "featured";
 export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_POPULAR = "popular";
+export const DISCOVER_RECENTLY_ADDED = "recently-added";
+export const DISCOVER_COMPLETED = "completed";
 export const DISCOVER_GENRES = "genres";
 
 export function genreItems(): DiscoverSectionItem[] {
@@ -76,6 +78,13 @@ function ratingFraction(source: Island, key: string): number | undefined {
 function isNovel(entry: Island): boolean {
   const path = readString(entry, "public_url") ?? readString(entry, "comic_public_url");
   return path !== undefined && path.startsWith("/novels/");
+}
+
+// Free chapters carry the epoch as their early-access deadline; a future one is still locked
+function isFutureDate(value: string | undefined): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() > Date.now();
 }
 
 // The series page joins alternative titles with a bullet; browse returns them as an array
@@ -132,10 +141,52 @@ function discoverEntries(
   return [];
 }
 
+type InfoItem = { symbol: string; text: string };
+
+function titleCase(value: string): string {
+  return value.length > 0 ? `${value[0]!.toUpperCase()}${value.slice(1)}` : value;
+}
+
+// 255678 -> "256K", 3965770 -> "4M"
+function formatCount(value: number): string {
+  if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
+  return String(value);
+}
+
+function formatRating(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+// A hero card shows a sentence or two on one line, not the whole synopsis
+function shortSummary(text: string, limit = 200): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= limit) return flat;
+  const cut = flat.slice(0, limit);
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  return stop > 60 ? cut.slice(0, stop + 1) : `${cut.trimEnd()}…`;
+}
+
 function featuredItems(islands: Island[]): DiscoverSectionItem[] {
   return discoverEntries(islands, "items", "is_featured").flatMap((series) => {
     const mangaId = readString(series, "slug");
     if (!mangaId || isNovel(series)) return [];
+
+    const supertitleParts: string[] = [];
+    const type = readString(series, "type");
+    if (type) supertitleParts.push(titleCase(type));
+    const statusName = statusLabel(readString(series, "status"));
+    if (statusName !== "Unknown") supertitleParts.push(statusName);
+
+    const infoItems: InfoItem[] = [];
+    const rating = readNumber(series, "rating");
+    if (rating !== undefined && rating > 0) {
+      infoItems.push({ symbol: "star.fill", text: formatRating(rating) });
+    }
+    const views = readNumber(series, "view_count");
+    if (views !== undefined && views > 0) {
+      infoItems.push({ symbol: "eye.fill", text: formatCount(views) });
+    }
 
     const description = readString(series, "description");
 
@@ -145,7 +196,10 @@ function featuredItems(islands: Island[]): DiscoverSectionItem[] {
         mangaId,
         title: readString(series, "title") ?? "Unknown Title",
         imageUrl: readString(series, "banner_url") ?? readString(series, "cover_url") ?? "",
-        summary: description ? htmlToPlainText(description) : undefined,
+        supertitle: supertitleParts.length > 0 ? supertitleParts.join(" · ") : undefined,
+        infoItems:
+          infoItems.length > 0 ? (infoItems as [InfoItem] | [InfoItem, InfoItem]) : undefined,
+        summary: description ? shortSummary(htmlToPlainText(description)) : undefined,
         contentRating: ContentRating.MATURE,
       },
     ];
@@ -176,12 +230,16 @@ function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
     if (seen.has(mangaId)) continue;
     seen.add(mangaId);
 
+    const name = readString(chapter, "name") ?? String(chapNum);
+    const earlyAccess =
+      readBoolean(chapter, "is_premium") || isFutureDate(readString(chapter, "early_access_until"));
+
     items.push({
       type: "chapterUpdatesCarouselItem",
       mangaId,
       chapterId: String(chapNum),
       title: readString(chapter, "comic_name") ?? "Unknown Title",
-      subtitle: `Chapter ${readString(chapter, "name") ?? String(chapNum)}`,
+      subtitle: earlyAccess ? `Chapter ${name} - Early Access` : `Chapter ${name}`,
       imageUrl: readString(chapter, "comic_cover") ?? "",
       publishDate,
       contentRating: ContentRating.MATURE,
@@ -280,6 +338,27 @@ export function parseSearchResults(html: string): PagedResults<SearchResultItem>
   const totalPages = readNumber(island, "initialTotalPages") ?? 1;
 
   return currentPage < totalPages ? { items, metadata: currentPage + 1 } : { items };
+}
+
+// A browse result page rendered as a discover carousel rather than search results
+export function parseBrowseCarousel(html: string): DiscoverSectionItem[] {
+  const island = findIsland(html, BROWSE_KEYS);
+
+  return withoutHoistedPin(island, readArray(island, "initialSeries")).flatMap((series) => {
+    const mangaId = readString(series, "slug");
+    if (!mangaId || isNovel(series)) return [];
+
+    return [
+      {
+        type: "simpleCarouselItem" as const,
+        mangaId,
+        title: readString(series, "title") ?? "Unknown Title",
+        subtitle: alternativeTitles(series, "alt_titles")[0],
+        imageUrl: readString(series, "cover") ?? "",
+        contentRating: ContentRating.MATURE,
+      },
+    ];
+  });
 }
 
 export function chapterUrl(chapter: Chapter): string {
