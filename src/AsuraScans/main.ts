@@ -21,15 +21,18 @@ import { AsuraScansAdvancedSearchForm } from "./forms";
 import { SORT_FIELDS, type AsuraScansSearchMetadata } from "./models";
 import { MainInterceptor, fetchPage } from "./network";
 import {
+  DISCOVER_COMPLETED,
   DISCOVER_FEATURED,
   DISCOVER_GENRES,
   DISCOVER_LATEST_UPDATES,
   DISCOVER_POPULAR,
+  DISCOVER_RECENTLY_ADDED,
   DISCOVER_TRENDING,
   browseUrl,
   chapterUrl,
   genreItems,
   homeUrl,
+  parseBrowseCarousel,
   parseChapterDetails,
   parseChapterList,
   parseDiscoverItems,
@@ -77,6 +80,16 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         type: DiscoverSectionType.simpleCarousel,
       },
       {
+        id: DISCOVER_RECENTLY_ADDED,
+        title: "Recently Added",
+        type: DiscoverSectionType.simpleCarousel,
+      },
+      {
+        id: DISCOVER_COMPLETED,
+        title: "Completed & Top-Rated",
+        type: DiscoverSectionType.simpleCarousel,
+      },
+      {
         id: DISCOVER_GENRES,
         title: "Genres",
         type: DiscoverSectionType.genres,
@@ -88,13 +101,25 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     section: DiscoverSection,
     metadata: number | undefined,
   ): Promise<PagedResults<DiscoverSectionItem>> {
-    // Asura renders every section into the homepage, so there is nothing to page through
     void metadata;
 
-    if (section.id === DISCOVER_GENRES) {
-      return { items: genreItems() };
+    // Genres are compiled in; the two browse-backed sections come from a query rather than the homepage
+    switch (section.id) {
+      case DISCOVER_GENRES:
+        return { items: genreItems() };
+      case DISCOVER_RECENTLY_ADDED:
+        return {
+          items: parseBrowseCarousel((await fetchPage(browseUrl({ sort: "newest" }))).html),
+        };
+      case DISCOVER_COMPLETED:
+        return {
+          items: parseBrowseCarousel(
+            (await fetchPage(browseUrl({ status: "completed", sort: "rating" }))).html,
+          ),
+        };
     }
 
+    // The remaining sections are all rendered into the homepage
     const page = await fetchPage(homeUrl());
     return { items: parseDiscoverItems(page.html, section.id) };
   }

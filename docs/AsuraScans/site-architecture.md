@@ -184,6 +184,10 @@ so the image falls back to `cover_url`.
 
 Genres are compiled in rather than scraped, so that section issues no request.
 
+Two further discover sections do not come from the homepage at all — they are browse queries reusing
+the results island: **Recently Added** (`/browse?sort=newest`) and **Completed & Top-Rated**
+(`/browse?status=completed&sort=rating`), each one request, rendered as a simple carousel.
+
 ### Featured is promoted, and is left alone
 
 `is_featured` does not name the section — it marks promotion within it. Nine of the thirty entries

@@ -37,6 +37,8 @@ export const DISCOVER_FEATURED = "featured";
 export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_POPULAR = "popular";
+export const DISCOVER_RECENTLY_ADDED = "recently-added";
+export const DISCOVER_COMPLETED = "completed";
 export const DISCOVER_GENRES = "genres";
 
 export function genreItems(): DiscoverSectionItem[] {
@@ -325,6 +327,27 @@ export function parseSearchResults(html: string): PagedResults<SearchResultItem>
   const totalPages = readNumber(island, "initialTotalPages") ?? 1;
 
   return currentPage < totalPages ? { items, metadata: currentPage + 1 } : { items };
+}
+
+// A browse result page rendered as a discover carousel rather than search results
+export function parseBrowseCarousel(html: string): DiscoverSectionItem[] {
+  const island = findIsland(html, BROWSE_KEYS);
+
+  return withoutHoistedPin(island, readArray(island, "initialSeries")).flatMap((series) => {
+    const mangaId = readString(series, "slug");
+    if (!mangaId || isNovel(series)) return [];
+
+    return [
+      {
+        type: "simpleCarouselItem" as const,
+        mangaId,
+        title: readString(series, "title") ?? "Unknown Title",
+        subtitle: alternativeTitles(series, "alt_titles")[0],
+        imageUrl: readString(series, "cover") ?? "",
+        contentRating: ContentRating.MATURE,
+      },
+    ];
+  });
 }
 
 export function chapterUrl(chapter: Chapter): string {
