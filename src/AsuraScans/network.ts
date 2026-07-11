@@ -50,7 +50,58 @@ export type FetchedPage = {
   html: string;
 };
 
+type CachedPage = {
+  fetchedAt: number;
+  page: FetchedPage;
+};
+
+const PAGE_CACHE_TTL = 15_000;
+const PAGE_CACHE_LIMIT = 6;
+
+const pageCache = new Map<string, CachedPage>();
+const inFlight = new Map<string, Promise<FetchedPage>>();
+
+function cachedPage(url: string): FetchedPage | undefined {
+  const entry = pageCache.get(url);
+  if (!entry) return undefined;
+
+  if (Date.now() - entry.fetchedAt > PAGE_CACHE_TTL) {
+    pageCache.delete(url);
+    return undefined;
+  }
+
+  return entry.page;
+}
+
+function rememberPage(url: string, page: FetchedPage): void {
+  if (pageCache.size >= PAGE_CACHE_LIMIT) {
+    const oldest = pageCache.keys().next().value;
+    if (oldest !== undefined) pageCache.delete(oldest);
+  }
+
+  pageCache.set(url, { fetchedAt: Date.now(), page });
+}
+
 export async function fetchPage(url: string): Promise<FetchedPage> {
+  const cached = cachedPage(url);
+  if (cached) return cached;
+
+  const pending = inFlight.get(url);
+  if (pending) return pending;
+
+  const request = requestPage(url);
+  inFlight.set(url, request);
+
+  try {
+    const page = await request;
+    rememberPage(url, page);
+    return page;
+  } finally {
+    inFlight.delete(url);
+  }
+}
+
+async function requestPage(url: string): Promise<FetchedPage> {
   let target = url;
 
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {

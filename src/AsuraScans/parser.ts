@@ -24,7 +24,7 @@ import {
   readStringArray,
   type Island,
 } from "./astro";
-import { ASURA_DOMAIN, statusLabel } from "./models";
+import { ASURA_DOMAIN, GENRES, statusLabel } from "./models";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
@@ -33,9 +33,20 @@ const BROWSE_KEYS = ["initialSeries", "initialTotalPages"];
 
 const ASURA_RATING_MAX = 10;
 
+export const DISCOVER_FEATURED = "featured";
 export const DISCOVER_TRENDING = "trending";
 export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_POPULAR = "popular";
+export const DISCOVER_GENRES = "genres";
+
+export function genreItems(): DiscoverSectionItem[] {
+  return GENRES.map((genre) => ({
+    type: "genresCarouselItem",
+    name: genre.title,
+    searchQuery: { title: "", metadata: { genres: [genre.id] } },
+    contentRating: ContentRating.MATURE,
+  }));
+}
 
 export function homeUrl(): string {
   return `${ASURA_DOMAIN}/`;
@@ -59,6 +70,12 @@ function ratingFraction(source: Island, key: string): number | undefined {
   const rating = readNumber(source, key);
   if (rating === undefined) return undefined;
   return Math.min(Math.max(rating / ASURA_RATING_MAX, 0), 1);
+}
+
+// Asura serves novels from the same payloads as comics, under /novels/
+function isNovel(entry: Island): boolean {
+  const path = readString(entry, "public_url") ?? readString(entry, "comic_public_url");
+  return path !== undefined && path.startsWith("/novels/");
 }
 
 // The series page joins alternative titles with a bullet; browse returns them as an array
@@ -97,9 +114,17 @@ export function browseUrl(query: BrowseQuery): string {
     : `${ASURA_DOMAIN}/browse`;
 }
 
-// The homepage renders several islands of the same shape, told apart by the fields their entries carry
-function discoverEntries(islands: Island[], key: string, marker: string): Island[] {
+// Several islands share the `items` key. Entries tell most of them apart, but the two ten-entry
+// lists are identical in shape: Trending carries the site's own `title`, Popular an `editorsPick`.
+function discoverEntries(
+  islands: Island[],
+  key: string,
+  marker: string,
+  islandMarker?: string,
+): Island[] {
   for (const island of islands) {
+    if (islandMarker !== undefined && !(islandMarker in island)) continue;
+
     const entries = readArray(island, key);
     const first = entries[0];
     if (first && marker in first) return entries;
@@ -107,10 +132,10 @@ function discoverEntries(islands: Island[], key: string, marker: string): Island
   return [];
 }
 
-function trendingItems(islands: Island[]): DiscoverSectionItem[] {
+function featuredItems(islands: Island[]): DiscoverSectionItem[] {
   return discoverEntries(islands, "items", "is_featured").flatMap((series) => {
     const mangaId = readString(series, "slug");
-    if (!mangaId) return [];
+    if (!mangaId || isNovel(series)) return [];
 
     const description = readString(series, "description");
 
@@ -134,7 +159,7 @@ function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
     .flatMap((chapter) => {
       const mangaId = readString(chapter, "comic_slug");
       const chapNum = readNumber(chapter, "number");
-      if (!mangaId || chapNum === undefined) return [];
+      if (!mangaId || chapNum === undefined || isNovel(chapter)) return [];
 
       const publishedAt = readString(chapter, "published_at");
       const parsed = publishedAt ? new Date(publishedAt) : undefined;
@@ -166,16 +191,19 @@ function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
   return items;
 }
 
-function popularItems(islands: Island[]): DiscoverSectionItem[] {
-  return discoverEntries(islands, "items", "latest_chapter_number").flatMap((series) => {
+function seriesCarouselItems(
+  entries: Island[],
+  type: "simpleCarouselItem" | "prominentCarouselItem",
+): DiscoverSectionItem[] {
+  return entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
-    if (!mangaId) return [];
+    if (!mangaId || isNovel(series)) return [];
 
     const latest = readNumber(series, "latest_chapter_number");
 
     return [
       {
-        type: "simpleCarouselItem" as const,
+        type,
         mangaId,
         title: readString(series, "title") ?? "Unknown Title",
         subtitle: latest === undefined ? undefined : `Chapter ${latest}`,
@@ -190,12 +218,20 @@ export function parseDiscoverItems(html: string, sectionId: string): DiscoverSec
   const islands = extractIslands(html);
 
   switch (sectionId) {
+    case DISCOVER_FEATURED:
+      return featuredItems(islands);
     case DISCOVER_TRENDING:
-      return trendingItems(islands);
+      return seriesCarouselItems(
+        discoverEntries(islands, "items", "latest_chapter_number", "title"),
+        "prominentCarouselItem",
+      );
     case DISCOVER_LATEST_UPDATES:
       return latestUpdateItems(islands);
     case DISCOVER_POPULAR:
-      return popularItems(islands);
+      return seriesCarouselItems(
+        discoverEntries(islands, "items", "latest_chapter_number", "editorsPick"),
+        "simpleCarouselItem",
+      );
     default:
       return [];
   }
@@ -227,7 +263,7 @@ export function parseSearchResults(html: string): PagedResults<SearchResultItem>
 
   const items: SearchResultItem[] = entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
-    if (!mangaId) return [];
+    if (!mangaId || isNovel(series)) return [];
 
     return [
       {
@@ -243,7 +279,6 @@ export function parseSearchResults(html: string): PagedResults<SearchResultItem>
   const currentPage = readNumber(island, "initialCurrentPage") ?? 1;
   const totalPages = readNumber(island, "initialTotalPages") ?? 1;
 
-  // Omit the key entirely on the last page rather than set it to undefined
   return currentPage < totalPages ? { items, metadata: currentPage + 1 } : { items };
 }
 
