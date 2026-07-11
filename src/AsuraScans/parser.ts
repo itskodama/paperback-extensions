@@ -206,7 +206,8 @@ function featuredItems(islands: Island[]): DiscoverSectionItem[] {
         type: "featuredCarouselItem" as const,
         mangaId,
         title: readString(series, "title") ?? "Unknown Title",
-        imageUrl: readString(series, "banner_url") ?? readString(series, "cover_url") ?? "",
+        // The cover matches the series page; banner_url is a different image and empty a third of the time
+        imageUrl: readString(series, "cover_url") ?? "",
         supertitle: supertitleParts.length > 0 ? supertitleParts.join(" · ") : undefined,
         infoItems:
           infoItems.length > 0 ? (infoItems as [InfoItem] | [InfoItem, InfoItem]) : undefined,

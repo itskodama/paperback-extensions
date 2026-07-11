@@ -179,8 +179,9 @@ Trending is surfaced, selected by the `title` island marker — taking "the firs
 `latest_chapter_number`" would risk returning the Popular one. Popular was dropped as a section
 because it overlapped Trending by ~70%.
 
-`banner_url` is a poor marker for Featured: it is present but empty on roughly a third of entries,
-so the image falls back to `cover_url`.
+The featured image uses `cover_url`, not `banner_url`: the banner is a different image, empty on
+roughly a third of entries, and does not match what the series page shows. Using the cover keeps the
+hero card consistent with the series page and with its neighbours.
 
 The remaining discover sections are not homepage islands. **Recently Added** (`/browse?sort=newest`)
 is a browse query reusing the results island, one request. **Status** is compiled in — a chip per
