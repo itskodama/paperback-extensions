@@ -49,7 +49,9 @@ update.
 ## Layout
 
 Each extension is a directory under `src/`, and its directory name is the id Paperback keys a user's
-library off. Every extension has a matching doc under `docs/`.
+library off. Every extension has a matching doc under `docs/`, and
+[`docs/paperback-development.md`](docs/paperback-development.md) collects the platform-wide gotchas
+that apply to all of them.
 
 | File       | Responsibility                                                     |
 | ---------- | ------------------------------------------------------------------ |
