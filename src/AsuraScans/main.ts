@@ -21,10 +21,10 @@ import { AsuraScansAdvancedSearchForm } from "./forms";
 import { SORT_FIELDS, type AsuraScansSearchMetadata } from "./models";
 import { MainInterceptor, fetchPage } from "./network";
 import {
-  DISCOVER_COMPLETED,
   DISCOVER_FEATURED,
   DISCOVER_LATEST_UPDATES,
   DISCOVER_RECENTLY_ADDED,
+  DISCOVER_STATUS,
   DISCOVER_TRENDING,
   browseUrl,
   chapterUrl,
@@ -36,6 +36,7 @@ import {
   parseSearchResults,
   parseSeriesDetails,
   seriesUrl,
+  statusItems,
 } from "./parser";
 import type AsuraScansConfig from "./pbconfig";
 
@@ -76,9 +77,9 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         type: DiscoverSectionType.simpleCarousel,
       },
       {
-        id: DISCOVER_COMPLETED,
-        title: "Completed & Top-Rated",
-        type: DiscoverSectionType.simpleCarousel,
+        id: DISCOVER_STATUS,
+        title: "Status",
+        type: DiscoverSectionType.genres,
       },
     ];
   }
@@ -89,17 +90,13 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   ): Promise<PagedResults<DiscoverSectionItem>> {
     void metadata;
 
-    // The browse-backed sections come from a query rather than the homepage
+    // Status chips are compiled in; Recently Added is a browse query; the rest come from the homepage
     switch (section.id) {
+      case DISCOVER_STATUS:
+        return { items: statusItems() };
       case DISCOVER_RECENTLY_ADDED:
         return {
           items: parseBrowseCarousel((await fetchPage(browseUrl({ sort: "newest" }))).html),
-        };
-      case DISCOVER_COMPLETED:
-        return {
-          items: parseBrowseCarousel(
-            (await fetchPage(browseUrl({ status: "completed", sort: "rating" }))).html,
-          ),
         };
     }
 

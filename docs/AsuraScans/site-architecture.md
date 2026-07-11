@@ -182,9 +182,12 @@ because it overlapped Trending by ~70%.
 `banner_url` is a poor marker for Featured: it is present but empty on roughly a third of entries,
 so the image falls back to `cover_url`.
 
-The remaining discover sections do not come from the homepage. **Recently Added**
-(`/browse?sort=newest`) and **Completed & Top-Rated** (`/browse?status=completed&sort=rating`) are
-browse queries reusing the results island, one request each.
+The remaining discover sections are not homepage islands. **Recently Added** (`/browse?sort=newest`)
+is a browse query reusing the results island, one request. **Status** is compiled in — a chip per
+site status (Ongoing, Completed, Hiatus, Dropped, Axed), each a `genresCarouselItem` whose
+`searchQuery` launches a filtered browse — so it issues no request. Note `status` is single-valued:
+`/browse?status=dropped,axed` returns nothing, so those are separate chips rather than one combined
+"no longer supported" entry.
 
 ### Featured is promoted, and is left alone
 
