@@ -52,6 +52,12 @@ and the test suite:
 
 Neither failed a test. Both were found by printing the values and looking at them.
 
+A whole class of bug goes further: the test runner is Node, so anything only the on-device bridge
+validates — `undefined` inside a `Metadata`, an illegal character in a form row id — passes every
+test and still crashes in the app. Those and the rest of the platform's sharp edges are collected in
+[`docs/paperback-development.md`](docs/paperback-development.md); read it before touching forms,
+search metadata, or discover items, and verify those on device.
+
 ## Never put `undefined` inside a `Metadata`
 
 `Metadata` — the type of `SearchQuery.metadata`, `PagedResults.metadata`, and the return of
