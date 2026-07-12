@@ -227,6 +227,25 @@ export function parseChapterList(html: string, sourceManga: SourceManga): Chapte
 const CONTENT_START = '<article class="content-body';
 const CONTENT_END = "</article>";
 
+// The site wraps each illustration in <picture> with jxl/avif <source> fallbacks
+const PICTURE = /<picture>([\s\S]*?)<\/picture>/g;
+const IMG = /<img\b[^>]*>/;
+// HTML5 void elements, which the site serializes unclosed
+const VOID_TAG =
+  /<(img|br|hr|source|wbr|area|col|embed|input|link|meta|track|param|base)(\b[^>]*?)\s*\/?>/g;
+const EPUB_ATTR = /\s+epub:type="[^"]*"/g;
+
+// The app parses an html chapter as XML, so the fragment must be well-formed
+// XHTML: unclosed void tags and the undeclared epub: namespace prefix are fatal.
+// <picture> wrappers are flattened to their <img> to keep the markup the reader
+// sees as plain as possible.
+function toXhtml(content: string): string {
+  return content
+    .replace(PICTURE, (wrapper: string) => IMG.exec(wrapper)?.[0] ?? "")
+    .replace(EPUB_ATTR, "")
+    .replace(VOID_TAG, "<$1$2/>");
+}
+
 export function parseChapterDetails(html: string, chapter: Chapter): ChapterDetails {
   const start = html.indexOf(CONTENT_START);
   const end = html.lastIndexOf(CONTENT_END);
@@ -238,6 +257,6 @@ export function parseChapterDetails(html: string, chapter: Chapter): ChapterDeta
     id: chapter.chapterId,
     mangaId: chapter.sourceManga.mangaId,
     type: "html",
-    html: html.slice(start, end + CONTENT_END.length),
+    html: toXhtml(html.slice(start, end + CONTENT_END.length)),
   };
 }
