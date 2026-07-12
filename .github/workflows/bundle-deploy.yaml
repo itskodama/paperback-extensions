@@ -9,9 +9,11 @@ on:
 permissions:
   contents: write
 
+# Every branch's deploy pushes to the same gh-pages branch, so runs must serialize
+# across the whole repo: concurrent deploys race and the loser's push is rejected
 concurrency:
-  group: ${{ github.ref }}-${{ github.workflow }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 jobs:
   bundle-deploy:
