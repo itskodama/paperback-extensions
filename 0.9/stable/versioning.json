@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-07-11T21:56:30.105Z",
+  "buildTime": "2026-07-12T21:03:14.380Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -29,6 +29,26 @@
         }
       ],
       "id": "AsuraScans"
+    },
+    {
+      "name": "LNORI",
+      "description": "Read light novels from lnori.com.",
+      "version": "1.0.0-alpha.0",
+      "icon": "icon.png",
+      "language": "en",
+      "contentRating": "MATURE",
+      "capabilities": [
+        64,
+        1
+      ],
+      "badges": [],
+      "developers": [
+        {
+          "name": "Kodama",
+          "github": "https://github.com/itskodama"
+        }
+      ],
+      "id": "Lnori"
     }
   ]
 }
