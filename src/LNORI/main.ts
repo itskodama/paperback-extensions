@@ -18,14 +18,18 @@ import { MainInterceptor, fetchPage } from "./network";
 import {
   bookUrl,
   libraryUrl,
+  parseBookPublishDate,
   parseChapterDetails,
-  parseChapterList,
   parseLibrary,
   parseSeriesDetails,
+  parseVolumeList,
+  parseVolumeToc,
   searchLibrary,
   seriesUrl,
   toSearchResultItem,
+  volumeChapters,
   type LibraryEntry,
+  type TocEntry,
 } from "./parser";
 import type LNORIConfig from "./pbconfig";
 
@@ -52,9 +56,33 @@ async function getLibrary(): Promise<LibraryEntry[]> {
   return entries;
 }
 
+// Splitting volumes into chapters costs one book-page fetch per volume, because the
+// site ignores Range requests and the TOC only exists there. Published volumes never
+// change, so the parsed TOCs are kept for the session and refreshes are free.
+type VolumeToc = { toc: TocEntry[]; publishDate?: Date };
+
+const tocCache = new Map<string, VolumeToc>();
+const TOC_CACHE_LIMIT = 500;
+
+async function getVolumeToc(path: string): Promise<VolumeToc> {
+  const cached = tocCache.get(path);
+  if (cached) return cached;
+
+  const html = await fetchPage(bookUrl(path));
+  const entry: VolumeToc = { toc: parseVolumeToc(html) };
+  const publishDate = parseBookPublishDate(html);
+  if (publishDate) entry.publishDate = publishDate;
+
+  if (tocCache.size >= TOC_CACHE_LIMIT) tocCache.clear();
+  tocCache.set(path, entry);
+  return entry;
+}
+
 export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
+  // The site is static behind Cloudflare's CDN and chapter listing fetches one page
+  // per volume, so the budget is set to keep a long series' listing under ~15s
   mainRateLimiter = new BasicRateLimiter("main", {
-    numberOfRequests: 10,
+    numberOfRequests: 20,
     bufferInterval: 10,
     ignoreImages: true,
   });
@@ -88,11 +116,30 @@ export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
   }
 
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
-    // The series page lists every volume, so the whole list gets returned
+    // The series page lists every volume; each volume's own TOC then yields its
+    // chapters. A volume whose page cannot be fetched degrades to one whole-volume
+    // chapter instead of failing the whole list.
     void sinceDate;
 
     const html = await fetchPage(seriesUrl(sourceManga.mangaId));
-    return parseChapterList(html, sourceManga);
+    const volumes = parseVolumeList(html);
+
+    const perVolume = await Promise.all(
+      volumes.map(async (volume) => {
+        try {
+          const { toc, publishDate } = await getVolumeToc(volume.path);
+          return volumeChapters(volume, toc, publishDate, sourceManga);
+        } catch {
+          return volumeChapters(volume, [], undefined, sourceManga);
+        }
+      }),
+    );
+
+    const chapters = perVolume.flat();
+    chapters.forEach((chapter, index) => {
+      chapter.sortingIndex = index;
+    });
+    return chapters;
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {

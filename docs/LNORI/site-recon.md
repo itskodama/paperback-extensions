@@ -49,9 +49,17 @@ Three levels: **series → book (volume) → inline full text**.
 ## Mapping onto Paperback
 
 - `contentType: 'novel'`; `ChapterDetails` uses the **`html` variant**.
-- One Paperback **chapter = one volume** (`volume: N` from `position`). Splitting a book into its
-  real chapters would force fetching every ~500 KB book page inside `getChapters` (28 volumes ≈
-  14 MB) because the chapter list must be complete upfront — not viable. One request per volume is.
+- **Volumes are split into their real chapters via the book page's TOC sidebar** — every book
+  page opens with `toc-sidebar`, whose `#pageNN` anchors match the content's
+  `<section class="chapter" id="pageNN">` wrappers and whose text carries the true chapter titles.
+  A chapter slice runs from its section to the next TOC entry's section. Numbering: explicit
+  "Chapter N" prefixes keep N (Re:ZERO), fully unnumbered TOCs (Bookworm) fall back to ordinals,
+  and surrounding matter interpolates as decimals (Prologue 0.4, Epilogue 5.1).
+- The TOC only exists on the ~500 KB book page and the CDN **ignores Range requests** (200, never
+  206), so listing chapters costs one page per volume (~160 KB gzipped; a 28-volume series ≈
+  4.5 MB cold, ~15 s at the 20 req/10 s limiter). Volumes are immutable, so parsed TOCs are cached
+  for the session and refreshes are free. `datePublished` from the book JSON-LD backs
+  `publishDate`.
 - `getChapterDetails`: fetch the book page, cut out the `epub:type` bodymatter sections (regex on
   section boundaries; no HTML parser needed — same discipline as AsuraScans), hand the HTML to the
   reader with `img.lnori.com` images left inline.

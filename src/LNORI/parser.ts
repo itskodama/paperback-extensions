@@ -21,8 +21,10 @@ export function seriesUrl(mangaId: string): string {
   return `${LNORI_DOMAIN}/series/${mangaId}`;
 }
 
+// A split chapter's id is `<bookPath>#<anchor>`; the request drops the fragment
 export function bookUrl(chapterId: string): string {
-  return `${LNORI_DOMAIN}/book/${chapterId}`;
+  const path = chapterId.split("#")[0]!;
+  return `${LNORI_DOMAIN}/book/${path}`;
 }
 
 const ENTITY = /&(#x[0-9a-fA-F]+|#\d+|[a-zA-Z][a-zA-Z0-9]*);/g;
@@ -127,6 +129,7 @@ type LdBook = {
   genre?: string;
   image?: string;
   url?: string;
+  datePublished?: string;
   author?: LdPerson | LdPerson[];
   hasPart?: { name?: string; position?: string; url?: string }[];
 };
@@ -195,31 +198,137 @@ export function parseSeriesDetails(html: string, mangaId: string): SourceManga {
   };
 }
 
-// One Paperback chapter is one volume: the volume's whole text arrives in a single
-// page, and listing finer-grained chapters would need a fetch per volume upfront
-export function parseChapterList(html: string, sourceManga: SourceManga): Chapter[] {
+export type VolumeRef = { path: string; position: number; name?: string };
+
+export function parseVolumeList(html: string): VolumeRef[] {
   const book = findBookLd(html);
-  const chapters: Chapter[] = [];
+  const volumes: VolumeRef[] = [];
 
   for (const [index, part] of (book.hasPart ?? []).entries()) {
     const path = part.url?.split("/book/")[1];
     if (!path) continue;
 
     const position = Number(part.position);
-    const chapNum = Number.isFinite(position) && position > 0 ? position : index + 1;
+    const volume: VolumeRef = {
+      path,
+      position: Number.isFinite(position) && position > 0 ? position : index + 1,
+    };
+    if (part.name) volume.name = part.name;
 
-    chapters.push({
-      chapterId: path,
-      sourceManga,
-      langCode: "en",
-      chapNum,
-      volume: 0,
-      title: part.name,
-      sortingIndex: chapNum,
-    });
+    volumes.push(volume);
   }
 
-  return chapters;
+  return volumes;
+}
+
+// --- Book page TOC (the volume's own chapters) ---
+
+export type TocEntry = { anchor: string; title: string };
+
+const TOC_START = "toc-sidebar";
+const TOC_END = "content-wrapper";
+const TOC_LINK = /<a[^>]*href="#([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
+const INNER_TAG = /<[^>]+>/g;
+
+// Every book page opens with a sidebar TOC whose anchors (#pageNN) match the
+// content's own section ids, and whose text carries the real chapter titles
+export function parseVolumeToc(html: string): TocEntry[] {
+  const start = html.indexOf(TOC_START);
+  const end = html.indexOf(TOC_END);
+  if (start < 0 || end <= start) return [];
+
+  const entries: TocEntry[] = [];
+  for (const match of html.matchAll(TOC_LINK)) {
+    const at = match.index ?? -1;
+    if (at < start || at > end) continue;
+    const title = decodeEntities(match[2]!.replace(INNER_TAG, "")).trim();
+    if (title) entries.push({ anchor: match[1]!, title });
+  }
+  return entries;
+}
+
+export function parseBookPublishDate(html: string): Date | undefined {
+  const published = findBookLd(html).datePublished;
+  if (!published) return undefined;
+  const date = new Date(published);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+// Novels disagree on numbering: some prefix titles with "Chapter N", some (like
+// Bookworm) never number at all. Titled chapters keep their own number, front and
+// back matter interpolate as decimals around them (Prologue 0.1, Epilogue N.1),
+// and a fully unnumbered TOC falls back to plain ordinals.
+const EXPLICIT_CHAPTER = /^Chapter\s+(\d+(?:\.\d+)?)\s*[:.—-]?\s*(.*)$/i;
+
+type NumberedEntry = { chapNum: number; title: string; anchor: string };
+
+export function numberTocEntries(entries: TocEntry[]): NumberedEntry[] {
+  const explicit = entries.map((entry) => EXPLICIT_CHAPTER.exec(entry.title));
+  if (explicit.every((match) => match === null)) {
+    return entries.map((entry, index) => ({
+      chapNum: index + 1,
+      title: entry.title,
+      anchor: entry.anchor,
+    }));
+  }
+
+  let previous = 0;
+  let fraction = 0;
+  return entries.map((entry, index) => {
+    const match = explicit[index];
+    if (match) {
+      previous = Number(match[1]);
+      fraction = 0;
+      // Keep the subtitle if there is one; "Chapter 2" alone stays as-is
+      return { chapNum: previous, title: match[2] || entry.title, anchor: entry.anchor };
+    }
+    fraction += 0.1;
+    return {
+      chapNum: Math.round((previous + fraction) * 10) / 10,
+      title: entry.title,
+      anchor: entry.anchor,
+    };
+  });
+}
+
+// One volume's TOC becomes its chapters; a volume whose TOC cannot be read
+// degrades to a single whole-volume chapter
+export function volumeChapters(
+  volume: VolumeRef,
+  toc: TocEntry[],
+  publishDate: Date | undefined,
+  sourceManga: SourceManga,
+): Chapter[] {
+  if (toc.length === 0) {
+    const fallback: Chapter = {
+      chapterId: volume.path,
+      sourceManga,
+      langCode: "en",
+      chapNum: 1,
+      volume: volume.position,
+      title: volume.name,
+    };
+    if (publishDate) fallback.publishDate = publishDate;
+    return [fallback];
+  }
+
+  return numberTocEntries(toc).map((entry, index) => {
+    const additionalInfo: Record<string, string> = { anchor: entry.anchor };
+    const next = toc[index + 1];
+    if (next) additionalInfo.nextAnchor = next.anchor;
+
+    const chapter: Chapter = {
+      chapterId: `${volume.path}#${entry.anchor}`,
+      sourceManga,
+      langCode: "en",
+      chapNum: entry.chapNum,
+      volume: volume.position,
+      title: entry.title,
+      additionalInfo,
+    };
+    if (publishDate) chapter.publishDate = publishDate;
+    return chapter;
+  });
 }
 
 // --- Book page (the volume's text) ---
@@ -287,17 +396,42 @@ function toXhtml(content: string): string {
   return `<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>${body}</body></html>`;
 }
 
+// TOC anchors name the content's own page-section wrappers, so a chapter runs from
+// its section to the next TOC entry's section (spanning untitled sections between)
+function sectionStart(html: string, anchor: string): number {
+  return html.indexOf(`<section class="chapter" id="${anchor}">`);
+}
+
 export function parseChapterDetails(html: string, chapter: Chapter): ChapterDetails {
-  const start = html.indexOf(CONTENT_START);
-  const end = html.lastIndexOf(CONTENT_END);
-  if (start < 0 || end <= start) {
+  const articleStart = html.indexOf(CONTENT_START);
+  const articleEnd = html.lastIndexOf(CONTENT_END);
+  if (articleStart < 0 || articleEnd <= articleStart) {
     throw new Error(`LNORI served no readable content for ${chapter.title ?? chapter.chapterId}`);
+  }
+
+  let start = articleStart;
+  let end = articleEnd + CONTENT_END.length;
+
+  // A whole-volume fallback chapter carries no anchor and keeps the full article;
+  // an unlocatable anchor also degrades to the full volume rather than failing
+  const anchor = chapter.additionalInfo?.anchor;
+  if (anchor) {
+    const from = sectionStart(html, anchor);
+    if (from >= 0) {
+      start = from;
+      end = articleEnd;
+      const nextAnchor = chapter.additionalInfo?.nextAnchor;
+      if (nextAnchor) {
+        const to = sectionStart(html, nextAnchor);
+        if (to > from) end = to;
+      }
+    }
   }
 
   return {
     id: chapter.chapterId,
     mangaId: chapter.sourceManga.mangaId,
     type: "html",
-    html: toXhtml(html.slice(start, end + CONTENT_END.length)),
+    html: toXhtml(html.slice(start, end)),
   };
 }

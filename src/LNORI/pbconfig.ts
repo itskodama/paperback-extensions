@@ -5,7 +5,8 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 
 export default {
   name: "LNORI",
-  description: "Read light novels from lnori.com.",
+  description:
+    "Read light novels from lnori.com. Enable 'Chapters Unique by Volume' under Manage Version Priority for correct chapter lists.",
   version: "1.0.0-alpha.1",
   icon: "icon.png",
   language: "en",
