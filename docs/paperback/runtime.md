@@ -1,0 +1,38 @@
+# Runtime environment
+
+What the extension's JavaScript actually runs in, and what that costs. The environment is neither
+Node nor a browser: it is the app's JavaScript engine (JavaScriptCore on iOS) plus the
+`Application` namespace, and nothing more.
+
+## Bundling
+
+The toolchain bundles each `src/<Extension>/main.ts` with rolldown into a **single minified IIFE**
+targeting `es2020`, with no `platform`, no `external`, and no injected polyfills. Everything you
+import is inlined, so a dependency's cost is the whole dependency.
+
+`Application.isResourceLimited` exists because this runs on phones — keep the bundle small. The
+extensions in this repository ship with **no runtime dependencies** at ~20 KB each; adding an HTML
+parser would have cost ~280 KB. Both AsuraScans and LNORI avoid one by reading structured data the
+sites already embed (escaped JSON props, schema.org JSON-LD, data attributes) instead of parsing
+markup. Prefer that approach; reach for a parser only when a site offers no structured alternative.
+
+## Missing globals
+
+- **No `setTimeout` / `setInterval`.** They do not exist in the runtime. Use
+  `Application.sleep(seconds)` — note the unit is **seconds**, not milliseconds.
+- **No Node builtins** — no `fs`, `Buffer`, `process`, or anything else from Node's standard
+  library. Assume browser-ish ES2020 globals plus the `Application` namespace.
+- Anything else you are unsure about: check before relying on it, because the Node test runner will
+  happily provide globals the device lacks (see [Testing](testing.md)).
+
+## Module state
+
+Module-level variables (caches, memos) live as long as the app keeps the extension's JS context
+alive. They are a legitimate place for session caches — both extensions cache parsed pages and
+catalog data this way — but never assume they persist across app launches. Durable state belongs in
+`Application.getState` / secure storage.
+
+## See also
+
+- [Networking](networking.md) — the only sanctioned way to reach the network
+- [Testing](testing.md) — why "it works in `npm test`" proves less than it seems

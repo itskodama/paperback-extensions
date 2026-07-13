@@ -4,9 +4,10 @@
 
 ## Extensions
 
-| Extension                     | Source                                   |
-| ----------------------------- | ---------------------------------------- |
-| [Asura Scans](src/AsuraScans) | [asurascans.com](https://asurascans.com) |
+| Extension                     | Source                                   | Content      |
+| ----------------------------- | ---------------------------------------- | ------------ |
+| [Asura Scans](src/AsuraScans) | [asurascans.com](https://asurascans.com) | Comics       |
+| [LNORI](src/LNORI)            | [lnori.com](https://lnori.com)           | Light novels |
 
 ## Installation
 
@@ -49,9 +50,9 @@ update.
 ## Layout
 
 Each extension is a directory under `src/`, and its directory name is the id Paperback keys a user's
-library off. Every extension has a matching doc under `docs/`, and
-[`docs/paperback-development.md`](docs/paperback-development.md) collects the platform-wide gotchas
-that apply to all of them.
+library off. Every extension has a matching doc under `docs/`, and the
+[`docs/paperback/`](docs/paperback/README.md) pages collect the platform-wide behaviours and
+gotchas that apply to all of them.
 
 | File       | Responsibility                                                     |
 | ---------- | ------------------------------------------------------------------ |
@@ -59,8 +60,8 @@ that apply to all of them.
 | `main`     | The extension class, one method per capability                     |
 | `parser`   | Maps the site's payloads onto Paperback's types                    |
 | `network`  | Request interceptor and the fetch helper                           |
-| `models`   | Filter vocabulary and shared types                                 |
-| `forms`    | The advanced search form                                           |
+| `models`   | Filter vocabulary and shared types (where an extension needs them) |
+| `forms`    | The advanced search form (where an extension has one)              |
 
 ### Asura Scans
 
@@ -71,6 +72,22 @@ component's data as escaped JSON in the markup, so the extension reads that dire
 [`docs/AsuraScans/site-architecture.md`](docs/AsuraScans/site-architecture.md) documents the data
 model, the endpoints, the identifier choices, and the behaviours that are easy to get wrong. Read it
 before changing the parsers.
+
+### LNORI
+
+A light novel source, and likewise parser-free: series and volumes describe themselves in
+schema.org JSON-LD, the catalog page embeds every series as data-attributed cards (search and
+genre filtering run locally over one cached fetch), and each volume's chapters come from the book
+page's own table of contents. Chapters are delivered through Paperback's `html` reader, whose
+strict XHTML requirements are documented in
+[`docs/paperback/html-chapters.md`](docs/paperback/html-chapters.md).
+
+Correct chapter lists need **"Chapters Unique by Volume"** enabled for the source in the app
+(Manage Version Priority) — volumes restart their chapter numbering, and the app otherwise
+collapses same-numbered chapters as duplicates.
+
+[`docs/LNORI/site-recon.md`](docs/LNORI/site-recon.md) documents the site's structure, the
+identifier scheme, and the cost model behind chapter listing.
 
 ## Licence
 
