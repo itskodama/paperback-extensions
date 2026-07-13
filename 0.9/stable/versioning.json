@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-07-13T03:35:13.731Z",
+  "buildTime": "2026-07-13T03:58:16.575Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -33,7 +33,7 @@
     {
       "name": "LNORI",
       "description": "Read light novels from lnori.com.",
-      "version": "1.0.0-alpha.0",
+      "version": "1.0.0-alpha.1",
       "icon": "icon.png",
       "language": "en",
       "contentRating": "MATURE",
@@ -48,7 +48,7 @@
           "github": "https://github.com/itskodama"
         }
       ],
-      "id": "Lnori"
+      "id": "LNORI"
     }
   ]
 }
