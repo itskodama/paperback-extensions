@@ -63,9 +63,14 @@ Three levels: **series → book (volume) → inline full text**.
 - `getChapterDetails`: fetch the book page, cut out the `epub:type` bodymatter sections (regex on
   section boundaries; no HTML parser needed — same discipline as AsuraScans), hand the HTML to the
   reader with `img.lnori.com` images left inline.
-- Search/browse/genres/sort: all local over the library page. Discover: homepage has hero +
-  seasonal ("summer") + popular sections, but everything can also be compiled from library data
-  (`data-rel` for popularity, `data-d` for year, `data-tags` chips).
+- Search/browse: local over the library page; a `genre` key in the search metadata filters on the
+  cards' `data-tags` (slugs hyphenate what tags write with spaces — normalise both sides).
+- Discover: the homepage hero carries `data-title/-author/-desc/-image/-link` per
+  `hero-carousel-card` (→ featured). The seasonal block is anchored by its "Seasonal Preview"
+  kicker and its heading names the section ("SUMMER 2026 ANIME") — the title is read from the
+  page, since it changes each season. Genre chips come from the homepage's `/genre/<slug>` links
+  (their text is lowercase behind an emoji; strip and title-case). Popular is compiled from the
+  library's `data-rel` rank, no extra request.
 
 ## The linchpin — device verification
 

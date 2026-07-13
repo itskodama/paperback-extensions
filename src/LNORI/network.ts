@@ -27,8 +27,60 @@ export class MainInterceptor extends PaperbackInterceptor {
   }
 }
 
+type CachedPage = {
+  fetchedAt: number;
+  html: string;
+};
+
+// Long enough to cover a burst — the discover sections all read the homepage, and a
+// title open reads its series page twice (details, then chapters) — while short
+// enough that a page never goes meaningfully stale
+const PAGE_CACHE_TTL = 60_000;
+const PAGE_CACHE_LIMIT = 4;
+
+const pageCache = new Map<string, CachedPage>();
+const inFlight = new Map<string, Promise<string>>();
+
+function cachedPage(url: string): string | undefined {
+  const entry = pageCache.get(url);
+  if (!entry) return undefined;
+
+  if (Date.now() - entry.fetchedAt > PAGE_CACHE_TTL) {
+    pageCache.delete(url);
+    return undefined;
+  }
+  return entry.html;
+}
+
+function rememberPage(url: string, html: string): void {
+  if (pageCache.size >= PAGE_CACHE_LIMIT) {
+    const oldest = pageCache.keys().next().value;
+    if (oldest !== undefined) pageCache.delete(oldest);
+  }
+  pageCache.set(url, { fetchedAt: Date.now(), html });
+}
+
 // LNORI serves everything as long-cached static pages and never redirects within the read path
 export async function fetchPage(url: string): Promise<string> {
+  const cached = cachedPage(url);
+  if (cached !== undefined) return cached;
+
+  const pending = inFlight.get(url);
+  if (pending) return pending;
+
+  const request = requestPage(url);
+  inFlight.set(url, request);
+
+  try {
+    const html = await request;
+    rememberPage(url, html);
+    return html;
+  } finally {
+    inFlight.delete(url);
+  }
+}
+
+async function requestPage(url: string): Promise<string> {
   const [response, data] = await Application.scheduleRequest({ url, method: "GET" });
 
   if (response.status < 200 || response.status >= 300) {

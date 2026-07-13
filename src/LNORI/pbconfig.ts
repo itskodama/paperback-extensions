@@ -11,7 +11,11 @@ export default {
   icon: "icon.png",
   language: "en",
   contentRating: ContentRating.MATURE,
-  capabilities: [SourceIntents.SEARCH_RESULT_PROVIDING, SourceIntents.CHAPTER_PROVIDING],
+  capabilities: [
+    SourceIntents.DISCOVER_SECTION_PROVIDING,
+    SourceIntents.SEARCH_RESULT_PROVIDING,
+    SourceIntents.CHAPTER_PROVIDING,
+  ],
   badges: [],
   developers: [
     {

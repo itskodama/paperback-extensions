@@ -5,12 +5,26 @@ import {
   ContentRating,
   type Chapter,
   type ChapterDetails,
+  type DiscoverSectionItem,
   type SearchResultItem,
   type SourceManga,
   type TagSection,
 } from "@paperback/types";
 
 export const LNORI_DOMAIN = "https://lnori.com";
+
+export const DISCOVER_FEATURED = "featured";
+export const DISCOVER_SEASONAL = "seasonal";
+export const DISCOVER_POPULAR = "popular";
+export const DISCOVER_GENRES = "genres";
+
+// The genre chips launch a filtered search through this; keys are always assigned,
+// never set to undefined (the Metadata JSValue rule)
+export type LNORISearchMetadata = { genre?: string };
+
+export function homeUrl(): string {
+  return `${LNORI_DOMAIN}/`;
+}
 
 export function libraryUrl(): string {
   return `${LNORI_DOMAIN}/library`;
@@ -66,6 +80,8 @@ export type LibraryEntry = {
   title: string;
   author?: string;
   imageUrl: string;
+  tags: string[];
+  popularity: number;
 };
 
 const LIBRARY_CARD = /<article class="card"[\s\S]*?<\/article>/g;
@@ -81,10 +97,17 @@ export function parseLibrary(html: string): LibraryEntry[] {
     const title = attribute(card, "data-t");
     if (!mangaId || !title) continue;
 
+    const tags = (attribute(card, "data-tags") ?? "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter((tag) => tag.length > 0);
+
     const entry: LibraryEntry = {
       mangaId,
       title,
       imageUrl: CARD_COVER.exec(card)?.[1] ?? "",
+      tags,
+      popularity: Number(attribute(card, "data-rel")) || 0,
     };
     const author = attribute(card, "data-a");
     if (author) entry.author = author;
@@ -95,11 +118,31 @@ export function parseLibrary(html: string): LibraryEntry[] {
   return entries;
 }
 
-export function searchLibrary(entries: LibraryEntry[], title: string | undefined): LibraryEntry[] {
-  const needle = title?.trim().toLowerCase();
-  if (!needle) return entries;
+// Genre slugs hyphenate what the card tags write with spaces ("anime-tie-in" vs
+// "anime tie-in"), so both sides are normalised before comparing
+function normalizeTag(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\s-]+/g, " ")
+    .trim();
+}
 
-  return entries.filter(
+export function searchLibrary(
+  entries: LibraryEntry[],
+  title: string | undefined,
+  genre?: string,
+): LibraryEntry[] {
+  let matches = entries;
+
+  if (genre) {
+    const wanted = normalizeTag(genre);
+    matches = matches.filter((entry) => entry.tags.some((tag) => normalizeTag(tag) === wanted));
+  }
+
+  const needle = title?.trim().toLowerCase();
+  if (!needle) return matches;
+
+  return matches.filter(
     (entry) =>
       entry.title.toLowerCase().includes(needle) ||
       (entry.author?.toLowerCase().includes(needle) ?? false),
@@ -114,6 +157,129 @@ export function toSearchResultItem(entry: LibraryEntry): SearchResultItem {
     imageUrl: entry.imageUrl,
     contentRating: ContentRating.MATURE,
   };
+}
+
+// --- Homepage (discover sections) ---
+
+const SERIES_PATH = /^\/series\/(\d+\/.+)$/;
+
+function seriesPath(link: string | undefined): string | undefined {
+  return link ? SERIES_PATH.exec(link)?.[1] : undefined;
+}
+
+// The hero rotates cards that carry everything as data attributes
+const HERO_CARD = /<div class="hero-carousel-card[^>]*>/g;
+
+export function parseFeaturedItems(html: string): DiscoverSectionItem[] {
+  const items: DiscoverSectionItem[] = [];
+
+  for (const match of html.matchAll(HERO_CARD)) {
+    const card = match[0];
+    const mangaId = seriesPath(attribute(card, "data-link"));
+    const title = attribute(card, "data-title");
+    if (!mangaId || !title) continue;
+
+    items.push({
+      type: "featuredCarouselItem",
+      mangaId,
+      title,
+      supertitle: attribute(card, "data-author"),
+      summary: attribute(card, "data-desc"),
+      imageUrl: attribute(card, "data-image") ?? "",
+      contentRating: ContentRating.MATURE,
+    });
+  }
+
+  return items;
+}
+
+// The seasonal block is anchored by its "Seasonal Preview" kicker; its heading names
+// the season ("SUMMER 2026 ANIME"), so the section title comes from the page
+const SEASONAL_HEADING = /Seasonal Preview<\/span><h2[^>]*>([^<]+)<\/h2>/;
+const SEASONAL_END = 'id="library-heading"';
+const SEASONAL_ENTRY = /<a href="(\/series\/[^"]+)"[\s\S]*?<img src="([^"]*)" alt="([^"]*)"/g;
+
+export function parseSeasonalTitle(html: string): string | undefined {
+  const heading = SEASONAL_HEADING.exec(html)?.[1];
+  if (!heading) return undefined;
+  return decodeEntities(heading)
+    .trim()
+    .toLowerCase()
+    .replace(/(?:^|\s)\S/g, (letter) => letter.toUpperCase());
+}
+
+export function parseSeasonalItems(html: string): DiscoverSectionItem[] {
+  const start = SEASONAL_HEADING.exec(html)?.index ?? -1;
+  if (start < 0) return [];
+  const end = html.indexOf(SEASONAL_END, start);
+  const block = html.slice(start, end > start ? end : undefined);
+
+  const items: DiscoverSectionItem[] = [];
+  for (const match of block.matchAll(SEASONAL_ENTRY)) {
+    const mangaId = seriesPath(match[1]);
+    if (!mangaId) continue;
+
+    items.push({
+      type: "simpleCarouselItem",
+      mangaId,
+      title: decodeEntities(match[3] ?? "").trim() || "Unknown Title",
+      imageUrl: match[2] ?? "",
+      contentRating: ContentRating.MATURE,
+    });
+  }
+  return items;
+}
+
+// Popularity is the library's own relevance rank, so this costs no extra request
+export function popularItems(entries: LibraryEntry[], limit = 30): DiscoverSectionItem[] {
+  return entries
+    .filter((entry) => entry.popularity > 0)
+    .sort((a, b) => b.popularity - a.popularity)
+    .slice(0, limit)
+    .map((entry) => ({
+      type: "simpleCarouselItem" as const,
+      mangaId: entry.mangaId,
+      title: entry.title,
+      subtitle: entry.author,
+      imageUrl: entry.imageUrl,
+      contentRating: ContentRating.MATURE,
+    }));
+}
+
+// One chip per genre, each launching a filtered search over the library
+const GENRE_LINK = /<a href="\/genre\/([a-z0-9-]+)"[^>]*>([\s\S]*?)<\/a>/g;
+const GENRE_END = 'id="footer-discovery"';
+
+export function parseGenreItems(html: string): DiscoverSectionItem[] {
+  const end = html.indexOf(GENRE_END);
+  const block = end > 0 ? html.slice(0, end) : html;
+
+  const seen = new Set<string>();
+  const items: DiscoverSectionItem[] = [];
+
+  for (const match of block.matchAll(GENRE_LINK)) {
+    const slug = match[1]!;
+    if (seen.has(slug)) continue;
+    seen.add(slug);
+
+    // The site's link text is lowercase behind an emoji ("🎓 academy"); the chip
+    // keeps just the words, title-cased
+    const text = decodeEntities(match[2]!.replace(INNER_TAG, ""))
+      .replace(/^[^a-zA-Z0-9]+/, "")
+      .trim();
+    const name = (text || slug.replace(/-/g, " ")).replace(/(?:^|\s)\S/g, (letter) =>
+      letter.toUpperCase(),
+    );
+
+    items.push({
+      type: "genresCarouselItem",
+      name,
+      searchQuery: { title: "", metadata: { genre: slug } },
+      contentRating: ContentRating.MATURE,
+    });
+  }
+
+  return items;
 }
 
 // --- Series page (details + volume list) ---

@@ -3,8 +3,11 @@
 
 import {
   BasicRateLimiter,
+  DiscoverSectionType,
   type Chapter,
   type ChapterDetails,
+  type DiscoverSection,
+  type DiscoverSectionItem,
   type ExtensionImpl,
   type Metadata,
   type PagedResults,
@@ -16,19 +19,30 @@ import {
 
 import { MainInterceptor, fetchPage } from "./network";
 import {
+  DISCOVER_FEATURED,
+  DISCOVER_GENRES,
+  DISCOVER_POPULAR,
+  DISCOVER_SEASONAL,
   bookUrl,
+  homeUrl,
   libraryUrl,
   parseBookPublishDate,
   parseChapterDetails,
+  parseFeaturedItems,
+  parseGenreItems,
   parseLibrary,
+  parseSeasonalItems,
+  parseSeasonalTitle,
   parseSeriesDetails,
   parseVolumeList,
   parseVolumeToc,
+  popularItems,
   searchLibrary,
   seriesUrl,
   toSearchResultItem,
   volumeChapters,
   type LibraryEntry,
+  type LNORISearchMetadata,
   type TocEntry,
 } from "./parser";
 import type LNORIConfig from "./pbconfig";
@@ -94,14 +108,73 @@ export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
     this.mainInterceptor.registerInterceptor();
   }
 
+  async getDiscoverSections(): Promise<DiscoverSection[]> {
+    // The seasonal block is titled by the page itself ("Summer 2026 Anime"), so the
+    // section name tracks the site; everything else is fixed
+    let seasonalTitle: string | undefined;
+    try {
+      seasonalTitle = parseSeasonalTitle(await fetchPage(homeUrl()));
+    } catch {
+      // A failed homepage fetch falls back to the static title
+    }
+
+    return [
+      {
+        id: DISCOVER_FEATURED,
+        title: "Featured",
+        type: DiscoverSectionType.featured,
+      },
+      {
+        id: DISCOVER_SEASONAL,
+        title: seasonalTitle ?? "Seasonal Anime",
+        type: DiscoverSectionType.simpleCarousel,
+      },
+      {
+        id: DISCOVER_POPULAR,
+        title: "Popular",
+        type: DiscoverSectionType.simpleCarousel,
+      },
+      {
+        id: DISCOVER_GENRES,
+        title: "Genres",
+        type: DiscoverSectionType.genres,
+      },
+    ];
+  }
+
+  async getDiscoverSectionItems(
+    section: DiscoverSection,
+    metadata: Metadata | undefined,
+  ): Promise<PagedResults<DiscoverSectionItem>> {
+    void metadata;
+
+    // Popular is compiled from the library catalog; the rest read the homepage,
+    // which the page cache serves once for all of them
+    if (section.id === DISCOVER_POPULAR) {
+      return { items: popularItems(await getLibrary()) };
+    }
+
+    const html = await fetchPage(homeUrl());
+    switch (section.id) {
+      case DISCOVER_FEATURED:
+        return { items: parseFeaturedItems(html) };
+      case DISCOVER_SEASONAL:
+        return { items: parseSeasonalItems(html) };
+      case DISCOVER_GENRES:
+        return { items: parseGenreItems(html) };
+      default:
+        return { items: [] };
+    }
+  }
+
   async getSearchResults(
-    query: SearchQuery<Metadata>,
+    query: SearchQuery<LNORISearchMetadata>,
     metadata: Metadata | undefined,
     sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     void sortingOption;
 
-    const matches = searchLibrary(await getLibrary(), query.title);
+    const matches = searchLibrary(await getLibrary(), query.title, query.metadata?.genre);
 
     const start = typeof metadata === "number" ? metadata : 0;
     const items = matches.slice(start, start + PAGE_SIZE).map(toSearchResultItem);
