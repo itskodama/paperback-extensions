@@ -3,8 +3,11 @@
 
 import {
   BasicRateLimiter,
+  DiscoverSectionType,
   type Chapter,
   type ChapterDetails,
+  type DiscoverSection,
+  type DiscoverSectionItem,
   type ExtensionImpl,
   type Metadata,
   type PagedResults,
@@ -16,16 +19,31 @@ import {
 
 import { MainInterceptor, fetchPage } from "./network";
 import {
+  DISCOVER_FEATURED,
+  DISCOVER_GENRES,
+  DISCOVER_POPULAR,
+  DISCOVER_SEASONAL,
   bookUrl,
+  homeUrl,
   libraryUrl,
+  parseBookPublishDate,
   parseChapterDetails,
-  parseChapterList,
+  parseFeaturedItems,
+  parseGenreItems,
   parseLibrary,
+  parseSeasonalItems,
+  parseSeasonalTitle,
   parseSeriesDetails,
+  parseVolumeList,
+  parseVolumeToc,
+  popularItems,
   searchLibrary,
   seriesUrl,
   toSearchResultItem,
+  volumeChapters,
   type LibraryEntry,
+  type LNORISearchMetadata,
+  type TocEntry,
 } from "./parser";
 import type LNORIConfig from "./pbconfig";
 
@@ -52,9 +70,33 @@ async function getLibrary(): Promise<LibraryEntry[]> {
   return entries;
 }
 
+// Splitting volumes into chapters costs one book-page fetch per volume, because the
+// site ignores Range requests and the TOC only exists there. Published volumes never
+// change, so the parsed TOCs are kept for the session and refreshes are free.
+type VolumeToc = { toc: TocEntry[]; publishDate?: Date };
+
+const tocCache = new Map<string, VolumeToc>();
+const TOC_CACHE_LIMIT = 500;
+
+async function getVolumeToc(path: string): Promise<VolumeToc> {
+  const cached = tocCache.get(path);
+  if (cached) return cached;
+
+  const html = await fetchPage(bookUrl(path));
+  const entry: VolumeToc = { toc: parseVolumeToc(html) };
+  const publishDate = parseBookPublishDate(html);
+  if (publishDate) entry.publishDate = publishDate;
+
+  if (tocCache.size >= TOC_CACHE_LIMIT) tocCache.clear();
+  tocCache.set(path, entry);
+  return entry;
+}
+
 export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
+  // The site is static behind Cloudflare's CDN and chapter listing fetches one page
+  // per volume, so the budget is set to keep a long series' listing under ~15s
   mainRateLimiter = new BasicRateLimiter("main", {
-    numberOfRequests: 10,
+    numberOfRequests: 20,
     bufferInterval: 10,
     ignoreImages: true,
   });
@@ -66,14 +108,73 @@ export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
     this.mainInterceptor.registerInterceptor();
   }
 
+  async getDiscoverSections(): Promise<DiscoverSection[]> {
+    // The seasonal block is titled by the page itself ("Summer 2026 Anime"), so the
+    // section name tracks the site; everything else is fixed
+    let seasonalTitle: string | undefined;
+    try {
+      seasonalTitle = parseSeasonalTitle(await fetchPage(homeUrl()));
+    } catch {
+      // A failed homepage fetch falls back to the static title
+    }
+
+    return [
+      {
+        id: DISCOVER_FEATURED,
+        title: "Featured",
+        type: DiscoverSectionType.featured,
+      },
+      {
+        id: DISCOVER_SEASONAL,
+        title: seasonalTitle ?? "Seasonal Anime",
+        type: DiscoverSectionType.simpleCarousel,
+      },
+      {
+        id: DISCOVER_POPULAR,
+        title: "Popular",
+        type: DiscoverSectionType.simpleCarousel,
+      },
+      {
+        id: DISCOVER_GENRES,
+        title: "Genres",
+        type: DiscoverSectionType.genres,
+      },
+    ];
+  }
+
+  async getDiscoverSectionItems(
+    section: DiscoverSection,
+    metadata: Metadata | undefined,
+  ): Promise<PagedResults<DiscoverSectionItem>> {
+    void metadata;
+
+    // Popular is compiled from the library catalog; the rest read the homepage,
+    // which the page cache serves once for all of them
+    if (section.id === DISCOVER_POPULAR) {
+      return { items: popularItems(await getLibrary()) };
+    }
+
+    const html = await fetchPage(homeUrl());
+    switch (section.id) {
+      case DISCOVER_FEATURED:
+        return { items: parseFeaturedItems(html) };
+      case DISCOVER_SEASONAL:
+        return { items: parseSeasonalItems(html) };
+      case DISCOVER_GENRES:
+        return { items: parseGenreItems(html) };
+      default:
+        return { items: [] };
+    }
+  }
+
   async getSearchResults(
-    query: SearchQuery<Metadata>,
+    query: SearchQuery<LNORISearchMetadata>,
     metadata: Metadata | undefined,
     sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     void sortingOption;
 
-    const matches = searchLibrary(await getLibrary(), query.title);
+    const matches = searchLibrary(await getLibrary(), query.title, query.metadata?.genre);
 
     const start = typeof metadata === "number" ? metadata : 0;
     const items = matches.slice(start, start + PAGE_SIZE).map(toSearchResultItem);
@@ -88,11 +189,30 @@ export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
   }
 
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
-    // The series page lists every volume, so the whole list gets returned
+    // The series page lists every volume; each volume's own TOC then yields its
+    // chapters. A volume whose page cannot be fetched degrades to one whole-volume
+    // chapter instead of failing the whole list.
     void sinceDate;
 
     const html = await fetchPage(seriesUrl(sourceManga.mangaId));
-    return parseChapterList(html, sourceManga);
+    const volumes = parseVolumeList(html);
+
+    const perVolume = await Promise.all(
+      volumes.map(async (volume) => {
+        try {
+          const { toc, publishDate } = await getVolumeToc(volume.path);
+          return volumeChapters(volume, toc, publishDate, sourceManga);
+        } catch {
+          return volumeChapters(volume, [], undefined, sourceManga);
+        }
+      }),
+    );
+
+    const chapters = perVolume.flat();
+    chapters.forEach((chapter, index) => {
+      chapter.sortingIndex = index;
+    });
+    return chapters;
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
