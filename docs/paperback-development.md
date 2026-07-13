@@ -137,6 +137,11 @@ original featured-carousel bug.
   A comic source returns the images variant; the html variant has its own rules (see
   [`html` chapters must be well-formed XHTML](#html-chapters-must-be-well-formed-xhtml--device-only)).
 - **`Chapter.volume` unset renders as "Vol. TBA".** For a source with no volumes, set `volume: 0`.
+- **Repeating a `chapNum` across volumes collapses chapters** — the app's version-priority system
+  treats Vol 1 Ch 1 and Vol 2 Ch 1 as duplicate versions of one chapter until the user enables
+  **"Chapters Unique by Volume"** (Manage Version Priority) for the source. No `ExtensionInfo` or
+  `Chapter` field can turn that on from the extension side; say it in the extension's
+  `description`, which the app shows when browsing the repo.
 - **Networking** goes through `Application.scheduleRequest(request)`, which resolves to
   `[Response, ArrayBuffer]`. Redirects are not transparently followed — inspect the `3xx` status and
   the `Location` header yourself if the host redirects. Convert bodies with
