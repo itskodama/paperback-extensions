@@ -27,7 +27,7 @@ import {
   toSearchResultItem,
   type LibraryEntry,
 } from "./parser";
-import type LnoriConfig from "./pbconfig";
+import type LNORIConfig from "./pbconfig";
 
 const PAGE_SIZE = 50;
 
@@ -52,7 +52,7 @@ async function getLibrary(): Promise<LibraryEntry[]> {
   return entries;
 }
 
-export class LnoriExtension implements ExtensionImpl<typeof LnoriConfig> {
+export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
   mainRateLimiter = new BasicRateLimiter("main", {
     numberOfRequests: 10,
     bufferInterval: 10,
@@ -101,4 +101,4 @@ export class LnoriExtension implements ExtensionImpl<typeof LnoriConfig> {
   }
 }
 
-export const Lnori = new LnoriExtension();
+export const LNORI = new LNORIExtension();

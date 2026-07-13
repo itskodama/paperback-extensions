@@ -74,6 +74,44 @@ in the row's `title`, then resolve the id back to the value on selection.
 - `AdvancedSearchForm.getSearchQueryMetadata()` runs after the user submits; its return is the
   `Metadata` above (so the undefined rule applies). `requiresExplicitSubmission` is always true for it.
 
+## `html` chapters must be well-formed XHTML — **device-only**
+
+The `html` `ChapterDetails` variant (novel sources) is parsed on device by an XML parser, not an
+HTML one. Feeding it ordinary HTML5 fails at open with a libxml2-style error naming the first
+violation, e.g.:
+
+```
+error on line 1 at column 414: Opening and ending tag mismatch: img line 1 and picture
+```
+
+Real markup is full of things XML rejects that every browser accepts: unclosed void elements
+(`<img …>`, `<hr>`, `<br>`, `<source …>`), undeclared namespace prefixes (EPUB-derived content
+carries `epub:type` attributes), and named entities beyond XML's five (`&nbsp;` broke real
+volumes on device; only `amp`/`lt`/`gt`/`quot`/`apos` are predefined — map the rest to numeric
+references like `&#160;`). A source must transform scraped content: self-close void tags, strip
+or declare foreign-namespace attributes, and normalise entities.
+
+Well-formedness makes it parse; the **XHTML namespace** makes it render. Serve a complete
+document, not a fragment:
+
+```html
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head></head>
+  <body>
+    …content…
+  </body>
+</html>
+```
+
+Without that `xmlns`, the XML parses but every element is anonymous — no block semantics, so an
+entire book renders as one run-together wrapped line, and `<img>` is not treated as an image (a
+bare fragment showed images only sporadically). Inserting literal newlines does nothing; the fix
+is the namespace, after which `<p>`/`<img>` behave like HTML.
+
+The Node test runner accepts any string here, so validate locally by dumping the transformed
+chapter and running `xmllint --noout` over it — xmllint is the same libxml2 that produces the
+on-device error, which makes it a faithful proxy for the parse (not for rendering).
+
 ## Capabilities are type-enforced
 
 `pbconfig`'s `capabilities` array drives an `ExtensionImpl<typeof config>` conditional type that
@@ -96,7 +134,8 @@ original featured-carousel bug.
 - **`MangaInfo.rating` is a 0–1 fraction.** The type is a bare `number` with no doc, but the app
   renders it as a percentage. A source that rates out of 10 must divide by 10, or a 9.2 shows as 920%.
 - **`ChapterDetails` is a union** of image (`pages: string[]`), `html` (novels), and `file` variants.
-  A comic source returns the images variant.
+  A comic source returns the images variant; the html variant has its own rules (see
+  [`html` chapters must be well-formed XHTML](#html-chapters-must-be-well-formed-xhtml--device-only)).
 - **`Chapter.volume` unset renders as "Vol. TBA".** For a source with no volumes, set `volume: 0`.
 - **Networking** goes through `Application.scheduleRequest(request)`, which resolves to
   `[Response, ArrayBuffer]`. Redirects are not transparently followed — inspect the `3xx` status and

@@ -227,6 +227,66 @@ export function parseChapterList(html: string, sourceManga: SourceManga): Chapte
 const CONTENT_START = '<article class="content-body';
 const CONTENT_END = "</article>";
 
+// The site wraps each illustration in <picture> with jxl/avif <source> fallbacks
+const PICTURE = /<picture>([\s\S]*?)<\/picture>/g;
+const IMG_SRC = /<img\b[^>]*\bsrc="([^"]*)"/;
+const IMG_ALT = /<img\b[^>]*\balt="([^"]*)"/;
+// HTML5 void elements, which the site serializes unclosed
+const VOID_TAG =
+  /<(img|br|hr|source|wbr|area|col|embed|input|link|meta|track|param|base)(\b[^>]*?)\s*\/?>/g;
+const EPUB_ATTR = /\s+epub:type="[^"]*"/g;
+const NAMED_REF = /&([a-zA-Z][a-zA-Z0-9]*);/g;
+
+// XML predefines only these five; every other named entity is fatal to the reader
+const XML_ENTITIES = new Set(["amp", "lt", "gt", "quot", "apos"]);
+
+// Code points for the named entities HTML books actually use
+const ENTITY_CODEPOINTS: Record<string, number> = {
+  copy: 0xa9,
+  deg: 0xb0,
+  eacute: 0xe9,
+  hellip: 0x2026,
+  laquo: 0xab,
+  ldquo: 0x201c,
+  lsquo: 0x2018,
+  mdash: 0x2014,
+  middot: 0xb7,
+  nbsp: 0xa0,
+  ndash: 0x2013,
+  raquo: 0xbb,
+  rdquo: 0x201d,
+  rsquo: 0x2019,
+  shy: 0xad,
+  times: 0xd7,
+  trade: 0x2122,
+};
+
+// The app parses an html chapter as XML, so well-formedness is fatal on every
+// count: unclosed void tags, the undeclared epub: namespace prefix, and any named
+// entity beyond XML's five (`&nbsp;` broke real volumes). Elements also only get
+// their HTML semantics inside an XHTML-namespaced document — served as a bare
+// fragment, <p> and <img> are anonymous XML elements, the whole book renders as
+// one run-together line, and images are ignored.
+function toXhtml(content: string): string {
+  const body = content
+    .replace(PICTURE, (wrapper: string) => {
+      const src = IMG_SRC.exec(wrapper)?.[1];
+      if (!src) return "";
+      const alt = IMG_ALT.exec(wrapper)?.[1] ?? "";
+      return `<img src="${src}" alt="${alt}"/>`;
+    })
+    .replace(EPUB_ATTR, "")
+    .replace(VOID_TAG, "<$1$2/>")
+    .replace(NAMED_REF, (match: string, name: string) => {
+      if (XML_ENTITIES.has(name)) return match;
+      const codePoint = ENTITY_CODEPOINTS[name];
+      // An unmapped entity degrades to visible text instead of a fatal parse error
+      return codePoint === undefined ? `&amp;${name};` : `&#${codePoint};`;
+    });
+
+  return `<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>${body}</body></html>`;
+}
+
 export function parseChapterDetails(html: string, chapter: Chapter): ChapterDetails {
   const start = html.indexOf(CONTENT_START);
   const end = html.lastIndexOf(CONTENT_END);
@@ -238,6 +298,6 @@ export function parseChapterDetails(html: string, chapter: Chapter): ChapterDeta
     id: chapter.chapterId,
     mangaId: chapter.sourceManga.mangaId,
     type: "html",
-    html: html.slice(start, end + CONTENT_END.length),
+    html: toXhtml(html.slice(start, end + CONTENT_END.length)),
   };
 }
