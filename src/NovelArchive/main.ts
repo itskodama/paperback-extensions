@@ -18,7 +18,7 @@ import {
 } from "@paperback/types";
 
 import { NovelArchiveSearchForm, type NovelArchiveSearchMetadata } from "./forms";
-import { MainInterceptor, apiRequest, buildQuery } from "./network";
+import { ApiError, MainInterceptor, apiRequest, buildQuery } from "./network";
 import {
   chaptersFromDetail,
   genreChipItems,
@@ -164,9 +164,28 @@ export class NovelArchiveExtension implements ExtensionImpl<typeof NovelArchiveC
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
-    const path = `/novels/${encodeURIComponent(chapter.sourceManga.mangaId)}/chapters/${encodeURIComponent(chapter.chapterId)}`;
-    const response = await apiRequest<ChapterJson>(path);
-    return toChapterDetails(response, chapter);
+    const mangaId = chapter.sourceManga.mangaId;
+    const chapterPath = (id: string) =>
+      `/novels/${encodeURIComponent(mangaId)}/chapters/${encodeURIComponent(id)}`;
+
+    try {
+      const response = await apiRequest<ChapterJson>(chapterPath(chapter.chapterId));
+      return toChapterDetails(response, chapter);
+    } catch (error) {
+      // Position-based chapterId is reliable for every novel sampled except
+      // ones with a gap at the start (see parser.ts) — only retry when this
+      // specific id doesn't exist and a novel-wide offset was detected; never
+      // retry on any other error, and never try the offset-adjusted id first
+      // (verified: for some novels that silently returns a *different*
+      // chapter's content rather than 404ing)
+      const offset = chapter.additionalInfo?.offset;
+      if (error instanceof ApiError && error.status === 404 && offset) {
+        const fallbackId = String(Number(chapter.chapterId) + Number(offset));
+        const response = await apiRequest<ChapterJson>(chapterPath(fallbackId));
+        return toChapterDetails(response, chapter);
+      }
+      throw error;
+    }
   }
 }
 

@@ -186,55 +186,84 @@ export function toSourceManga(detail: NovelJson, mangaId: string): SourceManga {
 // chapter list, so getChapters needs no extra request at all
 
 // The `/chapters/<n>` endpoint is keyed by each novel's own internal chapter
-// number, which for most novels equals array position exactly — but for some
-// (their catalog genuinely starts at "Chapter 2"; chapter 1 was never imported)
-// is offset from position by a constant amount (verified: "Archdemon's Dilemma:
-// Volume 15" is uniformly position+1, so array position 1 — text "Chapter 2" —
-// only fetches successfully as `/chapters/2`; `/chapters/1` 404s). That constant
-// offset is only trustworthy when embedded "Chapter N" numbers (a) appear on
-// most entries and (b) agree on a *single* offset from position — otherwise the
-// numbers aren't a reliable global numbering scheme at all. Verified on "The
-// Beginning After The End": 99% of entries match "Chapter N", but the offsets
-// implied are scattered across -1/-2/-3/-6 (human-entered titles drifting from
-// source-side renumbering/splits) with no value above 54% agreement, while
-// `/chapters/<n>` there is confirmed to be plain array position throughout
-// (`/chapters/517` returns array position 517's content — whose own title text
-// says "Chapter 511" — not whatever entry embeds the number 517). Trusting
-// per-entry text in that case would silently fetch the wrong chapter.
+// number. For fetching, that is verified to be **array position** for every
+// novel sampled except one: "Archdemon's Dilemma: Volume 15", whose catalog
+// genuinely starts at "Chapter 2" (chapter 1 was never imported), where
+// position-based `/chapters/1` 404s and only `/chapters/2` (position + 1)
+// works. Critically, the reverse mistake is worse than a 404: "Omniscient
+// Reader's Viewpoint" opens with "Chapter 0" at position 1, so its embedded
+// numbers imply offset -1 throughout — but `/chapters/0` is rejected
+// ("Invalid chapter number") and, worse, `/chapters/1` (what a naive offset-1
+// scheme would skip past) silently returns position 1's own content under a
+// *different* position's request. Trusting embedded numbers for the fetch key
+// therefore isn't just occasionally wrong, it can silently fetch the wrong
+// chapter with no error at all. `chapterId` is plain array position,
+// unconditionally; `getChapterDetails` only falls back to an offset-adjusted
+// id after array position specifically 404s.
+//
+// A constant offset is only trustworthy *for display* (`chapNum`) when
+// embedded "Chapter N" numbers (a) appear on most entries and (b) agree on a
+// single offset from position — otherwise the numbers aren't a reliable
+// global numbering scheme. Verified on "The Beginning After The End": 99% of
+// entries match "Chapter N", but the offsets implied are scattered across
+// -1/-2/-3/-6 (human-entered titles drifting from source-side
+// renumbering/splits) with no value above 54% agreement, while `/chapters/<n>`
+// there is confirmed to be plain array position throughout (`/chapters/517`
+// returns position 517's content — whose own title text says "Chapter 511").
 const MIN_MATCH_RATIO = 0.5;
 const MIN_OFFSET_CONSENSUS = 0.9;
 
-// "Chapter 001 - Title", "Chapter 2", "chapter 3", "Chapter 1: Title" all match;
-// the remainder (if any) becomes the display title so Paperback's own "Chapter N"
-// label isn't duplicated by the chapter's own title text
+// "Chapter 001 - Title", "Chapter 2", "chapter 3", "Chapter 1: Title" all match
 const CHAPTER_PREFIX = /^chapter\s+0*(\d+)\s*[-:.—]?\s*(.*)$/i;
+// Same shape, without the leading "chapter" keyword — used to catch a redundant
+// repeated number in the remainder ("Chapter 1 - 1: Nightmare Begins")
+const NUMBER_PREFIX = /^0*(\d+)\s*[-:.—]?\s*(.*)$/;
+const NUMERIC_ONLY = /^[\d.\s]*$/;
 
-type ParsedChapterName = { number?: number; remainder?: string };
-
-function parseChapterName(name: string): ParsedChapterName {
+function parseChapterNumber(name: string): number | undefined {
   const match = CHAPTER_PREFIX.exec(name.trim());
-  if (!match) return {};
-  const remainder = match[2]?.trim();
-  return { number: Number(match[1]), remainder: remainder ? remainder : undefined };
+  return match ? Number(match[1]) : undefined;
 }
 
-type NumberingOffset = { offset: number; trusted: boolean };
+// Always strips a "Chapter N" prefix (and a redundant repeated inner number,
+// e.g. Shadow Slave / Reverend Insanity's "Chapter 1 - 1: Nightmare Begins")
+// when present, *regardless* of whether N is this novel's trustworthy real
+// chapter number — Paperback shows its own chapNum natively, so any visible
+// competing number in the title is confusing whether or not it happens to be
+// correct (verified: Re:Zero's untrusted "CHAPTER 112: THE INSTINCT TO REJECT
+// WEAKNESS" reads far better as "THE INSTINCT TO REJECT WEAKNESS"). Text that
+// never claimed to be "Chapter N" in the first place — an Arc/Volume scheme,
+// or a genuinely custom-titled chapter — is shown untouched. A remainder left
+// with nothing but digits/punctuation after stripping (a bare secondary
+// number with no real title, e.g. "The Beginning After The End"'s
+// "Chapter 523 - 517") carries no information worth showing at all.
+function extractTitle(name: string): string | undefined {
+  const trimmed = name.trim();
+  const outer = CHAPTER_PREFIX.exec(trimmed);
+  if (!outer) return trimmed || undefined;
 
-function detectNumberingOffset(names: string[]): NumberingOffset {
+  let remainder = (outer[2] ?? "").trim();
+  const inner = NUMBER_PREFIX.exec(remainder);
+  if (inner && Number(inner[1]) === Number(outer[1])) {
+    remainder = (inner[2] ?? "").trim();
+  }
+
+  return remainder && !NUMERIC_ONLY.test(remainder) ? remainder : undefined;
+}
+
+function detectNumberingOffset(names: string[]): number {
   const offsetCounts = new Map<number, number>();
   let matched = 0;
 
   names.forEach((name, index) => {
-    const { number } = parseChapterName(name);
+    const number = parseChapterNumber(name);
     if (number === undefined) return;
     matched++;
     const offset = number - (index + 1);
     offsetCounts.set(offset, (offsetCounts.get(offset) ?? 0) + 1);
   });
 
-  if (names.length === 0 || matched / names.length < MIN_MATCH_RATIO) {
-    return { offset: 0, trusted: false };
-  }
+  if (names.length === 0 || matched / names.length < MIN_MATCH_RATIO) return 0;
 
   let bestOffset = 0;
   let bestCount = 0;
@@ -245,36 +274,27 @@ function detectNumberingOffset(names: string[]): NumberingOffset {
     }
   }
 
-  return bestCount / matched >= MIN_OFFSET_CONSENSUS
-    ? { offset: bestOffset, trusted: true }
-    : { offset: 0, trusted: false };
+  return bestCount / matched >= MIN_OFFSET_CONSENSUS ? bestOffset : 0;
 }
 
 export function chaptersFromDetail(detail: NovelJson, sourceManga: SourceManga): Chapter[] {
-  const { offset, trusted } = detectNumberingOffset(detail.chapter_names);
+  const offset = detectNumberingOffset(detail.chapter_names);
 
   return detail.chapter_names.map((name, index) => {
-    const chapNum = index + 1 + offset;
-    const { number, remainder } = parseChapterName(name);
-    const trimmedName = name.trim();
-    // Only strip the "Chapter N" prefix when the *whole novel's* numbering is
-    // trusted and this entry's own number matches it — otherwise (an untrusted
-    // novel, or a stray entry whose number doesn't fit even in a trusted one)
-    // show the full name so nothing embedded in the title is silently
-    // misrepresented. Checking novel-level trust (not just this entry's number)
-    // matters: an untrusted novel can still have one entry whose parsed number
-    // coincidentally equals its position, which would otherwise strip its title
-    // down to leftover fragment text instead of showing the full name.
-    const title = trusted && number === chapNum ? remainder : trimmedName || undefined;
+    const position = index + 1;
+    const title = extractTitle(name);
 
     const chapter: Chapter = {
-      chapterId: String(chapNum),
+      chapterId: String(position),
       sourceManga,
       langCode: "en",
-      chapNum,
+      chapNum: position + offset,
       volume: 0,
     };
     if (title) chapter.title = title;
+    // getChapterDetails' fallback candidate when position-based fetch 404s —
+    // only meaningful (and only ever tried) when this differs from position
+    if (offset !== 0) chapter.additionalInfo = { offset: String(offset) };
     return chapter;
   });
 }

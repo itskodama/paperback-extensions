@@ -73,7 +73,20 @@ function rememberResponse(path: string, payload: unknown): void {
   responseCache.set(path, { fetchedAt: Date.now(), payload });
 }
 
-type ApiError = { error?: string };
+type ApiErrorBody = { error?: string };
+
+// Callers that need to distinguish "this specific id doesn't exist" (404, safe
+// to retry with an alternate id) from any other failure (network error, rate
+// limit, etc. — never safe to retry) check `status` rather than the message
+// text, since the API's wording isn't a stable contract
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 // novelarchive.cc's API returns clean JSON with correct status codes and a
 // {"error": "..."} body on failure, so there is no markup to scrape here at all
@@ -107,12 +120,12 @@ async function requestJson<T>(path: string): Promise<T> {
   if (response.status < 200 || response.status >= 300) {
     let message = `HTTP ${response.status}`;
     try {
-      const body = JSON.parse(text) as ApiError;
+      const body = JSON.parse(text) as ApiErrorBody;
       if (body.error) message = body.error;
     } catch {
       // Non-JSON error body; fall back to the plain status message
     }
-    throw new Error(`NovelArchive returned ${message} for ${path}`);
+    throw new ApiError(response.status, `NovelArchive returned ${message} for ${path}`);
   }
 
   return JSON.parse(text) as T;
