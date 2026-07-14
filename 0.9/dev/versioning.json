@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-07-13T03:59:39.027Z",
+  "buildTime": "2026-07-14T01:09:52.341Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -50,6 +50,27 @@
         }
       ],
       "id": "LNORI"
+    },
+    {
+      "name": "NovelArchive",
+      "description": "Read web novels from novelarchive.cc.",
+      "version": "1.0.0-alpha.0",
+      "icon": "icon.png",
+      "language": "en",
+      "contentRating": "MATURE",
+      "capabilities": [
+        4,
+        64,
+        1
+      ],
+      "badges": [],
+      "developers": [
+        {
+          "name": "Kodama",
+          "github": "https://github.com/itskodama"
+        }
+      ],
+      "id": "NovelArchive"
     }
   ]
 }
