@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-07-14T02:52:07.592Z",
+  "buildTime": "2026-07-14T03:30:54.619Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -53,7 +53,7 @@
     },
     {
       "name": "NovelArchive",
-      "description": "Read web novels from novelarchive.cc.",
+      "description": "Read web novels from novelarchive.cc. Titles with more than one upstream source show each as a separate chapter version — use Manage Version Priority to pick your preferred one.",
       "version": "1.0.0-alpha.0",
       "icon": "icon.png",
       "language": "en",
