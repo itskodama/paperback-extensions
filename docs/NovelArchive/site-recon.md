@@ -68,10 +68,13 @@ Errors are clean JSON with correct status codes: `{"error": "Novel not found"}` 
   one-fetch-per-volume TOC — but the numbering itself needs real work; see below.
 - No per-chapter publish date is exposed anywhere (`latest_release` on the novel is frequently the
   literal string `"Unknown"`) — omit `Chapter.publishDate` rather than fabricate one.
-- Discover sections map close to 1:1 onto existing endpoints: `trending` → Popular,
-  `editors-choice` → Editor's Choice, `recently-updated` → Latest Updates, `genres` → chip row. No
-  homepage HTML scraping needed at all (contrast LNORI, which reads its featured/seasonal carousels
-  off rendered markup).
+- Discover sections map close to 1:1 onto existing endpoints: `editors-choice` → the `featured` hero
+  (it's the site's own human-curated pick, the correct analog to LNORI's homepage hero / AsuraScans'
+  `is_featured` flag — `trending` is algorithmic and maps to a plain `simpleCarousel` instead, same
+  category as `recently-updated`), `genres` → chip row. No homepage HTML scraping needed at all
+  (contrast LNORI, which reads its featured/seasonal carousels off rendered markup) — `rating` and
+  `views_number` on the novel JSON are enough to build real `infoItems` for the hero cards, the same
+  pattern AsuraScans uses for its own featured carousel.
 - Search: `query.title` → `search` param; `fuzzy=1` by default matches the site's own behaviour.
   Sort (`recent`/`popular`/`rating`/`chapters`) and status (`all`/`ongoing`/`completed`/`hiatus`)
   are enumerable `SortingOption`s / filter chips. Multi-select genre include/exclude with an
@@ -107,6 +110,18 @@ exists alongside it. All of these legitimately share overlapping chapNum ranges 
 translations/cuts of the same story, exactly what Paperback's version-priority system is for — see
 below), so the app needs `version` set on every one of them to tell them apart rather than silently
 collapsing all but one.
+
+Each source's own title text needs the same "don't show a competing number" treatment as the merged
+endpoint, but the shapes differ per source — verified directly, not assumed: `fucknovelpia` uses the
+usual `"Chapter N ..."`; `ranobes` is a bare local/arc-relative number with nothing else (`"1"`,
+`"2"`, `"3"`, resetting per arc — pure noise, suppressed); `novelfire` is a bare
+`"<number> Title"` with **no** `"Chapter"` keyword at all (`"1 Nightmare Begins"`) — found on device,
+not in recon, because `extractTitle`'s `"Chapter N"`-prefix regex doesn't match text that never says
+"Chapter" in the first place, so this one slipped through unstripped until a real device screenshot
+caught it. `extractSourceTitle` strips this bare-number case too, but only when the leading number
+equals that entry's own real `number` — the same mismatch-guard `extractTitle` already applies to
+the "Chapter N" case, for the same reason (a stray unrelated leading number should never be treated
+as this chapter's number just because it's first in the string).
 
 The merged-endpoint path (`chaptersFromDetail`) is deliberately conservative, since — unlike a real
 source's clean `number` field — its own numbering has no ground truth to fall back on beyond text

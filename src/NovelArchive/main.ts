@@ -26,6 +26,7 @@ import {
   toChapterDetails,
   toChapterDetailsFromSource,
   toDiscoverItem,
+  toFeaturedItem,
   toSearchResultItem,
   toSourceManga,
   type ChapterJson,
@@ -79,12 +80,12 @@ export class NovelArchiveExtension implements ExtensionImpl<typeof NovelArchiveC
 
   async getDiscoverSections(): Promise<DiscoverSection[]> {
     return [
-      { id: DISCOVER_TRENDING, title: "Trending", type: DiscoverSectionType.simpleCarousel },
       {
         id: DISCOVER_EDITORS_CHOICE,
         title: "Editor's Choice",
-        type: DiscoverSectionType.simpleCarousel,
+        type: DiscoverSectionType.featured,
       },
+      { id: DISCOVER_TRENDING, title: "Trending", type: DiscoverSectionType.simpleCarousel },
       {
         id: DISCOVER_RECENTLY_UPDATED,
         title: "Recently Updated",
@@ -104,13 +105,17 @@ export class NovelArchiveExtension implements ExtensionImpl<typeof NovelArchiveC
       return { items: genreChipItems() };
     }
 
+    if (section.id === DISCOVER_EDITORS_CHOICE) {
+      const response = await apiRequest<NovelsListResponse>(
+        `/novels/editors-choice?limit=${DISCOVER_PAGE_SIZE}`,
+      );
+      return { items: response.novels.map(toFeaturedItem) };
+    }
+
     let endpoint: string;
     switch (section.id) {
       case DISCOVER_TRENDING:
         endpoint = `/novels/trending?limit=${DISCOVER_PAGE_SIZE}`;
-        break;
-      case DISCOVER_EDITORS_CHOICE:
-        endpoint = `/novels/editors-choice?limit=${DISCOVER_PAGE_SIZE}`;
         break;
       case DISCOVER_RECENTLY_UPDATED:
         endpoint = `/novels/recently-updated?limit=${DISCOVER_PAGE_SIZE}`;

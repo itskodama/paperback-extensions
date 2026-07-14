@@ -28,6 +28,9 @@ export type NovelJson = {
   description: string;
   total_chapters: string;
   release_status: string;
+  views_number: number;
+  rating: number;
+  rating_count: number;
 };
 
 export type NovelsListResponse = {
@@ -109,6 +112,51 @@ export function toDiscoverItem(novel: NovelJson): DiscoverSectionItem {
     title: novel.title,
     subtitle: novel.author,
     imageUrl: absoluteCoverUrl(novel.cover_url),
+    contentRating: contentRatingFor(splitGenres(novel.genres)),
+  };
+}
+
+type InfoItem = { symbol: string; text: string };
+
+function titleCase(value: string): string {
+  return value.length > 0 ? `${value[0]!.toUpperCase()}${value.slice(1)}` : value;
+}
+
+// 255678 -> "256K", 3965770 -> "4M"
+function formatCount(value: number): string {
+  if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`;
+  if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
+  return String(value);
+}
+
+function formatRating(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+// A hero card shows a sentence or two on one line, not the whole synopsis
+function shortSummary(text: string, limit = 200): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= limit) return flat;
+  const cut = flat.slice(0, limit);
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "));
+  return stop > 60 ? cut.slice(0, stop + 1) : `${cut.trimEnd()}…`;
+}
+
+export function toFeaturedItem(novel: NovelJson): DiscoverSectionItem {
+  const infoItems: InfoItem[] = [];
+  if (novel.rating > 0) infoItems.push({ symbol: "star.fill", text: formatRating(novel.rating) });
+  if (novel.views_number > 0) {
+    infoItems.push({ symbol: "eye.fill", text: formatCount(novel.views_number) });
+  }
+
+  return {
+    type: "featuredCarouselItem",
+    mangaId: novel.id,
+    title: novel.title,
+    imageUrl: absoluteCoverUrl(novel.cover_url),
+    supertitle: novel.release_status ? titleCase(novel.release_status) : undefined,
+    infoItems: infoItems.length > 0 ? (infoItems as [InfoItem] | [InfoItem, InfoItem]) : undefined,
+    summary: novel.description ? shortSummary(novel.description) : undefined,
     contentRating: contentRatingFor(splitGenres(novel.genres)),
   };
 }
@@ -333,14 +381,24 @@ export type SourceChapterListResponse = { chapters: SourceChapterListEntry[] };
 
 export type SourceChapterDetailResponse = { content_html: string };
 
-// A source's own title text is often just a bare local/arc-relative number
-// with no descriptive text at all (Ranobes: "1", "2", "3", resetting per
-// arc) — pure noise next to Paperback's own chapNum label, same principle as
-// extractTitle's numeric-only suppression, just without a "Chapter" prefix
-// to strip first
-function extractSourceTitle(title: string): string | undefined {
+// A source's own title text takes a few different shapes: a bare local/
+// arc-relative number with no descriptive text at all (Ranobes: "1", "2",
+// "3", resetting per arc — pure noise next to Paperback's own chapNum label);
+// the usual "Chapter N ..." (fucknovelpia); or a bare "<number> Title" with
+// no "Chapter" keyword at all (NovelFire: "1 Nightmare Begins") — verified
+// directly against the API, not assumed. The bare-number case is only
+// stripped when it equals this chapter's own real number, the same
+// mismatch-guard extractTitle already applies to the "Chapter N" case.
+function extractSourceTitle(title: string, number: number): string | undefined {
   const trimmed = title.trim();
   if (!trimmed || NUMERIC_ONLY.test(trimmed)) return undefined;
+
+  const bare = NUMBER_PREFIX.exec(trimmed);
+  if (bare && Number(bare[1]) === number) {
+    const remainder = (bare[2] ?? "").trim();
+    return remainder && !NUMERIC_ONLY.test(remainder) ? remainder : undefined;
+  }
+
   return extractTitle(trimmed);
 }
 
@@ -358,7 +416,7 @@ export function chaptersFromSource(
       volume: 0,
       version: source.label,
     };
-    const title = extractSourceTitle(entry.title);
+    const title = extractSourceTitle(entry.title, entry.number);
     if (title) chapter.title = title;
     return chapter;
   });
