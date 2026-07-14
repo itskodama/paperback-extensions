@@ -61,8 +61,8 @@ Errors are clean JSON with correct status codes: `{"error": "Novel not found"}` 
   inside a full `xmlns="http://www.w3.org/1999/xhtml"` document, escaping `&`/`<`/`>` (none observed
   in sampled chapters, but don't assume that holds for all 26k novels).
 - **Chapter list needs zero extra requests.** `chapter_names` on the novel-detail response already
-  gives the complete ordered title list; `chapNum` is just the 1-based index, `chapterId` is
-  `<novelId>#<n>`. This is a meaningfully cheaper shape than LNORI's one-fetch-per-volume TOC.
+  gives the complete ordered title list. This is a meaningfully cheaper shape than LNORI's
+  one-fetch-per-volume TOC — but the numbering itself needs real work; see below.
 - No per-chapter publish date is exposed anywhere (`latest_release` on the novel is frequently the
   literal string `"Unknown"`) — omit `Chapter.publishDate` rather than fabricate one.
 - Discover sections map close to 1:1 onto existing endpoints: `trending` → Popular,
@@ -80,6 +80,61 @@ Errors are clean JSON with correct status codes: `{"error": "Novel not found"}` 
   resolves to one canonical source regardless of how many exist, and the site's own primary reading
   flow never exposes source choice either. Skip `/sources` entirely unless a later version wants
   per-source chapter switching.
+
+## Chapter numbering — array position is not the fetch key
+
+`chapter_names` looks like a simple 1-based list, and the obvious implementation (`chapterId =
+String(index + 1)`) is wrong for a meaningful slice of the catalog. Found by testing specific
+novels, not by reading docs — the API has no spec beyond what it does.
+
+**`GET /novels/<id>/chapters/<n>` is keyed by each novel's own internal chapter number, which for
+most novels equals array position exactly — but not always, and there is no field anywhere that
+tells you which case you're in.** Two confirmed failure modes:
+
+1. **Constant offset.** "An Archdemon's Dilemma: How to Love Your Elf Bride: Volume 15"
+   (`6a55244d1402dd55bf114117`) has 19 entries, text-only `"Chapter 2"` through `"Chapter 20"` — the
+   real "Chapter 1" was simply never imported. `chapter_names[0]` is `"Chapter 2"`, and only
+   `/chapters/2` returns it; `/chapters/1` is `{"error": "Chapter does not exist"}`. Array index+1
+   here is off by exactly one **for every entry**, forever.
+2. **Drifting, unreliable embedded numbers.** "The Beginning After The End" (`69ffabdfa5f4c7d1b734e239`,
+   532 chapters) is the opposite trap: `/chapters/<n>` **is** plain array position throughout
+   (verified: `/chapters/517` returns array position 517's content, whose own title text reads
+   `"Chapter 511: Folded Space"` — not whatever entry embeds the number 517), but 99% of its
+   `chapter_names` entries still start with `"Chapter N"`, because the site's human-entered titles
+   drifted from the real position due to source-side renumbering/splits over the story's history.
+   Trusting the embedded number here silently fetches the wrong chapter's content. Sampling the
+   implied offset (`embedded number − position`) across the whole array shows why this can't be
+   fixed per-entry: it's scattered across `-1`/`-2`/`-3`/`-6` with no value above 54% agreement — a
+   trust threshold has to look at the _whole array's_ consensus, not any single entry.
+3. A third novel, "Re:Zero Kara Hajimeru Isekai Seikatsu" (`6a0c74d64f942c668d6981b1`, 675 chapters),
+   is `/chapters/<n>` == array position throughout, and its `chapter_names` are almost entirely
+   `"Arc N – M: Title"` / `"Volume N, M [Title]"` text with **no** leading "Chapter" — except two
+   stray entries that happen to start with the literal word "Chapter" followed by an ARC-relative
+   number wildly inconsistent with their real position (`"CHAPTER 112: …"` at real chapter 162,
+   `"Chapter 47 […]"` at real chapter 231). A per-entry regex match with no whole-array sanity check
+   would trust those two and corrupt everything downstream of them.
+
+**The fix implemented in `parser.ts`** (`detectNumberingOffset`): parse a `"Chapter N"` prefix out of
+every entry, then compute `offset = embeddedNumber − position` for every entry that matched. Only
+trust a single consensus offset — and apply it uniformly to every entry, matched or not, as
+`chapNum = position + offset` — when **both** hold across the whole array:
+
+- at least half the entries produced a parseable number (rules out Re:Zero's two strays), and
+- one offset value accounts for at least 90% of the entries that did match (rules out TBATE's
+  drifting titles; Archdemon's Dilemma and every other clean novel sampled hit 100% agreement here).
+
+Otherwise the offset defaults to `0` (plain array position) for the whole novel — which is exactly
+what TBATE and Re:Zero need, and is the same safe default a totally unnumbered novel already needed.
+`chapterId` and `chapNum` end up as the _same_ derived value (`position + offset`); there's no need
+to keep them separate once the offset is known. The title only has the `"Chapter N"` prefix stripped
+when the whole novel's numbering was trusted **and** that specific entry's parsed number matches the
+resolved value — an entry whose number doesn't fit (or a novel with no trusted offset at all) keeps
+its full original text as the title instead of a misleadingly-truncated fragment.
+
+No amount of per-novel special-casing closes this fully; a novel with, say, a genuine trusted offset
+_and_ one interior entry with a typo'd number is still a real possibility this hasn't been tested
+against. The consensus-offset approach is a defensible default given what's actually been observed
+across several novels, not a proof.
 
 ## Risks
 

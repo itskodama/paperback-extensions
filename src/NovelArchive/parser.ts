@@ -185,18 +185,97 @@ export function toSourceManga(detail: NovelJson, mangaId: string): SourceManga {
 // The novel-detail response's chapter_names is already the complete, ordered
 // chapter list, so getChapters needs no extra request at all
 
+// The `/chapters/<n>` endpoint is keyed by each novel's own internal chapter
+// number, which for most novels equals array position exactly — but for some
+// (their catalog genuinely starts at "Chapter 2"; chapter 1 was never imported)
+// is offset from position by a constant amount (verified: "Archdemon's Dilemma:
+// Volume 15" is uniformly position+1, so array position 1 — text "Chapter 2" —
+// only fetches successfully as `/chapters/2`; `/chapters/1` 404s). That constant
+// offset is only trustworthy when embedded "Chapter N" numbers (a) appear on
+// most entries and (b) agree on a *single* offset from position — otherwise the
+// numbers aren't a reliable global numbering scheme at all. Verified on "The
+// Beginning After The End": 99% of entries match "Chapter N", but the offsets
+// implied are scattered across -1/-2/-3/-6 (human-entered titles drifting from
+// source-side renumbering/splits) with no value above 54% agreement, while
+// `/chapters/<n>` there is confirmed to be plain array position throughout
+// (`/chapters/517` returns array position 517's content — whose own title text
+// says "Chapter 511" — not whatever entry embeds the number 517). Trusting
+// per-entry text in that case would silently fetch the wrong chapter.
+const MIN_MATCH_RATIO = 0.5;
+const MIN_OFFSET_CONSENSUS = 0.9;
+
+// "Chapter 001 - Title", "Chapter 2", "chapter 3", "Chapter 1: Title" all match;
+// the remainder (if any) becomes the display title so Paperback's own "Chapter N"
+// label isn't duplicated by the chapter's own title text
+const CHAPTER_PREFIX = /^chapter\s+0*(\d+)\s*[-:.—]?\s*(.*)$/i;
+
+type ParsedChapterName = { number?: number; remainder?: string };
+
+function parseChapterName(name: string): ParsedChapterName {
+  const match = CHAPTER_PREFIX.exec(name.trim());
+  if (!match) return {};
+  const remainder = match[2]?.trim();
+  return { number: Number(match[1]), remainder: remainder ? remainder : undefined };
+}
+
+type NumberingOffset = { offset: number; trusted: boolean };
+
+function detectNumberingOffset(names: string[]): NumberingOffset {
+  const offsetCounts = new Map<number, number>();
+  let matched = 0;
+
+  names.forEach((name, index) => {
+    const { number } = parseChapterName(name);
+    if (number === undefined) return;
+    matched++;
+    const offset = number - (index + 1);
+    offsetCounts.set(offset, (offsetCounts.get(offset) ?? 0) + 1);
+  });
+
+  if (names.length === 0 || matched / names.length < MIN_MATCH_RATIO) {
+    return { offset: 0, trusted: false };
+  }
+
+  let bestOffset = 0;
+  let bestCount = 0;
+  for (const [offset, count] of offsetCounts) {
+    if (count > bestCount) {
+      bestOffset = offset;
+      bestCount = count;
+    }
+  }
+
+  return bestCount / matched >= MIN_OFFSET_CONSENSUS
+    ? { offset: bestOffset, trusted: true }
+    : { offset: 0, trusted: false };
+}
+
 export function chaptersFromDetail(detail: NovelJson, sourceManga: SourceManga): Chapter[] {
+  const { offset, trusted } = detectNumberingOffset(detail.chapter_names);
+
   return detail.chapter_names.map((name, index) => {
-    const chapNum = index + 1;
-    const title = name.trim();
-    return {
+    const chapNum = index + 1 + offset;
+    const { number, remainder } = parseChapterName(name);
+    const trimmedName = name.trim();
+    // Only strip the "Chapter N" prefix when the *whole novel's* numbering is
+    // trusted and this entry's own number matches it — otherwise (an untrusted
+    // novel, or a stray entry whose number doesn't fit even in a trusted one)
+    // show the full name so nothing embedded in the title is silently
+    // misrepresented. Checking novel-level trust (not just this entry's number)
+    // matters: an untrusted novel can still have one entry whose parsed number
+    // coincidentally equals its position, which would otherwise strip its title
+    // down to leftover fragment text instead of showing the full name.
+    const title = trusted && number === chapNum ? remainder : trimmedName || undefined;
+
+    const chapter: Chapter = {
       chapterId: String(chapNum),
       sourceManga,
       langCode: "en",
       chapNum,
       volume: 0,
-      title: title.length > 0 ? title : `Chapter ${chapNum}`,
     };
+    if (title) chapter.title = title;
+    return chapter;
   });
 }
 
