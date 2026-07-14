@@ -115,9 +115,9 @@ offset-adjusted id first. Verified end-to-end against the live API: for Archdemo
 `chapterId "1"` 404s, the retry with `"1" + additionalInfo.offset ("1") = "2"` succeeds and returns
 the real content.
 
-### The display number: `chapNum` needs a whole-array consensus, not per-entry trust
+### The display number: three tiers, because no single rule covers this catalog
 
-Two more novels show why a single entry's embedded number can't be trusted in isolation, even when
+Three more novels show why a single entry's embedded number can't be trusted in isolation, even when
 the fetch key (position) is unaffected:
 
 - **"The Beginning After The End"** (`69ffabdfa5f4c7d1b734e239`, 532 chapters): confirmed
@@ -125,34 +125,47 @@ the fetch key (position) is unaffected:
   own title text reads `"Chapter 511: Folded Space"`). 99% of entries still start with `"Chapter N"`,
   but the implied offset (`embedded number − position`) is scattered across `-1`/`-2`/`-3`/`-6` with
   no value above 54% agreement — human-entered titles drifting from source-side renumbering/splits
-  over the story's history, not a real numbering scheme.
+  over the story's history, not a single constant offset.
 - **"Re:Zero Kara Hajimeru Isekai Seikatsu"** (`6a0c74d64f942c668d6981b1`, 675 chapters): almost every
   entry is `"Arc N – M: Title"` / `"Volume N, M [Title]"` — no leading "Chapter" — except two stray
   entries that happen to start with the literal word "Chapter" followed by an ARC-relative number
   wildly inconsistent with their real position (`"CHAPTER 112: …"` at real chapter 162,
-  `"Chapter 47 […]"` at real chapter 231). Trusting either would corrupt everything interpolated from
-  them.
-- **"Got Dropped into a Ghost Story, Still Gotta Work"** (`6a162ec14f942c668d69a598`, 635 chapters) is
-  the concatenated-sources case: entries 1–374 are clean `"Chapter 1"`…`"Chapter 374"` (offset 0
-  throughout), then position 375 abruptly restarts at `"Chapter 165.2"`, `"Chapter 166.1"`, … —
-  confirmed still plain-position-fetchable across the seam, just numbered by an apparently different
-  source for the back half of the book.
-- **"Omniscient Reader's Viewpoint"** has its own mid-book discontinuity: the dominant offset among
-  entries that parse is actually `+1` (425 of 552), not the `-1` its own opening "Chapter 0" implies —
-  only 77% consensus, correctly below the trust bar.
+  `"Chapter 47 […]"` at real chapter 231).
+- **"Got Dropped into a Ghost Story, Still Gotta Work"** (`6a162ec14f942c668d69a598`, 635 chapters):
+  entries 1–374 are clean `"Chapter 1"`…`"Chapter 374"`, then position 375 abruptly restarts at
+  `"Chapter 165.2"`, `"Chapter 166.1"`, … — a different, apparently concatenated source for the back
+  half of the book, confirmed still plain-position-fetchable across the seam. That second half isn't
+  even internally clean: it has 21 further backward number-jumps of its own (`178.3 → 178.1`,
+  `225.3 → 225.2 → 225.1 → 224.2 → …`) — one entry is even labelled `"Chapter 207.2 - [Illustration]"`,
+  bonus art mixed into the numbering. Not a second volume, just disorder.
+- **"Omniscient Reader's Viewpoint"** has a similar split: the dominant offset among entries that
+  parse is `+1` (425 of 552), not the `-1` its own opening `"Chapter 0"` implies — only 77% consensus.
 
-**Fix** (`detectNumberingOffset` in `parser.ts`): compute `offset = embeddedNumber − position` for
-every entry that parses a `"Chapter N"` prefix, and only trust the single most common offset — used
-as `chapNum = position + offset` uniformly for the whole novel — when **both** hold:
+**Fix** (`parser.ts`): three tiers, tried in order, per novel:
 
-- at least half of all entries produced a parseable number (rules out Re:Zero's two strays), and
-- that one offset value accounts for at least 90% of the entries that _did_ parse (rules out TBATE's
-  drifting titles and ORV's split numbering; every clean novel sampled — Archdemon's Dilemma, Miss
-  Fairy, Shadow Slave, Reverend Insanity, PTSD Chaplain, ghost-story's first 374, House of the
-  Wolf's 68 numbered entries — hits 100% agreement).
+1. **Trusted global offset.** Compute `offset = embeddedNumber − position` for every entry that
+   parses a `"Chapter N"` prefix (decimals included: `"Chapter 165.2"` parses as `165.2` whole, not
+   `165` plus leftover text). Trust the single most common offset — applied as
+   `chapNum = position + offset` uniformly for every entry, matched or not — only when **both** at
+   least half of all entries produced a parseable number, **and** that one offset value covers at
+   least 90% of the entries that did. Archdemon's Dilemma, Miss Fairy, Shadow Slave, Reverend
+   Insanity, PTSD Chaplain, and House of the Wolf all hit 100% agreement here.
+2. **Literal numbers, gap-filled.** When "Chapter N" is clearly the scheme (most entries parse) but
+   there's no single consistent offset — ghost-story, TBATE, ORV — each entry's own literal number is
+   used **directly**, decimals and all: `"Chapter 165.2"` really does become `chapNum: 165.2`. This
+   doesn't collide with anything (an earlier `"Chapter 165"` and a later `"Chapter 165.2"` are
+   different numbers), and reading order no longer depends on `chapNum` being monotonic at all —
+   every chapter also gets `sortingIndex: position`, which the app uses to keep the list in true
+   reading order regardless of what the displayed number does. An entry with no parseable number (or
+   whose number was already claimed by an identical earlier one — ORV's genuinely duplicated tail
+   chapters) gets a small step past the nearest already-resolved neighbor
+   (`literalNumbersWithGapFill`), the same way LNORI orders unnumbered front matter between real
+   chapters. Real numbers are claimed in a first full pass before any gap-filling runs, so an early
+   guess can never displace a later chapter's genuine number.
+3. **Plain sequential.** When "Chapter N" isn't a real scheme at all (Re:Zero: two stray matches out
+   of 675), `chapNum = position`.
 
-Otherwise the offset defaults to `0` (plain array position), which both matches the fetch key and is
-the same safe default a totally unnumbered novel already needed.
+`chapterId` (see above) is unaffected by any of this — it's always plain position regardless of tier.
 
 ### The title: always strip a leading "Chapter N", trust or no trust
 
@@ -179,8 +192,8 @@ bare, confusing number fragment.
 
 No amount of this closes the gap fully; a novel with a genuine trusted offset _and_ one interior
 entry with a typo'd number is still a real possibility this hasn't been tested against. The
-consensus-offset approach is a defensible default given everything actually observed across nine
-novels, not a proof.
+three-tier approach is a defensible default given everything actually observed across ten novels,
+not a proof.
 
 ## Risks
 

@@ -213,11 +213,12 @@ export function toSourceManga(detail: NovelJson, mangaId: string): SourceManga {
 const MIN_MATCH_RATIO = 0.5;
 const MIN_OFFSET_CONSENSUS = 0.9;
 
-// "Chapter 001 - Title", "Chapter 2", "chapter 3", "Chapter 1: Title" all match
-const CHAPTER_PREFIX = /^chapter\s+0*(\d+)\s*[-:.—]?\s*(.*)$/i;
+// "Chapter 001 - Title", "Chapter 2", "chapter 3", "Chapter 1: Title",
+// "Chapter 165.2" (a genuine decimal sub-chapter) all match
+const CHAPTER_PREFIX = /^chapter\s+0*(\d+(?:\.\d+)?)\s*[-:.—]?\s*(.*)$/i;
 // Same shape, without the leading "chapter" keyword — used to catch a redundant
 // repeated number in the remainder ("Chapter 1 - 1: Nightmare Begins")
-const NUMBER_PREFIX = /^0*(\d+)\s*[-:.—]?\s*(.*)$/;
+const NUMBER_PREFIX = /^0*(\d+(?:\.\d+)?)\s*[-:.—]?\s*(.*)$/;
 const NUMERIC_ONLY = /^[\d.\s]*$/;
 
 function parseChapterNumber(name: string): number | undefined {
@@ -251,7 +252,9 @@ function extractTitle(name: string): string | undefined {
   return remainder && !NUMERIC_ONLY.test(remainder) ? remainder : undefined;
 }
 
-function detectNumberingOffset(names: string[]): number {
+type OffsetConsensus = { offset: number; trusted: boolean };
+
+function detectNumberingOffset(names: string[]): OffsetConsensus {
   const offsetCounts = new Map<number, number>();
   let matched = 0;
 
@@ -263,7 +266,9 @@ function detectNumberingOffset(names: string[]): number {
     offsetCounts.set(offset, (offsetCounts.get(offset) ?? 0) + 1);
   });
 
-  if (names.length === 0 || matched / names.length < MIN_MATCH_RATIO) return 0;
+  if (names.length === 0 || matched / names.length < MIN_MATCH_RATIO) {
+    return { offset: 0, trusted: false };
+  }
 
   let bestOffset = 0;
   let bestCount = 0;
@@ -274,26 +279,107 @@ function detectNumberingOffset(names: string[]): number {
     }
   }
 
-  return bestCount / matched >= MIN_OFFSET_CONSENSUS ? bestOffset : 0;
+  return bestCount / matched >= MIN_OFFSET_CONSENSUS
+    ? { offset: bestOffset, trusted: true }
+    : { offset: 0, trusted: false };
+}
+
+// For a novel where "Chapter N" is clearly the numbering scheme (most entries
+// parse) but not consistently offset from position — multiple sources
+// concatenated (ghost-story), or genuine source-side renumbering drift (TBATE)
+// — each entry's own literal number (decimals included, e.g. 165.2) is used
+// directly rather than discarded, since it's real information from the site
+// and doesn't collide with anything: reading *order* is guaranteed separately
+// by `sortingIndex`, so chapNum no longer needs to be monotonic to display
+// correctly, only unique. A sparse entry with no parseable number (or whose
+// number was already claimed) gets a small step past the previous chapNum,
+// the same way LNORI orders unnumbered front matter between real chapters.
+function literalNumbersWithGapFill(names: string[]): number[] {
+  const candidates = names.map(parseChapterNumber);
+  const used = new Set<number>();
+  const result: (number | undefined)[] = Array.from({ length: names.length });
+
+  // Pass 1: claim each literal number for its first occurrence only, before
+  // any gap-filling happens — otherwise an earlier unmatched entry's fallback
+  // guess can claim a value that a later entry's *real* number needed (an
+  // early "no candidate" gap defaulting to plain position 1 would otherwise
+  // permanently displace a genuine "Chapter 1" a few entries later)
+  candidates.forEach((candidate, index) => {
+    if (candidate !== undefined && !used.has(candidate)) {
+      used.add(candidate);
+      result[index] = candidate;
+    }
+  });
+
+  function freeStep(base: number, step: number): number {
+    let value = Math.round((base + step) * 1000) / 1000;
+    while (used.has(value)) value = Math.round((value + step) * 1000) / 1000;
+    return value;
+  }
+
+  // Pass 2: fill every remaining gap (no candidate, or a duplicate of an
+  // already-claimed number) with a small step past the previous *resolved*
+  // chapNum — or, before any chapNum has resolved yet, a small step before
+  // the next one that will
+  let previous: number | undefined;
+  for (let i = 0; i < result.length; i++) {
+    if (result[i] === undefined) {
+      let value: number;
+      if (previous !== undefined) {
+        value = freeStep(previous, 0.001);
+      } else {
+        let forward = i + 1;
+        while (forward < result.length && result[forward] === undefined) forward++;
+        value = forward < result.length ? freeStep(result[forward]!, -0.001) : freeStep(i, 1);
+      }
+      used.add(value);
+      result[i] = value;
+    }
+    previous = result[i];
+  }
+
+  return result as number[];
 }
 
 export function chaptersFromDetail(detail: NovelJson, sourceManga: SourceManga): Chapter[] {
-  const offset = detectNumberingOffset(detail.chapter_names);
+  const { offset, trusted } = detectNumberingOffset(detail.chapter_names);
+  const matched = detail.chapter_names.filter(
+    (name) => parseChapterNumber(name) !== undefined,
+  ).length;
+  const matchRatio = detail.chapter_names.length > 0 ? matched / detail.chapter_names.length : 0;
+
+  let chapNums: number[];
+  if (trusted) {
+    // One clean, whole-array relationship to position — Archdemon's Dilemma,
+    // Miss Fairy, Shadow Slave, Reverend Insanity, PTSD Chaplain, House of the
+    // Wolf all land here at 100% consensus
+    chapNums = detail.chapter_names.map((_, index) => index + 1 + offset);
+  } else if (matchRatio >= MIN_MATCH_RATIO) {
+    // "Chapter N" is real but not offset-consistent — ghost-story, TBATE
+    chapNums = literalNumbersWithGapFill(detail.chapter_names);
+  } else {
+    // No real "Chapter N" scheme at all (Re:Zero's Arc/Volume text) — plain
+    // sequential is the only safe default
+    chapNums = detail.chapter_names.map((_, index) => index + 1);
+  }
 
   return detail.chapter_names.map((name, index) => {
-    const position = index + 1;
     const title = extractTitle(name);
 
     const chapter: Chapter = {
-      chapterId: String(position),
+      chapterId: String(index + 1),
       sourceManga,
       langCode: "en",
-      chapNum: position + offset,
+      chapNum: chapNums[index]!,
       volume: 0,
+      // chapNum is no longer guaranteed monotonic with position (the literal-
+      // number tier can legitimately go "backward" in value, e.g. 374 then
+      // 165.2), so the app needs this to keep the list in true reading order
+      sortingIndex: index,
     };
     if (title) chapter.title = title;
     // getChapterDetails' fallback candidate when position-based fetch 404s —
-    // only meaningful (and only ever tried) when this differs from position
+    // only ever set (and only ever tried) for the trusted, non-zero-offset case
     if (offset !== 0) chapter.additionalInfo = { offset: String(offset) };
     return chapter;
   });
