@@ -166,21 +166,18 @@ export class NovelArchiveExtension implements ExtensionImpl<typeof NovelArchiveC
     void sinceDate;
     const mangaId = sourceManga.mangaId;
 
-    // A novel with real alternate sources gets each one exposed as its own
-    // Paperback "version" (Manage Version Priority — enable "Chapters Unique
-    // by Volume" is NOT what this needs; each source already has its own
-    // clean, non-colliding chapNum range from the API's own per-chapter
-    // `number` field, no consensus-guessing required). Only novels with no
-    // source data at all fall back to the merged endpoint's heuristics.
-    const sourcesResponse = await apiRequest<SourceListResponse>(
-      `/novels/${encodeURIComponent(mangaId)}/sources`,
-    );
+    // The site's own hosted content is always one version ("Novel Archive"),
+    // never dropped in favor of alternates — real alternate sources (Manage
+    // Version Priority → "Available Versions") are additional choices on top,
+    // each with its own clean, non-colliding-within-itself chapNum range
+    // straight from the API's per-chapter `number` field, no consensus
+    // guessing needed for those
+    const [detail, sourcesResponse] = await Promise.all([
+      getNovelDetail(mangaId),
+      apiRequest<SourceListResponse>(`/novels/${encodeURIComponent(mangaId)}/sources`),
+    ]);
 
-    if (sourcesResponse.sources.length === 0) {
-      const detail = await getNovelDetail(mangaId);
-      return chaptersFromDetail(detail, sourceManga);
-    }
-
+    const defaultChapters = chaptersFromDetail(detail, sourceManga);
     const perSource = await Promise.all(
       sourcesResponse.sources.map(async (source) => {
         const list = await apiRequest<SourceChapterListResponse>(
@@ -189,15 +186,15 @@ export class NovelArchiveExtension implements ExtensionImpl<typeof NovelArchiveC
         return chaptersFromSource(source, list, sourceManga);
       }),
     );
-    return perSource.flat();
+    return [...defaultChapters, ...perSource.flat()];
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
     const mangaId = chapter.sourceManga.mangaId;
+    const separator = chapter.chapterId.indexOf(":");
 
-    if (chapter.version) {
+    if (separator >= 0) {
       // Per-source chapter — chapterId is "<sourceId>:<number>"
-      const separator = chapter.chapterId.indexOf(":");
       const sourceId = chapter.chapterId.slice(0, separator);
       const number = chapter.chapterId.slice(separator + 1);
       const path = `/novels/${encodeURIComponent(mangaId)}/sources/${encodeURIComponent(sourceId)}/chapters/${encodeURIComponent(number)}`;
@@ -205,6 +202,7 @@ export class NovelArchiveExtension implements ExtensionImpl<typeof NovelArchiveC
       return toChapterDetailsFromSource(response, chapter);
     }
 
+    // The default "Novel Archive" version — chapterId is a bare position number
     const chapterPath = (id: string) =>
       `/novels/${encodeURIComponent(mangaId)}/chapters/${encodeURIComponent(id)}`;
 

@@ -284,13 +284,16 @@ function detectNumberingOffset(names: string[]): OffsetConsensus {
     : { offset: 0, trusted: false };
 }
 
-// Only reached when a novel has no alternate sources at all (see main.ts —
-// any novel with 1+ real sources uses chaptersFromSource instead, which gets
-// a clean `number` field per chapter directly from the API and needs none of
-// this guessing). What's left here is deliberately conservative: a single
-// trusted global offset, or plain sequential position. No multi-segment or
-// literal-decimal handling — every novel that actually needed that (ghost
-// story, TBATE) turned out to have real source data and takes the other path.
+// The site's own hosted/merged content (chapter_names on GET /novels/<id>) is
+// its own legitimate reading option, not a fallback to discard once real
+// alternate sources exist — always included as its own version alongside
+// whatever GET /novels/<id>/sources lists, never replaced by them. What's
+// left here is deliberately conservative: a single trusted global offset, or
+// plain sequential position. No multi-segment or literal-decimal handling —
+// every novel that actually needed that (ghost story, TBATE) also has real
+// alternate-source data and gets those as additional versions on top of this.
+export const NOVELARCHIVE_VERSION_LABEL = "Novel Archive";
+
 export function chaptersFromDetail(detail: NovelJson, sourceManga: SourceManga): Chapter[] {
   const { offset } = detectNumberingOffset(detail.chapter_names);
 
@@ -303,6 +306,7 @@ export function chaptersFromDetail(detail: NovelJson, sourceManga: SourceManga):
       langCode: "en",
       chapNum: index + 1 + offset,
       volume: 0,
+      version: NOVELARCHIVE_VERSION_LABEL,
     };
     if (title) chapter.title = title;
     // getChapterDetails' fallback candidate when position-based fetch 404s —

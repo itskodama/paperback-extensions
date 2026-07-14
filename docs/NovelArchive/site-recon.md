@@ -8,8 +8,10 @@ was verified with `curl` against the live site on 2026-07-13/14.
 An aggregator of web-novel translations (fan translations of Chinese/Korean/Japanese web novels,
 plus original English web serials like _Shadow Slave_) — ~26,000 novels at last count. Several
 titles are pulled from more than one upstream source (`GET /api/novels/<id>/sources`); the default
-per-novel endpoints transparently serve one merged/default source, and multi-source selection is not
-exposed anywhere in the site's own frontend beyond that.
+per-novel endpoints transparently merge whichever sources are available into one array, and the
+site's own frontend never exposes source choice — but the underlying per-source data is real and
+directly fetchable, which this extension uses even though the site itself doesn't (see the chapter
+numbering section).
 
 ## Transport
 
@@ -49,7 +51,8 @@ All under `https://novelarchive.cc/api`, all JSON, no auth:
 | `GET /novels/<id>`                                                                               | Full novel detail, **including `chapter_names: string[]`** — the ordered chapter titles for the whole novel in one call                                                               |
 | `GET /novels/<id>/chapters/<n>`                                                                  | One chapter's `{number, name, content}` — `content` is **plain text**, paragraphs newline-separated (single `\n` on some novels, `\n\n` on others — split on `\n+`, don't assume one) |
 | `GET /novels/<id>/cover?w=&q=&format=webp`                                                       | Cover image, no referer required                                                                                                                                                      |
-| `GET /novels/<id>/sources` / `/source-list`                                                      | Alternate upstream sources for a novel (unused by MVP — see below)                                                                                                                    |
+| `GET /novels/<id>/sources` / `/source-list`                                                      | Alternate upstream sources for a novel — each becomes its own `Chapter.version`, see below                                                                                            |
+| `GET /novels/<id>/sources/<source>/chapters` / `/chapters/<n>`                                   | A source's own chapter list/detail — clean `number` field per chapter, `content_html` (real HTML, not plain text) on detail                                                           |
 
 Errors are clean JSON with correct status codes: `{"error": "Novel not found"}` / `404`,
 `{"error": "Chapter does not exist"}` / `404`. No silent empty-200s observed.
@@ -76,11 +79,13 @@ Errors are clean JSON with correct status codes: `{"error": "Novel not found"}` 
   `AdvancedSearchForm` would earn its device-only risk — worth deciding scope for v1 vs. later
   (see [search.md](../paperback/search.md#filters-without-a-form): genre chips in a discover
   section can carry filter metadata without a form at all, which is the lower-risk starting point).
-- **Multi-source novels use `Chapter.version`, not the merged endpoint** — see the chapter numbering
-  section below. The default `/chapters/<n>` endpoint silently stitches whichever sources are
-  available into one array; each real source's own list is cleaner and is what's actually used.
+- **Multi-source novels expose each source as its own `Chapter.version`, alongside the site's own
+  hosted content** — see the chapter numbering section below. The `/chapters/<n>` endpoint silently
+  stitches whichever sources are available into one array, but it's still a legitimate reading
+  option in its own right ("Novel Archive"), not something to discard just because cleaner
+  alternate-source data also exists.
 
-## Chapter numbering — use each real source, don't guess at the merged one
+## Chapter numbering — every real source, including the site's own, as its own version
 
 `chapter_names` on `GET /novels/<id>` looks like a simple 1-based list, and the obvious
 implementation (`chapterId = String(index + 1)`, title = the raw string) is wrong for a meaningful
@@ -88,28 +93,31 @@ slice of the catalog — in ways that don't share one root cause. This endpoint 
 **merge**: the site stitches together whichever upstream sources it has for a novel into one
 array, silently switching source mid-list when one runs out.
 
-**The fix is to stop trying to reverse-engineer the merge and use `GET /novels/<id>/sources` (each
-real upstream — `novelfire`, `ranobes`, `fucknovelpia`, …) directly instead.** Each source's own
-`GET /novels/<id>/sources/<source>/chapters` list gives a `number` field per chapter that's simply
-correct — no offset detection, no consensus voting, no gap-filling. Verified end-to-end: fetching
-`GET /novels/<id>/sources/<source>/chapters/<n>` by that literal `number` reliably returns the right
-chapter, for every source on every novel sampled. `chapterId` is `"<sourceId>:<number>"`, `chapNum`
-is `number` directly, and `Chapter.version` is set to the source's label — multiple sources
-legitimately share overlapping chapNum ranges (they're alternate translations of the same story,
-exactly what Paperback's version-priority system is for — see below), so the app needs `version` to
-tell them apart rather than silently collapsing them.
+**The fix is to stop trying to reverse-engineer the merge for anything beyond its own content, and
+additionally use `GET /novels/<id>/sources` (each real upstream — `novelfire`, `ranobes`,
+`fucknovelpia`, …) directly.** Each source's own `GET /novels/<id>/sources/<source>/chapters` list
+gives a `number` field per chapter that's simply correct — no offset detection, no consensus voting,
+no gap-filling. Verified end-to-end: fetching `GET /novels/<id>/sources/<source>/chapters/<n>` by
+that literal `number` reliably returns the right chapter, for every source on every novel sampled.
+`chapterId` is `"<sourceId>:<number>"`, `chapNum` is `number` directly, and `Chapter.version` is set
+to the source's label. The site's own merged content is _also_ always included as its own version
+(labelled `"Novel Archive"`, from `chaptersFromDetail`/the merged endpoint) — it's a legitimate
+reading option in its own right, not something to drop just because cleaner alternate-source data
+exists alongside it. All of these legitimately share overlapping chapNum ranges (they're alternate
+translations/cuts of the same story, exactly what Paperback's version-priority system is for — see
+below), so the app needs `version` set on every one of them to tell them apart rather than silently
+collapsing all but one.
 
-A novel with **no** sources at all (`{"sources": []}` — most of the catalog; Miss Fairy, House of the
-Wolf, Re:Zero, Omniscient Reader's Viewpoint all landed here) has nothing but the merged endpoint to
-fall back on, so `chaptersFromDetail` still exists for that case — deliberately conservative now that
-it's the fallback, not the primary path:
+The merged-endpoint path (`chaptersFromDetail`) is deliberately conservative, since — unlike a real
+source's clean `number` field — its own numbering has no ground truth to fall back on beyond text
+heuristics:
 
 - **`chapterId` is always plain array position**, unconditionally. `GET /novels/<id>/chapters/<n>` is
-  keyed by each novel's own internal chapter number, which is array position for every zero-source
-  novel sampled except one: "An Archdemon's Dilemma: How to Love Your Elf Bride: Volume 15" (this one
-  _does_ have a source now, so it no longer actually reaches this fallback — but the lesson generalizes)
-  has `chapter_names[0] = "Chapter 2"` because the real "Chapter 1" was never imported, so
-  `/chapters/1` 404s and only `/chapters/2` (position + 1) works.
+  keyed by each novel's own internal chapter number, which is array position for every novel sampled
+  except one: "An Archdemon's Dilemma: How to Love Your Elf Bride: Volume 15" has
+  `chapter_names[0] = "Chapter 2"` because the real "Chapter 1" was never imported, so `/chapters/1`
+  404s and only `/chapters/2` (position + 1) works — true of its `"Novel Archive"` version regardless
+  of it also having a real alternate source.
 - Trusting an embedded "Chapter N" number as the fetch key generally is worse than occasionally
   wrong — it can be silently wrong. "Omniscient Reader's Viewpoint" opens with `"Chapter 0"`
   (implying offset −1), but `/chapters/0` is rejected outright, and `/chapters/1` (what an
@@ -122,14 +130,15 @@ it's the fallback, not the primary path:
   silent-wrong-chapter reason.
 - The title still gets a `"Chapter N"` prefix stripped when present (`extractTitle`/
   `CHAPTER_PREFIX`), including a redundant repeated inner number (Shadow Slave/Reverend Insanity's
-  `"Chapter 1 - 1: Nightmare Begins"` → `"Nightmare Begins"` — though both of those now also have a
-  real source and take the primary path) and a remainder left with nothing but digits after
-  stripping, which is suppressed rather than shown as a bare, confusing fragment.
+  `"Chapter 1 - 1: Nightmare Begins"` → `"Nightmare Begins"`, on their `"Novel Archive"` version — both
+  also have a real alternate source, which gets its own clean titles independently) and a remainder
+  left with nothing but digits after stripping, which is suppressed rather than shown as a bare,
+  confusing fragment.
 
-No amount of this closes the gap fully for a hypothetical zero-source novel with, say, a trusted
-offset _and_ one interior entry with a typo'd number. It's a defensible conservative default for the
-minority of novels with no real source data, not a proof — which is exactly why the real fix was to
-stop needing it for the majority that do have source data.
+No amount of this closes the gap fully for a hypothetical novel with, say, a trusted offset _and_ one
+interior entry with a typo'd number. It's a defensible conservative default for the `"Novel Archive"`
+version specifically, not a proof — which is exactly why alternate real sources, when they exist,
+are always offered as additional versions rather than something to lean on this heuristic instead of.
 
 ## Risks
 
