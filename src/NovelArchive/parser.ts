@@ -284,84 +284,15 @@ function detectNumberingOffset(names: string[]): OffsetConsensus {
     : { offset: 0, trusted: false };
 }
 
-// For a novel where "Chapter N" is clearly the numbering scheme (most entries
-// parse) but not consistently offset from position — multiple sources
-// concatenated (ghost-story), or genuine source-side renumbering drift (TBATE)
-// — each entry's own literal number (decimals included, e.g. 165.2) is used
-// directly rather than discarded, since it's real information from the site
-// and doesn't collide with anything: reading *order* is guaranteed separately
-// by `sortingIndex`, so chapNum no longer needs to be monotonic to display
-// correctly, only unique. A sparse entry with no parseable number (or whose
-// number was already claimed) gets a small step past the previous chapNum,
-// the same way LNORI orders unnumbered front matter between real chapters.
-function literalNumbersWithGapFill(names: string[]): number[] {
-  const candidates = names.map(parseChapterNumber);
-  const used = new Set<number>();
-  const result: (number | undefined)[] = Array.from({ length: names.length });
-
-  // Pass 1: claim each literal number for its first occurrence only, before
-  // any gap-filling happens — otherwise an earlier unmatched entry's fallback
-  // guess can claim a value that a later entry's *real* number needed (an
-  // early "no candidate" gap defaulting to plain position 1 would otherwise
-  // permanently displace a genuine "Chapter 1" a few entries later)
-  candidates.forEach((candidate, index) => {
-    if (candidate !== undefined && !used.has(candidate)) {
-      used.add(candidate);
-      result[index] = candidate;
-    }
-  });
-
-  function freeStep(base: number, step: number): number {
-    let value = Math.round((base + step) * 1000) / 1000;
-    while (used.has(value)) value = Math.round((value + step) * 1000) / 1000;
-    return value;
-  }
-
-  // Pass 2: fill every remaining gap (no candidate, or a duplicate of an
-  // already-claimed number) with a small step past the previous *resolved*
-  // chapNum — or, before any chapNum has resolved yet, a small step before
-  // the next one that will
-  let previous: number | undefined;
-  for (let i = 0; i < result.length; i++) {
-    if (result[i] === undefined) {
-      let value: number;
-      if (previous !== undefined) {
-        value = freeStep(previous, 0.001);
-      } else {
-        let forward = i + 1;
-        while (forward < result.length && result[forward] === undefined) forward++;
-        value = forward < result.length ? freeStep(result[forward]!, -0.001) : freeStep(i, 1);
-      }
-      used.add(value);
-      result[i] = value;
-    }
-    previous = result[i];
-  }
-
-  return result as number[];
-}
-
+// Only reached when a novel has no alternate sources at all (see main.ts —
+// any novel with 1+ real sources uses chaptersFromSource instead, which gets
+// a clean `number` field per chapter directly from the API and needs none of
+// this guessing). What's left here is deliberately conservative: a single
+// trusted global offset, or plain sequential position. No multi-segment or
+// literal-decimal handling — every novel that actually needed that (ghost
+// story, TBATE) turned out to have real source data and takes the other path.
 export function chaptersFromDetail(detail: NovelJson, sourceManga: SourceManga): Chapter[] {
-  const { offset, trusted } = detectNumberingOffset(detail.chapter_names);
-  const matched = detail.chapter_names.filter(
-    (name) => parseChapterNumber(name) !== undefined,
-  ).length;
-  const matchRatio = detail.chapter_names.length > 0 ? matched / detail.chapter_names.length : 0;
-
-  let chapNums: number[];
-  if (trusted) {
-    // One clean, whole-array relationship to position — Archdemon's Dilemma,
-    // Miss Fairy, Shadow Slave, Reverend Insanity, PTSD Chaplain, House of the
-    // Wolf all land here at 100% consensus
-    chapNums = detail.chapter_names.map((_, index) => index + 1 + offset);
-  } else if (matchRatio >= MIN_MATCH_RATIO) {
-    // "Chapter N" is real but not offset-consistent — ghost-story, TBATE
-    chapNums = literalNumbersWithGapFill(detail.chapter_names);
-  } else {
-    // No real "Chapter N" scheme at all (Re:Zero's Arc/Volume text) — plain
-    // sequential is the only safe default
-    chapNums = detail.chapter_names.map((_, index) => index + 1);
-  }
+  const { offset } = detectNumberingOffset(detail.chapter_names);
 
   return detail.chapter_names.map((name, index) => {
     const title = extractTitle(name);
@@ -370,17 +301,61 @@ export function chaptersFromDetail(detail: NovelJson, sourceManga: SourceManga):
       chapterId: String(index + 1),
       sourceManga,
       langCode: "en",
-      chapNum: chapNums[index]!,
+      chapNum: index + 1 + offset,
       volume: 0,
-      // chapNum is no longer guaranteed monotonic with position (the literal-
-      // number tier can legitimately go "backward" in value, e.g. 374 then
-      // 165.2), so the app needs this to keep the list in true reading order
-      sortingIndex: index,
     };
     if (title) chapter.title = title;
     // getChapterDetails' fallback candidate when position-based fetch 404s —
     // only ever set (and only ever tried) for the trusted, non-zero-offset case
     if (offset !== 0) chapter.additionalInfo = { offset: String(offset) };
+    return chapter;
+  });
+}
+
+// --- Per-source chapters (novels with real alternate sources) ---
+// Each source's own chapter list gives a clean `number` field directly per
+// entry — no consensus/offset guessing needed at all. Verified: fetching by
+// that literal number is reliable per source (unlike the merged endpoint,
+// where trusting an embedded text number can silently return the wrong
+// chapter — see the getChapterDetails note above). Numbers can have gaps
+// (ranobes' list is 620 entries long but its numbers run past 625) but are
+// always usable directly as both chapterId and chapNum.
+
+export type NovelSource = { id: string; label: string };
+export type SourceListResponse = { sources: NovelSource[] };
+
+export type SourceChapterListEntry = { number: number; title: string };
+export type SourceChapterListResponse = { chapters: SourceChapterListEntry[] };
+
+export type SourceChapterDetailResponse = { content_html: string };
+
+// A source's own title text is often just a bare local/arc-relative number
+// with no descriptive text at all (Ranobes: "1", "2", "3", resetting per
+// arc) — pure noise next to Paperback's own chapNum label, same principle as
+// extractTitle's numeric-only suppression, just without a "Chapter" prefix
+// to strip first
+function extractSourceTitle(title: string): string | undefined {
+  const trimmed = title.trim();
+  if (!trimmed || NUMERIC_ONLY.test(trimmed)) return undefined;
+  return extractTitle(trimmed);
+}
+
+export function chaptersFromSource(
+  source: NovelSource,
+  list: SourceChapterListResponse,
+  sourceManga: SourceManga,
+): Chapter[] {
+  return list.chapters.map((entry) => {
+    const chapter: Chapter = {
+      chapterId: `${source.id}:${entry.number}`,
+      sourceManga,
+      langCode: "en",
+      chapNum: entry.number,
+      volume: 0,
+      version: source.label,
+    };
+    const title = extractSourceTitle(entry.title);
+    if (title) chapter.title = title;
     return chapter;
   });
 }
@@ -409,6 +384,60 @@ export function toChapterDetails(json: ChapterJson, chapter: Chapter): ChapterDe
     mangaId: chapter.sourceManga.mangaId,
     type: "html",
     html: toXhtml(json.chapter.content),
+  };
+}
+
+// Per-source chapter content is real HTML (images, headings, <hr>), unlike
+// the merged endpoint's plain text — the app parses html chapters as XML, so
+// unclosed void elements and named entities beyond XML's five predefined ones
+// are fatal. Same discipline as LNORI's transform, adapted for this site:
+// close every void tag, map common named entities to numeric references, and
+// degrade anything unmapped to visible text instead of a fatal parse error.
+const VOID_TAG =
+  /<(img|br|hr|source|wbr|area|col|embed|input|link|meta|track|param|base)(\b[^>]*?)\s*\/?>/gi;
+const NAMED_REF = /&([a-zA-Z][a-zA-Z0-9]*);/g;
+const XML_ENTITIES = new Set(["amp", "lt", "gt", "quot", "apos"]);
+const ENTITY_CODEPOINTS: Record<string, number> = {
+  copy: 0xa9,
+  deg: 0xb0,
+  eacute: 0xe9,
+  hellip: 0x2026,
+  laquo: 0xab,
+  ldquo: 0x201c,
+  lsquo: 0x2018,
+  mdash: 0x2014,
+  middot: 0xb7,
+  nbsp: 0xa0,
+  ndash: 0x2013,
+  raquo: 0xbb,
+  rdquo: 0x201d,
+  rsquo: 0x2019,
+  shy: 0xad,
+  times: 0xd7,
+  trade: 0x2122,
+};
+
+function toXhtmlFromHtml(html: string): string {
+  const body = html
+    .replace(VOID_TAG, (_match, tag: string, attrs: string) => `<${tag}${attrs}/>`)
+    .replace(NAMED_REF, (match: string, name: string) => {
+      if (XML_ENTITIES.has(name)) return match;
+      const codePoint = ENTITY_CODEPOINTS[name];
+      return codePoint === undefined ? `&amp;${name};` : `&#${codePoint};`;
+    });
+
+  return `<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>${body}</body></html>`;
+}
+
+export function toChapterDetailsFromSource(
+  json: SourceChapterDetailResponse,
+  chapter: Chapter,
+): ChapterDetails {
+  return {
+    id: chapter.chapterId,
+    mangaId: chapter.sourceManga.mangaId,
+    type: "html",
+    html: toXhtmlFromHtml(json.content_html),
   };
 }
 

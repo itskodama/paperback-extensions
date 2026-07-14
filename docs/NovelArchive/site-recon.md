@@ -76,124 +76,60 @@ Errors are clean JSON with correct status codes: `{"error": "Novel not found"}` 
   `AdvancedSearchForm` would earn its device-only risk — worth deciding scope for v1 vs. later
   (see [search.md](../paperback/search.md#filters-without-a-form): genre chips in a discover
   section can carry filter metadata without a form at all, which is the lower-risk starting point).
-- **Multi-source novels are a non-issue for a v1**: the default `/chapters/<n>` endpoint always
-  resolves to one canonical source regardless of how many exist, and the site's own primary reading
-  flow never exposes source choice either. Skip `/sources` entirely unless a later version wants
-  per-source chapter switching.
+- **Multi-source novels use `Chapter.version`, not the merged endpoint** — see the chapter numbering
+  section below. The default `/chapters/<n>` endpoint silently stitches whichever sources are
+  available into one array; each real source's own list is cleaner and is what's actually used.
 
-## Chapter numbering — a genuinely inconsistent site, not one clean rule
+## Chapter numbering — use each real source, don't guess at the merged one
 
-`chapter_names` looks like a simple 1-based list, and the obvious implementation
-(`chapterId = String(index + 1)`, title = the raw string) is wrong for a meaningful slice of the
-catalog, in ways that don't share one root cause. Everything below was found by testing specific
-novels — the API has no spec beyond what it does, and different novels in the same catalog behave
-differently for what look like different underlying reasons (a never-imported first chapter vs.
-human-entered titles drifting from source-side renumbering vs. multiple sources concatenated into
-one array vs. a translator's habit of repeating the chapter number inside its own title).
+`chapter_names` on `GET /novels/<id>` looks like a simple 1-based list, and the obvious
+implementation (`chapterId = String(index + 1)`, title = the raw string) is wrong for a meaningful
+slice of the catalog — in ways that don't share one root cause. This endpoint turns out to be a
+**merge**: the site stitches together whichever upstream sources it has for a novel into one
+array, silently switching source mid-list when one runs out.
 
-### The fetch key: `chapterId` must be array position, unconditionally
+**The fix is to stop trying to reverse-engineer the merge and use `GET /novels/<id>/sources` (each
+real upstream — `novelfire`, `ranobes`, `fucknovelpia`, …) directly instead.** Each source's own
+`GET /novels/<id>/sources/<source>/chapters` list gives a `number` field per chapter that's simply
+correct — no offset detection, no consensus voting, no gap-filling. Verified end-to-end: fetching
+`GET /novels/<id>/sources/<source>/chapters/<n>` by that literal `number` reliably returns the right
+chapter, for every source on every novel sampled. `chapterId` is `"<sourceId>:<number>"`, `chapNum`
+is `number` directly, and `Chapter.version` is set to the source's label — multiple sources
+legitimately share overlapping chapNum ranges (they're alternate translations of the same story,
+exactly what Paperback's version-priority system is for — see below), so the app needs `version` to
+tell them apart rather than silently collapsing them.
 
-**`GET /novels/<id>/chapters/<n>` is keyed by each novel's own internal chapter number, which is
-array position for every novel sampled except one.** "An Archdemon's Dilemma: How to Love Your Elf
-Bride: Volume 15" (`6a55244d1402dd55bf114117`) has 19 entries, text-only `"Chapter 2"` through
-`"Chapter 20"` — the real "Chapter 1" was simply never imported, so array index+1 is off by exactly
-one for every entry, forever: `/chapters/1` is `{"error": "Chapter does not exist"}`, only
-`/chapters/2` returns `chapter_names[0]`.
+A novel with **no** sources at all (`{"sources": []}` — most of the catalog; Miss Fairy, House of the
+Wolf, Re:Zero, Omniscient Reader's Viewpoint all landed here) has nothing but the merged endpoint to
+fall back on, so `chaptersFromDetail` still exists for that case — deliberately conservative now that
+it's the fallback, not the primary path:
 
-Trusting an embedded "Chapter N" number as the fetch key generally, though, is actively dangerous —
-not just occasionally wrong. "Omniscient Reader's Viewpoint" (`69fbdf79a5f4c7d1b734d8fb`) opens with
-`chapter_names[0] = "Chapter 0"`, implying array position should be offset by −1 throughout. But
-`/chapters/0` is rejected outright (`{"error": "Invalid chapter number"}`), and — critically —
-`/chapters/1` (what an offset-by-text scheme would send some _other_ position's request to) returns
-`chapter_names[0]`'s own content instead of 404ing. An offset-based fetch key doesn't fail loudly
-here; it silently serves the wrong chapter.
+- **`chapterId` is always plain array position**, unconditionally. `GET /novels/<id>/chapters/<n>` is
+  keyed by each novel's own internal chapter number, which is array position for every zero-source
+  novel sampled except one: "An Archdemon's Dilemma: How to Love Your Elf Bride: Volume 15" (this one
+  _does_ have a source now, so it no longer actually reaches this fallback — but the lesson generalizes)
+  has `chapter_names[0] = "Chapter 2"` because the real "Chapter 1" was never imported, so
+  `/chapters/1` 404s and only `/chapters/2` (position + 1) works.
+- Trusting an embedded "Chapter N" number as the fetch key generally is worse than occasionally
+  wrong — it can be silently wrong. "Omniscient Reader's Viewpoint" opens with `"Chapter 0"`
+  (implying offset −1), but `/chapters/0` is rejected outright, and `/chapters/1` (what an
+  offset-by-text scheme would misdirect some _other_ position's request to) returns
+  `chapter_names[0]`'s own content instead of 404ing — no error, just the wrong chapter.
+- `getChapterDetails` only ever tries an offset-adjusted id — `position + offset`, from a simple
+  whole-array consensus (`detectNumberingOffset`: trust one offset only when it covers ≥90% of the
+  entries that parsed a number, and at least half of all entries parsed one at all) — **after**
+  position-based fetch specifically 404s. It never tries the offset-adjusted id first, for the same
+  silent-wrong-chapter reason.
+- The title still gets a `"Chapter N"` prefix stripped when present (`extractTitle`/
+  `CHAPTER_PREFIX`), including a redundant repeated inner number (Shadow Slave/Reverend Insanity's
+  `"Chapter 1 - 1: Nightmare Begins"` → `"Nightmare Begins"` — though both of those now also have a
+  real source and take the primary path) and a remainder left with nothing but digits after
+  stripping, which is suppressed rather than shown as a bare, confusing fragment.
 
-**Fix:** `chapterId` is always `String(position)`. `getChapterDetails` only ever tries an
-alternate id — `position + offset`, where `offset` is the novel-wide consensus described below —
-after the position-based fetch specifically 404s with "Chapter does not exist". It never tries the
-offset-adjusted id first. Verified end-to-end against the live API: for Archdemon's Dilemma,
-`chapterId "1"` 404s, the retry with `"1" + additionalInfo.offset ("1") = "2"` succeeds and returns
-the real content.
-
-### The display number: three tiers, because no single rule covers this catalog
-
-Three more novels show why a single entry's embedded number can't be trusted in isolation, even when
-the fetch key (position) is unaffected:
-
-- **"The Beginning After The End"** (`69ffabdfa5f4c7d1b734e239`, 532 chapters): confirmed
-  `/chapters/<n>` == plain position throughout (`/chapters/517` returns position 517's content, whose
-  own title text reads `"Chapter 511: Folded Space"`). 99% of entries still start with `"Chapter N"`,
-  but the implied offset (`embedded number − position`) is scattered across `-1`/`-2`/`-3`/`-6` with
-  no value above 54% agreement — human-entered titles drifting from source-side renumbering/splits
-  over the story's history, not a single constant offset.
-- **"Re:Zero Kara Hajimeru Isekai Seikatsu"** (`6a0c74d64f942c668d6981b1`, 675 chapters): almost every
-  entry is `"Arc N – M: Title"` / `"Volume N, M [Title]"` — no leading "Chapter" — except two stray
-  entries that happen to start with the literal word "Chapter" followed by an ARC-relative number
-  wildly inconsistent with their real position (`"CHAPTER 112: …"` at real chapter 162,
-  `"Chapter 47 […]"` at real chapter 231).
-- **"Got Dropped into a Ghost Story, Still Gotta Work"** (`6a162ec14f942c668d69a598`, 635 chapters):
-  entries 1–374 are clean `"Chapter 1"`…`"Chapter 374"`, then position 375 abruptly restarts at
-  `"Chapter 165.2"`, `"Chapter 166.1"`, … — a different, apparently concatenated source for the back
-  half of the book, confirmed still plain-position-fetchable across the seam. That second half isn't
-  even internally clean: it has 21 further backward number-jumps of its own (`178.3 → 178.1`,
-  `225.3 → 225.2 → 225.1 → 224.2 → …`) — one entry is even labelled `"Chapter 207.2 - [Illustration]"`,
-  bonus art mixed into the numbering. Not a second volume, just disorder.
-- **"Omniscient Reader's Viewpoint"** has a similar split: the dominant offset among entries that
-  parse is `+1` (425 of 552), not the `-1` its own opening `"Chapter 0"` implies — only 77% consensus.
-
-**Fix** (`parser.ts`): three tiers, tried in order, per novel:
-
-1. **Trusted global offset.** Compute `offset = embeddedNumber − position` for every entry that
-   parses a `"Chapter N"` prefix (decimals included: `"Chapter 165.2"` parses as `165.2` whole, not
-   `165` plus leftover text). Trust the single most common offset — applied as
-   `chapNum = position + offset` uniformly for every entry, matched or not — only when **both** at
-   least half of all entries produced a parseable number, **and** that one offset value covers at
-   least 90% of the entries that did. Archdemon's Dilemma, Miss Fairy, Shadow Slave, Reverend
-   Insanity, PTSD Chaplain, and House of the Wolf all hit 100% agreement here.
-2. **Literal numbers, gap-filled.** When "Chapter N" is clearly the scheme (most entries parse) but
-   there's no single consistent offset — ghost-story, TBATE, ORV — each entry's own literal number is
-   used **directly**, decimals and all: `"Chapter 165.2"` really does become `chapNum: 165.2`. This
-   doesn't collide with anything (an earlier `"Chapter 165"` and a later `"Chapter 165.2"` are
-   different numbers), and reading order no longer depends on `chapNum` being monotonic at all —
-   every chapter also gets `sortingIndex: position`, which the app uses to keep the list in true
-   reading order regardless of what the displayed number does. An entry with no parseable number (or
-   whose number was already claimed by an identical earlier one — ORV's genuinely duplicated tail
-   chapters) gets a small step past the nearest already-resolved neighbor
-   (`literalNumbersWithGapFill`), the same way LNORI orders unnumbered front matter between real
-   chapters. Real numbers are claimed in a first full pass before any gap-filling runs, so an early
-   guess can never displace a later chapter's genuine number.
-3. **Plain sequential.** When "Chapter N" isn't a real scheme at all (Re:Zero: two stray matches out
-   of 675), `chapNum = position`.
-
-`chapterId` (see above) is unaffected by any of this — it's always plain position regardless of tier.
-
-### The title: always strip a leading "Chapter N", trust or no trust
-
-The naive fix — strip `"Chapter N"` only when N matches the trusted `chapNum` — still leaves a
-_wrong-looking_ number visible whenever a novel isn't trusted: Re:Zero's untrusted
-`"CHAPTER 112: THE INSTINCT TO REJECT WEAKNESS"` would otherwise show in full under a chapter
-natively labelled "162", which reads as the list being out of order even though the underlying
-`chapNum`/fetch order is completely correct. Paperback already shows its own chapter number; **any**
-visible competing number in the title is confusing, whether or not it happens to be right. So
-`extractTitle` strips a `"Chapter N"` prefix (see `CHAPTER_PREFIX`) unconditionally whenever the text
-matches it, keeping only the genuine descriptive remainder — "CHAPTER 112: THE INSTINCT TO REJECT
-WEAKNESS" becomes "THE INSTINCT TO REJECT WEAKNESS" regardless of trust. Text that never claimed to
-be "Chapter N" in the first place (Re:Zero's Arc/Volume text, House of the Wolf's custom-titled first
-chapter) is shown untouched — there's no competing number to strip.
-
-Two more translator habits needed handling, both found on **Shadow Slave** and **Reverend Insanity**
-(2820/3096 and all 2334 entries respectively): the title repeats the chapter number a second time
-right after the first — `"Chapter 1 - 1: Nightmare Begins"`. Stripping only the outer `"Chapter 1 -"`
-left a redundant `"1: Nightmare Begins"` behind. `extractTitle` also strips a repeated inner number
-when it exactly equals the outer one. And a remainder that's nothing but digits/punctuation after
-stripping — "The Beginning After The End"'s `"Chapter 523 - 517"` (a bare secondary number, no real
-title) — carries no information worth showing at all and is suppressed rather than displayed as a
-bare, confusing number fragment.
-
-No amount of this closes the gap fully; a novel with a genuine trusted offset _and_ one interior
-entry with a typo'd number is still a real possibility this hasn't been tested against. The
-three-tier approach is a defensible default given everything actually observed across ten novels,
-not a proof.
+No amount of this closes the gap fully for a hypothetical zero-source novel with, say, a trusted
+offset _and_ one interior entry with a typo'd number. It's a defensible conservative default for the
+minority of novels with no real source data, not a proof — which is exactly why the real fix was to
+stop needing it for the majority that do have source data.
 
 ## Risks
 
@@ -205,9 +141,19 @@ not a proof.
   server-side search/browse (the API does the filtering), but confirms client-side full-catalog
   caching (LNORI's `getLibrary()` pattern) is the wrong model here; every list-producing method
   should hit `/novels` directly with its own query rather than trying to cache-and-filter locally.
-- `content` field pattern differs by source-of-origin per novel (`\n` vs `\n\n` paragraph breaks
-  observed across two sampled novels) — the XHTML transform must split on one-or-more newlines, not
-  a fixed delimiter.
+- The merged endpoint's `content` field is plain text (`\n`/`\n\n` paragraph breaks, varies by
+  novel — split on one-or-more, never a fixed delimiter) but per-source chapter detail
+  (`GET .../sources/<source>/chapters/<n>`) returns real HTML in `content_html` (images, headings,
+  `<hr>`) — genuinely different content shapes needing two separate XHTML transforms
+  (`toXhtml` vs `toXhtmlFromHtml`), not one shared paragraph-splitter.
+- Per-source content has a real, uncorrectable encoding bug on at least one source: some special
+  characters (a "※" reference mark, observed on `fucknovelpia`) come through as raw mojibake
+  (`â\x80»`) rather than the correct character. Passed through as-is — not something a client can fix
+  without guessing at the original intended byte sequence, and guessing risks corrupting text that
+  wasn't actually broken.
+- A source's own chapter numbers can have gaps (`ranobes` on one novel: `total: 620` chapters, but
+  `number` values run past 625) — never assume a source's numbering is gapless or that `total`
+  equals the highest `number`, only that each entry's own `number` is a valid, correct fetch key.
 
 ## The linchpin — device verification
 

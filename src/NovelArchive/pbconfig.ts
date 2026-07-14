@@ -5,7 +5,8 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 
 export default {
   name: "NovelArchive",
-  description: "Read web novels from novelarchive.cc.",
+  description:
+    "Read web novels from novelarchive.cc. Titles with more than one upstream source show each as a separate chapter version — use Manage Version Priority to pick your preferred one.",
   version: "1.0.0-alpha.0",
   icon: "icon.png",
   language: "en",

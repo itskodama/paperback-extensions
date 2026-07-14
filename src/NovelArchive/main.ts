@@ -21,8 +21,10 @@ import { NovelArchiveSearchForm, type NovelArchiveSearchMetadata } from "./forms
 import { ApiError, MainInterceptor, apiRequest, buildQuery } from "./network";
 import {
   chaptersFromDetail,
+  chaptersFromSource,
   genreChipItems,
   toChapterDetails,
+  toChapterDetailsFromSource,
   toDiscoverItem,
   toSearchResultItem,
   toSourceManga,
@@ -30,6 +32,9 @@ import {
   type NovelDetailResponse,
   type NovelJson,
   type NovelsListResponse,
+  type SourceChapterDetailResponse,
+  type SourceChapterListResponse,
+  type SourceListResponse,
 } from "./parser";
 import type NovelArchiveConfig from "./pbconfig";
 
@@ -159,12 +164,47 @@ export class NovelArchiveExtension implements ExtensionImpl<typeof NovelArchiveC
 
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
     void sinceDate;
-    const detail = await getNovelDetail(sourceManga.mangaId);
-    return chaptersFromDetail(detail, sourceManga);
+    const mangaId = sourceManga.mangaId;
+
+    // A novel with real alternate sources gets each one exposed as its own
+    // Paperback "version" (Manage Version Priority — enable "Chapters Unique
+    // by Volume" is NOT what this needs; each source already has its own
+    // clean, non-colliding chapNum range from the API's own per-chapter
+    // `number` field, no consensus-guessing required). Only novels with no
+    // source data at all fall back to the merged endpoint's heuristics.
+    const sourcesResponse = await apiRequest<SourceListResponse>(
+      `/novels/${encodeURIComponent(mangaId)}/sources`,
+    );
+
+    if (sourcesResponse.sources.length === 0) {
+      const detail = await getNovelDetail(mangaId);
+      return chaptersFromDetail(detail, sourceManga);
+    }
+
+    const perSource = await Promise.all(
+      sourcesResponse.sources.map(async (source) => {
+        const list = await apiRequest<SourceChapterListResponse>(
+          `/novels/${encodeURIComponent(mangaId)}/sources/${encodeURIComponent(source.id)}/chapters`,
+        );
+        return chaptersFromSource(source, list, sourceManga);
+      }),
+    );
+    return perSource.flat();
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
     const mangaId = chapter.sourceManga.mangaId;
+
+    if (chapter.version) {
+      // Per-source chapter — chapterId is "<sourceId>:<number>"
+      const separator = chapter.chapterId.indexOf(":");
+      const sourceId = chapter.chapterId.slice(0, separator);
+      const number = chapter.chapterId.slice(separator + 1);
+      const path = `/novels/${encodeURIComponent(mangaId)}/sources/${encodeURIComponent(sourceId)}/chapters/${encodeURIComponent(number)}`;
+      const response = await apiRequest<SourceChapterDetailResponse>(path);
+      return toChapterDetailsFromSource(response, chapter);
+    }
+
     const chapterPath = (id: string) =>
       `/novels/${encodeURIComponent(mangaId)}/chapters/${encodeURIComponent(id)}`;
 
