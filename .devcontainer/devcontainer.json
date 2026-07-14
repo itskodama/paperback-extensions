@@ -7,6 +7,7 @@
       "extensions": ["oxc.oxc-vscode"]
     }
   },
+  "runArgs": ["--network=host"],
   "postCreateCommand": "npm ci",
   "remoteUser": "node"
 }
