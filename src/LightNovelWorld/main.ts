@@ -27,8 +27,10 @@ import {
   chapterUrl,
   genreChipItems,
   hasNextAdvancedSearchPage,
+  homeUrl,
   novelUrl,
   parseAdvancedSearchResults,
+  parseBoostShelfCards,
   parseChapterCards,
   parseChapterContent,
   parseChapterListTotal,
@@ -40,8 +42,10 @@ import {
   searchUrl,
   toAdvancedSearchResultItem,
   toFeaturedItem,
+  toLatestNovelItem,
   toRankingItem,
   toSearchResultItem,
+  toTrendingItem,
   toUpdateItem,
   updatesUrl,
   type LightNovelWorldSearchMetadata,
@@ -50,8 +54,10 @@ import {
 import type LightNovelWorldConfig from "./pbconfig";
 
 const DISCOVER_RECOMMENDED = "recommended";
+const DISCOVER_TRENDING = "trending";
 const DISCOVER_POPULAR = "popular";
-const DISCOVER_LATEST = "latest";
+const DISCOVER_LATEST_NOVELS = "latest-novels";
+const DISCOVER_LATEST_UPDATES = "latest";
 const DISCOVER_GENRES = "genres";
 
 const SORT_OPTIONS: SortingOption[] = [
@@ -112,8 +118,22 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
   async getDiscoverSections(): Promise<DiscoverSection[]> {
     return [
       { id: DISCOVER_RECOMMENDED, title: "Recommended", type: DiscoverSectionType.featured },
+      {
+        id: DISCOVER_TRENDING,
+        title: "Trending This Week",
+        type: DiscoverSectionType.simpleCarousel,
+      },
       { id: DISCOVER_POPULAR, title: "Popular", type: DiscoverSectionType.simpleCarousel },
-      { id: DISCOVER_LATEST, title: "Latest Updates", type: DiscoverSectionType.chapterUpdates },
+      {
+        id: DISCOVER_LATEST_NOVELS,
+        title: "Latest Novels",
+        type: DiscoverSectionType.simpleCarousel,
+      },
+      {
+        id: DISCOVER_LATEST_UPDATES,
+        title: "Latest Updates",
+        type: DiscoverSectionType.chapterUpdates,
+      },
       { id: DISCOVER_GENRES, title: "Genres", type: DiscoverSectionType.genres },
     ];
   }
@@ -131,11 +151,19 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
       const response = await fetchJson<SearchApiResponse>(recommendationsUrl());
       return { items: response.novels.map(toFeaturedItem) };
     }
+    if (section.id === DISCOVER_TRENDING) {
+      const html = await fetchPage(homeUrl());
+      return { items: parseBoostShelfCards(html).map(toTrendingItem) };
+    }
     if (section.id === DISCOVER_POPULAR) {
       const html = await fetchPage(rankingUrl());
       return { items: parseRankingCards(html).map(toRankingItem) };
     }
-    if (section.id === DISCOVER_LATEST) {
+    if (section.id === DISCOVER_LATEST_NOVELS) {
+      const html = await fetchPage(advancedSearchUrl(undefined, "new", 1));
+      return { items: parseAdvancedSearchResults(html).map(toLatestNovelItem) };
+    }
+    if (section.id === DISCOVER_LATEST_UPDATES) {
       const html = await fetchPage(updatesUrl());
       return { items: parseUpdateCards(html).map(toUpdateItem) };
     }

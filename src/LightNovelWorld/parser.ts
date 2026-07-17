@@ -42,6 +42,10 @@ export function updatesUrl(): string {
   return `${DOMAIN}/updates/`;
 }
 
+export function homeUrl(): string {
+  return `${DOMAIN}/`;
+}
+
 function absoluteUrl(path: string): string {
   return path.startsWith("http") ? path : `${DOMAIN}${path}`;
 }
@@ -528,6 +532,17 @@ export function toAdvancedSearchResultItem(card: AdvancedSearchCard): SearchResu
   };
 }
 
+// Same card shape backs "Latest Novels" (advancedSearchUrl(undefined, "new", 1))
+export function toLatestNovelItem(card: AdvancedSearchCard): DiscoverSectionItem {
+  return {
+    type: "simpleCarouselItem",
+    mangaId: card.slug,
+    title: card.title,
+    imageUrl: card.imageUrl,
+    contentRating: ContentRating.MATURE,
+  };
+}
+
 // Whether a page has a next page: the same "recommendation-card" listing always
 // renders a fixed page size, so a short page (or a page whose cards don't change
 // the count) signals the end without needing to parse the pagination links
@@ -574,6 +589,51 @@ export function toRankingItem(card: RankingCard): DiscoverSectionItem {
     imageUrl: card.imageUrl,
     contentRating: ContentRating.MATURE,
   };
+}
+
+// --- Discover: Trending This Week (homepage boost-shelf) ---
+
+export type BoostShelfCard = { slug: string; title: string; imageUrl: string; boostCount?: number };
+
+const BOOST_CARD_START = /<a href="\/novel\/([^/]+)\/" class="boost-shelf-card">/g;
+const BOOST_IMG = /<img src="([^"]*)"/;
+const BOOST_TITLE = /<span class="boost-shelf-title">([^<]*)<\/span>/;
+const BOOST_COUNT = /<span class="boost-shelf-count">\s*<svg[\s\S]*?<\/svg>\s*([\d,]+)/;
+
+export function parseBoostShelfCards(html: string): BoostShelfCard[] {
+  const starts = [...html.matchAll(BOOST_CARD_START)];
+
+  return starts
+    .map((match, index) => {
+      const from = match.index;
+      const to = starts[index + 1]?.index ?? html.length;
+      const block = html.slice(from, to);
+
+      const title = BOOST_TITLE.exec(block)?.[1];
+      if (!title) return undefined;
+
+      const card: BoostShelfCard = {
+        slug: match[1]!,
+        title: decodeEntities(title.trim()),
+        imageUrl: absoluteUrl(BOOST_IMG.exec(block)?.[1] ?? ""),
+      };
+      const boostCount = BOOST_COUNT.exec(block)?.[1];
+      if (boostCount) card.boostCount = Number(boostCount.replace(/,/g, ""));
+      return card;
+    })
+    .filter((card): card is BoostShelfCard => card !== undefined);
+}
+
+export function toTrendingItem(card: BoostShelfCard): DiscoverSectionItem {
+  const item: DiscoverSectionItem = {
+    type: "simpleCarouselItem",
+    mangaId: card.slug,
+    title: card.title,
+    imageUrl: card.imageUrl,
+    contentRating: ContentRating.MATURE,
+  };
+  if (card.boostCount) item.subtitle = `${card.boostCount} boosts`;
+  return item;
 }
 
 // --- Discover: Latest Updates (/updates/) ---
