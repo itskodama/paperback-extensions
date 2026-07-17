@@ -98,12 +98,16 @@ async function fetchAllChapterListPages(slug: string): Promise<string[]> {
 async function mostReadItems(
   metadata: Metadata | undefined,
 ): Promise<PagedResults<DiscoverSectionItem>> {
-  if (metadata === undefined) {
+  // The bridge doesn't reliably hand back `undefined` for "no metadata yet" (it
+  // may be `null`), so "not a number" — not "===undefined" — is what actually
+  // means "first page" here; the same convention this file's getSearchResults
+  // and every other extension's paginated methods already use
+  if (typeof metadata !== "number") {
     const html = await fetchPage(homeUrl());
     return { items: parseMostReadCards(html).map(toMostReadItem), metadata: 1 };
   }
 
-  const rankingPage = typeof metadata === "number" ? metadata : 1;
+  const rankingPage = metadata;
   const cards = parseRankingCards(await fetchPage(rankingUrl(rankingPage)));
 
   let visible = cards;

@@ -196,6 +196,24 @@ function genreId(value: string): string {
   return value.replace(/\s+/g, "-");
 }
 
+// The JSON-LD `description` is truncated by the site itself (ends in "…");
+// the full synopsis lives in .summary-content as separate <p> paragraphs
+const SUMMARY_START = 'class="summary-content"';
+const SUMMARY_END = "show-more-btn";
+const SUMMARY_PARAGRAPH = /<p>([\s\S]*?)<\/p>/g;
+
+function parseSummary(html: string): string | undefined {
+  const start = html.indexOf(SUMMARY_START);
+  const end = start >= 0 ? html.indexOf(SUMMARY_END, start) : -1;
+  if (start < 0 || end < 0) return undefined;
+
+  const paragraphs = [...html.slice(start, end).matchAll(SUMMARY_PARAGRAPH)]
+    .map((match) => decodeEntities(match[1]!.replace(/\s+/g, " ")).trim())
+    .filter((paragraph) => paragraph.length > 0);
+
+  return paragraphs.length > 0 ? paragraphs.join("\n\n") : undefined;
+}
+
 export function parseNovelDetails(html: string, mangaId: string): SourceManga {
   const book = findBookLd(html);
   const genres = book.genre ?? [];
@@ -217,7 +235,7 @@ export function parseNovelDetails(html: string, mangaId: string): SourceManga {
     mangaId,
     mangaInfo: {
       thumbnailUrl,
-      synopsis: book.description ?? "No synopsis.",
+      synopsis: parseSummary(html) ?? book.description ?? "No synopsis.",
       primaryTitle: book.name ?? "Unknown Title",
       secondaryTitles: [],
       contentRating: contentRatingFor(genres),
@@ -473,8 +491,11 @@ export type SortOption = { id: string; label: string; sort?: string; order?: "as
 export const SORT_OPTIONS: SortOption[] = [
   { id: "rank", label: "Relevance" },
   { id: "views-desc", label: "Most Viewed", sort: "views", order: "desc" },
+  { id: "views-asc", label: "Least Viewed", sort: "views", order: "asc" },
   { id: "bookmarks-desc", label: "Most Bookmarked", sort: "bookmarks", order: "desc" },
+  { id: "bookmarks-asc", label: "Least Bookmarked", sort: "bookmarks", order: "asc" },
   { id: "updates-desc", label: "Recently Updated", sort: "updates", order: "desc" },
+  { id: "updates-asc", label: "Least Recently Updated", sort: "updates", order: "asc" },
   { id: "new-desc", label: "Newest", sort: "new", order: "desc" },
   { id: "new-asc", label: "Oldest", sort: "new", order: "asc" },
 ];
