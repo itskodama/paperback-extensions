@@ -6,7 +6,7 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 export default {
   name: "LightNovelWorld",
   description: "Read light novels from lightnovelworld.org.",
-  version: "1.0.0-alpha.0",
+  version: "1.0.0-alpha.1",
   icon: "icon.png",
   language: "en",
   contentRating: ContentRating.MATURE,
