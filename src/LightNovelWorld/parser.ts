@@ -195,6 +195,11 @@ function findBookLd(html: string): LdBook {
   throw new Error("No Book JSON-LD found on the LightNovelWorld page");
 }
 
+// JSON-LD genres are spaced ("Slice of Life"); Tag.id can't contain spaces (forms.md)
+function genreId(value: string): string {
+  return value.replace(/\s+/g, "-");
+}
+
 export function parseNovelDetails(html: string, mangaId: string): SourceManga {
   const book = findBookLd(html);
   const genres = book.genre ?? [];
@@ -205,7 +210,7 @@ export function parseNovelDetails(html: string, mangaId: string): SourceManga {
           {
             id: "genres",
             title: "Genres",
-            tags: genres.map((genre) => ({ id: genre, title: genre })),
+            tags: genres.map((genre) => ({ id: genreId(genre), title: genre })),
           },
         ]
       : [];

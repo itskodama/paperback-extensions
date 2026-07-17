@@ -7,7 +7,9 @@ violation passes every local test and crashes on device.
 
 Most Paperback types (`SourceManga`, `Chapter`, `SearchResultItem`, …) are **decoded structs**: the
 bridge decodes them field by field, and optional fields are genuinely optional — `Chapter.title`,
-`SearchResultItem.subtitle`, and friends are fine as `undefined`.
+`SearchResultItem.subtitle`, and friends are fine as `undefined`. One exception inside that
+leniency: any field typed as an **ID** (`Tag.id`, form row ids, `DiscoverSection.id`, …) is checked
+against a restricted charset regardless — see [Forms](forms.md#the-id-charset-rule-isnt-form-only).
 
 `Metadata` is different. It is the type of `SearchQuery.metadata`, `PagedResults.metadata`, and the
 return of `AdvancedSearchForm.getSearchQueryMetadata`, and it crosses to the app as a **raw

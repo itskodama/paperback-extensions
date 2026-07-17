@@ -46,7 +46,13 @@ Three levels: **novel → chapter (paginated list) → chapter (full text)**, pl
 - Novel JSON-LD (`schema.org/Book`): `name`, `author`, `genre` (array), `description`, `image`
   (relative `/media/covers/...` path), `aggregateRating`, `numberOfPages` (= chapter count),
   `status` (`"Ongoing"` / `"Completed"`). **No `hasPart` chapter list** — unlike LNORI, the chapter
-  list is a separate paginated page, not embedded JSON-LD.
+  list is a separate paginated page, not embedded JSON-LD. **The JSON-LD's `genre` strings are a
+  different vocabulary from `/advanced-search/`'s checkboxes** — natural spaced names here
+  (`"Slice of Life"`, `"Martial Arts"`) vs. hyphenated slugs there (`"Slice-of-Life"`,
+  `"Martial-Arts"`) for the same concepts. Device-verified the hard way: using a raw JSON-LD genre
+  string as a manga-details `Tag.id` crashed opening any series page (`Could not convert JSValue:
+Invalid ID`, per docs/paperback/forms.md#the-id-charset-rule-isnt-form-only) — sanitize before use,
+  and don't assume the two genre lists share ids even though they share display text.
 - Chapter list (`/novel/<slug>/chapters/?page=N`): 50 `.chapter-card` divs per page (last page
   short), each `onclick="location.href='/novel/<slug>/chapter/<n>/'"` with a `.chapter-title` of
   the form `Chapter <n> - <raw> - <title>`. **`<n>` (the URL position) is a clean, gapless 1..N
