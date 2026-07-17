@@ -12,12 +12,16 @@
     "moduleResolution": "bundler",
     "target": "esnext",
     "resolveJsonModule": true,
+    "types": ["node"],
 
     // Other Outputs
     // "sourceMap": true,
     // "declaration": true,
     // "declarationMap": true,
     "noEmit": true,
+    // test/unit/*.test.ts import parser.ts by its real extension, matching
+    // Node's native TS runner (node --test) — only valid alongside noEmit
+    "allowImportingTsExtensions": true,
 
     // Stricter Typechecking Options
     "noUncheckedIndexedAccess": true,
