@@ -22,10 +22,12 @@ import { MainInterceptor, fetchJson, fetchPage } from "./network";
 import {
   CHAPTER_LIST_PAGE_SIZE,
   RANKING_PAGE_SIZE,
+  SORT_OPTIONS,
   advancedSearchUrl,
   chapterCardToChapter,
   chapterListUrl,
   chapterUrl,
+  findSortOption,
   genreChipItems,
   hasNextAdvancedSearchPage,
   homeUrl,
@@ -62,14 +64,6 @@ const DISCOVER_POPULAR = "popular";
 const DISCOVER_LATEST_NOVELS = "latest-novels";
 const DISCOVER_LATEST_UPDATES = "latest";
 const DISCOVER_GENRES = "genres";
-
-const SORT_OPTIONS: SortingOption[] = [
-  { id: "rank", label: "Relevance" },
-  { id: "views", label: "Most Viewed" },
-  { id: "bookmarks", label: "Most Bookmarked" },
-  { id: "updates", label: "Recently Updated" },
-  { id: "new", label: "Newest" },
-];
 
 // Falls back to fetching sequentially until a short page if the total can't be parsed
 async function fetchAllChapterListPages(slug: string): Promise<string[]> {
@@ -180,7 +174,7 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
       return mostReadItems(metadata);
     }
     if (section.id === DISCOVER_LATEST_NOVELS) {
-      const html = await fetchPage(advancedSearchUrl(undefined, "new", 1));
+      const html = await fetchPage(advancedSearchUrl(undefined, findSortOption("new-desc"), 1));
       return { items: parseAdvancedSearchResults(html).map(toLatestNovelItem) };
     }
     if (section.id === DISCOVER_LATEST_UPDATES) {
@@ -191,7 +185,7 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
   }
 
   async getSortingOptions(): Promise<SortingOption[]> {
-    return SORT_OPTIONS;
+    return SORT_OPTIONS.map((option) => ({ id: option.id, label: option.label }));
   }
 
   async getAdvancedSearchForm(query: SearchQuery<Metadata>): Promise<LightNovelWorldSearchForm> {
@@ -214,7 +208,8 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
     }
 
     const page = typeof metadata === "number" ? metadata : 1;
-    const html = await fetchPage(advancedSearchUrl(filters, sortingOption?.id, page));
+    const sort = findSortOption(sortingOption?.id);
+    const html = await fetchPage(advancedSearchUrl(filters, sort, page));
     const cards = parseAdvancedSearchResults(html);
     const items = cards.map(toAdvancedSearchResultItem);
 

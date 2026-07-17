@@ -442,20 +442,52 @@ export function toFeaturedItem(novel: SearchNovelJson): DiscoverSectionItem {
 }
 
 // --- Advanced search (/advanced-search/) ---
-// `status` is a confirmed no-op and `sort=rating` looks broken, so neither is
-// exposed (site-recon.md)
+// sort=rating looks broken (reads alphabetical, not rating order) — excluded
 
 export type LightNovelWorldSearchMetadata = {
   genresInclude?: string[];
   genresExclude?: string[];
   genreLogic?: "AND" | "OR";
+  status?: string;
+  chapterRange?: string;
 };
 
-const VERIFIED_SORTS = new Set(["rank", "views", "bookmarks", "updates", "new"]);
+// Real API values for chapter_range; "<50"/">1000" aren't row-id-safe, so
+// forms.ts maps its own ids (lt50/gt1000) to these
+export const CHAPTER_RANGES = [
+  { id: "lt50", value: "<50", label: "Less than 50" },
+  { id: "50-100", value: "50-100", label: "50-100" },
+  { id: "100-500", value: "100-500", label: "100-500" },
+  { id: "500-1000", value: "500-1000", label: "500-1000" },
+  { id: "gt1000", value: ">1000", label: "More than 1000" },
+] as const;
+
+export const STATUSES = [
+  { id: "ongoing", label: "Ongoing" },
+  { id: "completed", label: "Completed" },
+  { id: "hiatus", label: "Hiatus" },
+] as const;
+
+export type SortOption = { id: string; label: string; sort?: string; order?: "asc" | "desc" };
+
+export const SORT_OPTIONS: SortOption[] = [
+  { id: "rank", label: "Relevance" },
+  { id: "views-desc", label: "Most Viewed", sort: "views", order: "desc" },
+  { id: "bookmarks-desc", label: "Most Bookmarked", sort: "bookmarks", order: "desc" },
+  { id: "updates-desc", label: "Recently Updated", sort: "updates", order: "desc" },
+  { id: "new-desc", label: "Newest", sort: "new", order: "desc" },
+  { id: "new-asc", label: "Oldest", sort: "new", order: "asc" },
+];
+
+export const DEFAULT_SORT: SortOption = SORT_OPTIONS[0]!;
+
+export function findSortOption(id: string | undefined): SortOption {
+  return SORT_OPTIONS.find((option) => option.id === id) ?? DEFAULT_SORT;
+}
 
 export function advancedSearchUrl(
   filters: LightNovelWorldSearchMetadata | undefined,
-  sortId: string | undefined,
+  sort: SortOption,
   page: number,
 ): string {
   const params = new Map<string, string[]>();
@@ -467,7 +499,10 @@ export function advancedSearchUrl(
     params.set("genres_exclude", [...(params.get("genres_exclude") ?? []), genre]);
   }
   if (filters?.genreLogic === "OR") params.set("genre_logic", ["OR"]);
-  if (sortId && sortId !== "rank" && VERIFIED_SORTS.has(sortId)) params.set("sort", [sortId]);
+  if (filters?.status) params.set("status", [filters.status]);
+  if (filters?.chapterRange) params.set("chapter_range", [filters.chapterRange]);
+  if (sort.sort) params.set("sort", [sort.sort]);
+  if (sort.order) params.set("order", [sort.order]);
   if (page > 1) params.set("page", [String(page)]);
 
   const pairs: string[] = [];

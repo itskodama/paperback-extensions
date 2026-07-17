@@ -74,14 +74,18 @@ genres, cover_path, latest_chapter_number}, ...]}`. This is a real server-side q
   set, not just the count (e.g. `genres_include=Fantasy&genres_include=Action&genre_logic=OR` vs.
   `...&genre_logic=AND` return different lists; excluding a genre drops most of the unfiltered
   overlap). Genre values are plain, hyphen-safe strings matching the page's checkbox list (`Action`,
-  `Martial-Arts`, `Slice-of-Life`, ... — convenient, no space-to-id transform needed). **`status`
-  is a no-op** despite accepting the parameter with no error: `status=Completed`, `status=Ongoing`,
-  and a nonsense value all returned the identical 24-result list (verified by diffing titles, not
-  just counts) — don't expose it as a filter. `sort` is mostly real (`views`, `bookmarks`,
-  `updates`, `new`, and the default `rank` each verified to reorder results sensibly — `new`
-  matches `/genre-all/?order=new`'s top entry exactly), **but `sort=rating` looks broken**: its
-  result order reads as alphabetical, not rating-sorted, and doesn't match any other verified
-  ordering. Ship only the sort values individually verified to actually reorder.
+  `Martial-Arts`, `Slice-of-Life`, ... — convenient, no space-to-id transform needed).
+  `status=ongoing|completed|hiatus` and `chapter_range=<50|50-100|100-500|500-1000|>1000` both
+  filter for real (verified by diffing titles, not just counts: `ongoing`/`completed` are 0%
+  overlapping; each chapter range's results checked against their own `N chapters` card text, all
+  inside the claimed bound). Note: an earlier pass of this doc called `status` a no-op — re-tested
+  2026-07-17 and it now filters correctly (same lowercase values), so either it was fixed
+  server-side or that earlier test had a bug; trust the newer result. `order=asc|desc` also
+  genuinely reverses `sort=views` (least-viewed-first vs most-viewed-first). `sort` is otherwise
+  real (`views`, `bookmarks`, `updates`, `new`, default `rank`), **but `sort=rating` still looks
+  broken** in both directions — reads alphabetical, not rating-sorted. `chapter_range`'s `<50` and
+  `>1000` values aren't row-id-safe (`<`/`>`), same charset trap as `Tag.id` — needs an id↔value
+  lookup in the form, not used as a row id directly.
 - Chapter page: full text lives in `<div class="chapter-text protected-content" id="chapterText"
 data-protected="true">` despite the `protected-content`/`data-protected` naming — the raw HTML
   response has the complete, unobfuscated text (checked for hidden decoy spans / reversed text /
@@ -107,9 +111,9 @@ data-protected="true">` despite the `protected-content`/`data-protected` naming 
 - `getSearchResults`: `GET /api/search/?q=<query>` directly — real server-side search, no local
   filtering needed (a first for this repo; AsuraScans and LNORI both fall back to client-side
   filtering over a bulk fetch).
-- Search metadata: genre include/exclude filters route through `/advanced-search/`; plain text
-  queries with no filters use `/api/search/` directly. No `status` filter (confirmed non-functional
-  server-side) and only the verified-working sort values are exposed.
+- Search metadata: genre include/exclude, status, and chapter-range filters route through
+  `/advanced-search/`; plain text queries with no filters use `/api/search/` directly. Only the
+  verified-working sort values are exposed (`rating` excluded).
 - Discover: `/api/recommendations/` for a "Recommended" shelf, `/ranking/` for "Popular",
   `/updates/` for "Latest", `/genre-all/?order=new` for "New".
 
