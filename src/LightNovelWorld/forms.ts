@@ -18,10 +18,8 @@ const LOGIC_ITEMS = [
   { id: "OR", title: "Match any selected genre" },
 ];
 
-// Genre values are already row-id-safe (hyphenated, no spaces), so they double
-// directly as row ids — unlike NovelArchive's genre catalog, no id<->value
-// lookup table is needed here. `status` has no row here at all: verified
-// non-functional server-side (docs/LightNovelWorld/site-recon.md).
+// Genre values are already row-id-safe, so they double as row ids directly.
+// No `status` row: verified non-functional server-side (site-recon.md).
 export class LightNovelWorldSearchForm extends AdvancedSearchForm {
   private genreState: Record<string, "included" | "excluded">;
   private genreLogic: string[];

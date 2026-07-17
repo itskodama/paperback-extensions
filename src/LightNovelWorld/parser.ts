@@ -72,8 +72,7 @@ function decodeEntities(value: string): string {
 }
 
 // --- Genre catalog ---
-// Enumerated from /advanced-search/'s checkbox list (2026-07-16); values are
-// already row-id-safe (hyphenated, no spaces), unlike NovelArchive's genre values
+// From /advanced-search/'s checkbox list; already row-id-safe (hyphenated)
 export const GENRES = [
   "Action",
   "Adventure",
@@ -116,8 +115,7 @@ export const GENRES = [
   "Yuri",
 ] as const;
 
-// A curated subset for the discover chip row, matching NovelArchive's precedent
-// of not dumping the whole vocabulary into a horizontal row
+// Curated subset for the discover chip row, not the whole vocabulary
 const DISCOVER_GENRES = [
   "Action",
   "Adventure",
@@ -141,10 +139,8 @@ const DISCOVER_GENRES = [
   "Xianxia",
 ] as const;
 
-// Only "Adult" is an unambiguous explicit-content signal in this site's own
-// vocabulary; orientation tags (Yaoi, Yuri, LGBT+, Gender-Bender) and
-// violence/suggestive-only tags (Ecchi, Horror, Tragedy) don't imply it on their
-// own, same reasoning NovelArchive's ADULT_GENRES applied
+// "Adult" is the only unambiguous explicit-content tag; orientation/violence
+// tags (Yaoi, Ecchi, Horror, ...) don't imply it on their own
 function contentRatingFor(genres: string[]): ContentRating {
   return genres.some((genre) => genre.toLowerCase() === "adult")
     ? ContentRating.ADULT
@@ -236,12 +232,9 @@ export function parseNovelDetails(html: string, mangaId: string): SourceManga {
 }
 
 // --- Chapter list pages (/novel/<slug>/chapters/?page=N) ---
-// Chapter titles read "Chapter <n> - <raw> - <title>"; <n> (this card's own URL
-// number) is a clean, gapless 1..total sequence and is used as chapNum, but the
-// embedded <raw> segment drifts from <n> after book-boundary chapters and is
-// missing entirely on bonus chapters ("Chapter 150 - Surprise chapter drop!") —
-// verified against a 160-chapter series (docs/LightNovelWorld/site-recon.md).
-// Only <n> is trusted; <raw> is discarded along with the "Chapter <n> - " prefix.
+// Titles read "Chapter <n> - <raw> - <title>"; <raw> drifts from <n> after
+// book-boundary chapters and is missing on bonus chapters, so only the URL's
+// own <n> is trusted as chapNum (site-recon.md)
 
 export const CHAPTER_LIST_PAGE_SIZE = 50;
 
@@ -252,9 +245,8 @@ const CARD_START =
 const TITLE_IN_CARD = /<h3 class="chapter-title">\s*([\s\S]*?)\s*<\/h3>/;
 const TIME_IN_CARD = /<p class="chapter-time">\s*([^<]*?)\s*<\/p>/;
 const CHAPTER_PREFIX = /^Chapter\s+\d+\s*-\s*/i;
-// Strips a further bare leading number (the drifting/absent <raw> segment)
-// regardless of whether it agrees with chapNum — a correct duplicate number is
-// exactly as confusing to read as a wrong one (docs/paperback/chapters.md)
+// Strips a further bare leading number regardless of whether it agrees with
+// chapNum (docs/paperback/chapters.md)
 const NUMBER_PREFIX = /^\d+(?:\.\d+)?\s*-\s*(.*)$/;
 
 function extractCardTitle(raw: string): string | undefined {
@@ -334,18 +326,14 @@ export function chapterCardToChapter(card: ChapterCard, sourceManga: SourceManga
 }
 
 // --- Chapter content ---
-// The reader text lives in #chapterText as a flat run of <p> tags, preceded by
-// one ad container + <style> block; matching only <p>...</p> discards those
-// (and the trailing comment/TTS UI, bounded by .bottom-nav) without needing to
-// special-case the ad markup itself
+// #chapterText is a flat run of <p> tags plus an ad container + <style> block;
+// matching only <p>...</p> discards the rest with no special-casing needed
 const CONTENT_START = 'id="chapterText"';
 const CONTENT_END = '<div class="bottom-nav">';
 const PARAGRAPH = /<p>[\s\S]*?<\/p>/g;
 
-// The app parses an html chapter as XML: unclosed void elements and named
-// entities beyond XML's five predefined ones are fatal (docs/paperback/html-chapters.md).
-// Observed chapters only carried &quot;/&#x27;, but this defends the rest of the
-// site's catalog the same way LNORI/NovelArchive do.
+// html chapters parse as XML: unclosed void elements and named entities beyond
+// XML's five are fatal (docs/paperback/html-chapters.md)
 const VOID_TAG =
   /<(img|br|hr|source|wbr|area|col|embed|input|link|meta|track|param|base)(\b[^>]*?)\s*\/?>/gi;
 const NAMED_REF = /&([a-zA-Z][a-zA-Z0-9]*);/g;
@@ -428,22 +416,34 @@ export function toSearchResultItem(novel: SearchNovelJson): SearchResultItem {
   };
 }
 
+type InfoItem = { symbol: string; text: string };
+
+// TODO: fetch each novel's own page for a real synopsis + rating (like
+// AsuraScans/NovelArchive) — costs one extra request per recommended item,
+// so left as free/status-only data for now
 export function toFeaturedItem(novel: SearchNovelJson): DiscoverSectionItem {
+  const infoItems: [InfoItem, InfoItem] = [
+    { symbol: "book.fill", text: `${novel.latest_chapter_number} ch` },
+    {
+      symbol: novel.status === "Completed" ? "checkmark.circle.fill" : "clock.fill",
+      text: novel.status,
+    },
+  ];
+
   return {
     type: "featuredCarouselItem",
     mangaId: novel.slug,
     title: novel.title,
     imageUrl: absoluteUrl(novel.cover_path),
     supertitle: novel.author,
+    infoItems,
     contentRating: contentRatingFor(novel.genres),
   };
 }
 
 // --- Advanced search (/advanced-search/) ---
-// Genre include/exclude/AND-OR logic and most sort values are verified real
-// (each changes the actual result set, not just the count); `status` is a
-// confirmed no-op and `sort=rating` looks broken (reads as alphabetical, not
-// rating order) — neither is exposed. See docs/LightNovelWorld/site-recon.md.
+// `status` is a confirmed no-op and `sort=rating` looks broken, so neither is
+// exposed (site-recon.md)
 
 export type LightNovelWorldSearchMetadata = {
   genresInclude?: string[];
@@ -539,20 +539,12 @@ export function toLatestNovelItem(card: AdvancedSearchCard): DiscoverSectionItem
   };
 }
 
-// Whether a page has a next page: the same "recommendation-card" listing always
-// renders a fixed page size, so a short page (or a page whose cards don't change
-// the count) signals the end without needing to parse the pagination links
+// A short page signals the end without needing to parse pagination links
 export function hasNextAdvancedSearchPage(cardCount: number, pageSize = 24): boolean {
   return cardCount >= pageSize;
 }
 
-// --- Discover: Popular (homepage's "Most Read" ranking column) ---
-// The homepage's Ranking widget renders 3 columns (Most Read / New Trend / User
-// Rated) inline together, no separate URL per column. Only Most Read (view
-// count, the site's own top-billed metric) is used here — New Trend
-// (comment/review volume) and User Rated are real but marginal signals, skipped
-// to avoid stacking near-redundant carousels. /ranking/'s own dedicated page
-// has a different, unrelated tab set (Rank/Reviews/Comments/Collections).
+// --- Discover: Most Read (homepage ranking column + /ranking/ for more) ---
 
 export type MostReadCard = { slug: string; title: string; imageUrl: string; viewsText?: string };
 
@@ -604,6 +596,52 @@ export function toMostReadItem(card: MostReadCard): DiscoverSectionItem {
   return item;
 }
 
+// /ranking/?sort=rank extends past the homepage's top 10; no view count on its cards
+export const RANKING_PAGE_SIZE = 100;
+
+export type RankingCard = { slug: string; title: string; imageUrl: string };
+
+const RANKING_CARD_START = /<div class="ranking-card">/g;
+const RANKING_HREF = /<a href="\/novel\/([^/]+)\/" class="card-link">/;
+const RANKING_COVER = /<div class="card-cover" data-bg-image="([^"]*)">/;
+const RANKING_TITLE = /<h3 class="card-title">([^<]*)<\/h3>/;
+
+export function rankingUrl(page: number): string {
+  return `${DOMAIN}/ranking/?sort=rank&page=${page}`;
+}
+
+export function parseRankingCards(html: string): RankingCard[] {
+  const starts = [...html.matchAll(RANKING_CARD_START)];
+
+  return starts
+    .map((match, index) => {
+      const from = match.index;
+      const to = starts[index + 1]?.index ?? html.length;
+      const block = html.slice(from, to);
+
+      const slug = RANKING_HREF.exec(block)?.[1];
+      const title = RANKING_TITLE.exec(block)?.[1];
+      if (!slug || !title) return undefined;
+
+      return {
+        slug,
+        title: decodeEntities(title.trim()),
+        imageUrl: absoluteUrl(RANKING_COVER.exec(block)?.[1] ?? ""),
+      };
+    })
+    .filter((card): card is RankingCard => card !== undefined);
+}
+
+export function toRankingItem(card: RankingCard): DiscoverSectionItem {
+  return {
+    type: "simpleCarouselItem",
+    mangaId: card.slug,
+    title: card.title,
+    imageUrl: card.imageUrl,
+    contentRating: ContentRating.MATURE,
+  };
+}
+
 // --- Discover: Trending This Week (homepage boost-shelf) ---
 
 export type BoostShelfCard = { slug: string; title: string; imageUrl: string; boostCount?: number };
@@ -650,10 +688,8 @@ export function toTrendingItem(card: BoostShelfCard): DiscoverSectionItem {
 }
 
 // --- Discover: Latest Updates (/updates/) ---
-// Each entry names a specific chapter ("Chapter 381: Bad Omen") but links to the
-// novel page, not the chapter page — the chapter number is parsed out of the
-// label text and used to build a chapterId consistent with getChapters'/
-// getChapterDetails' own scheme (plain URL position, see above)
+// Links to the novel page, not the chapter; chapter number is parsed from the
+// "Chapter N: Title" label text instead
 
 export type UpdateCard = {
   slug: string;

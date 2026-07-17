@@ -21,6 +21,7 @@ import { LightNovelWorldSearchForm } from "./forms";
 import { MainInterceptor, fetchJson, fetchPage } from "./network";
 import {
   CHAPTER_LIST_PAGE_SIZE,
+  RANKING_PAGE_SIZE,
   advancedSearchUrl,
   chapterCardToChapter,
   chapterListUrl,
@@ -36,13 +37,16 @@ import {
   parseChapterListTotal,
   parseMostReadCards,
   parseNovelDetails,
+  parseRankingCards,
   parseUpdateCards,
+  rankingUrl,
   recommendationsUrl,
   searchUrl,
   toAdvancedSearchResultItem,
   toFeaturedItem,
   toLatestNovelItem,
   toMostReadItem,
+  toRankingItem,
   toSearchResultItem,
   toTrendingItem,
   toUpdateItem,
@@ -67,10 +71,7 @@ const SORT_OPTIONS: SortingOption[] = [
   { id: "new", label: "Newest" },
 ];
 
-// The chapter-list page's own total (from the "Go to Chapter" input's max
-// attribute) lets every remaining page be fetched concurrently in one shot; a
-// markup change that breaks that parse degrades to fetching sequentially until
-// a short page is seen, same fallback discipline as LNORI's per-volume TOC read
+// Falls back to fetching sequentially until a short page if the total can't be parsed
 async function fetchAllChapterListPages(slug: string): Promise<string[]> {
   const first = await fetchPage(chapterListUrl(slug, 1));
   const total = parseChapterListTotal(first);
@@ -98,9 +99,32 @@ async function fetchAllChapterListPages(slug: string): Promise<string[]> {
   return pages;
 }
 
+// First page is the homepage's 10 Most Read items (real view-count subtitle);
+// further pages come from /ranking/, deduped against those same 10
+async function mostReadItems(
+  metadata: Metadata | undefined,
+): Promise<PagedResults<DiscoverSectionItem>> {
+  if (metadata === undefined) {
+    const html = await fetchPage(homeUrl());
+    return { items: parseMostReadCards(html).map(toMostReadItem), metadata: 1 };
+  }
+
+  const rankingPage = typeof metadata === "number" ? metadata : 1;
+  const cards = parseRankingCards(await fetchPage(rankingUrl(rankingPage)));
+
+  let visible = cards;
+  if (rankingPage === 1) {
+    const homeSlugs = new Set(
+      parseMostReadCards(await fetchPage(homeUrl())).map((card) => card.slug),
+    );
+    visible = cards.filter((card) => !homeSlugs.has(card.slug));
+  }
+
+  const items = visible.map(toRankingItem);
+  return cards.length >= RANKING_PAGE_SIZE ? { items, metadata: rankingPage + 1 } : { items };
+}
+
 export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovelWorldConfig> {
-  // Cloudflare-fronted but never challenges a plain GET (verified during recon);
-  // this budget matches LNORI/NovelArchive's number for the same profile
   mainRateLimiter = new BasicRateLimiter("main", {
     numberOfRequests: 20,
     bufferInterval: 10,
@@ -141,8 +165,6 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
     section: DiscoverSection,
     metadata: Metadata | undefined,
   ): Promise<PagedResults<DiscoverSectionItem>> {
-    void metadata;
-
     if (section.id === DISCOVER_GENRES) {
       return { items: genreChipItems() };
     }
@@ -155,8 +177,7 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
       return { items: parseBoostShelfCards(html).map(toTrendingItem) };
     }
     if (section.id === DISCOVER_POPULAR) {
-      const html = await fetchPage(homeUrl());
-      return { items: parseMostReadCards(html).map(toMostReadItem) };
+      return mostReadItems(metadata);
     }
     if (section.id === DISCOVER_LATEST_NOVELS) {
       const html = await fetchPage(advancedSearchUrl(undefined, "new", 1));
@@ -186,11 +207,7 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
     const hasFilters = !!(filters?.genresInclude?.length || filters?.genresExclude?.length);
     const title = query.title.trim();
 
-    // The real search API has no genre/sort filtering of its own and
-    // advanced-search has no free-text query param (verified during recon), so
-    // a plain title search always prefers the API; filters (with or without a
-    // title alongside them, which advanced-search can't honor) go through the
-    // filtered HTML listing instead
+    // advanced-search has no free-text param, so a plain title search prefers the API
     if (!hasFilters && title) {
       const response = await fetchJson<SearchApiResponse>(searchUrl(title));
       return { items: response.novels.map(toSearchResultItem) };

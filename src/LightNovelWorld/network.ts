@@ -32,9 +32,7 @@ type CachedText = {
   text: string;
 };
 
-// Covers a burst without ever serving meaningfully stale data: a title open reads
-// its novel page once for details and once (indirectly, via getChapters) for the
-// chapter list's own pages, and discover fires several list endpoints on load
+// Covers a burst of same-page reads without serving meaningfully stale data
 const TEXT_CACHE_TTL = 60_000;
 const TEXT_CACHE_LIMIT = 12;
 
@@ -60,8 +58,7 @@ function rememberText(url: string, text: string): void {
   textCache.set(url, { fetchedAt: Date.now(), text });
 }
 
-// Both the HTML pages and the JSON API return 200 with no Cloudflare challenge for
-// a plain GET (verified during recon), so one fetch path covers both
+// HTML pages and the JSON API both return 200 with no Cloudflare challenge
 async function fetchText(url: string): Promise<string> {
   const cached = cachedText(url);
   if (cached !== undefined) return cached;
