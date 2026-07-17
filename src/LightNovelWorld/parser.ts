@@ -582,12 +582,19 @@ export function toRankingItem(card: RankingCard): DiscoverSectionItem {
 // label text and used to build a chapterId consistent with getChapters'/
 // getChapterDetails' own scheme (plain URL position, see above)
 
-export type UpdateCard = { slug: string; title: string; imageUrl: string; chapterNumber: number };
+export type UpdateCard = {
+  slug: string;
+  title: string;
+  imageUrl: string;
+  chapterNumber: number;
+  timeText?: string;
+};
 
 const UPDATE_CARD_START = /<a href="\/novel\/([^/]+)\/" class="ranking-item chapter-item">/g;
 const UPDATE_IMG = /<img src="([^"]*)"/;
 const UPDATE_TITLE = /<h4 class="ranking-item-title">([^<]*)<\/h4>/;
 const UPDATE_CHAPTER = /<span class="chapter-link">\s*Chapter\s+(\d+)/;
+const UPDATE_TIME = /<span class="chapter-timestamp">\s*([^<]*?)\s*<\/span>/;
 
 export function parseUpdateCards(html: string): UpdateCard[] {
   const starts = [...html.matchAll(UPDATE_CARD_START)];
@@ -603,23 +610,30 @@ export function parseUpdateCards(html: string): UpdateCard[] {
       const chapterNumber = UPDATE_CHAPTER.exec(block)?.[1];
       if (!title || !chapterNumber) return undefined;
 
-      return {
+      const card: UpdateCard = {
         slug,
         title: decodeEntities(title.trim()),
         imageUrl: absoluteUrl(UPDATE_IMG.exec(block)?.[1] ?? ""),
         chapterNumber: Number(chapterNumber),
       };
+      const timeText = UPDATE_TIME.exec(block)?.[1];
+      if (timeText) card.timeText = decodeEntities(timeText.trim());
+      return card;
     })
     .filter((card): card is UpdateCard => card !== undefined);
 }
 
 export function toUpdateItem(card: UpdateCard): DiscoverSectionItem {
-  return {
+  const item: DiscoverSectionItem = {
     type: "chapterUpdatesCarouselItem",
     mangaId: card.slug,
     chapterId: String(card.chapterNumber),
     title: card.title,
+    subtitle: `Chapter ${card.chapterNumber}`,
     imageUrl: card.imageUrl,
     contentRating: ContentRating.MATURE,
   };
+  const publishDate = card.timeText ? parseRelativeTime(card.timeText) : undefined;
+  if (publishDate) item.publishDate = publishDate;
+  return item;
 }
