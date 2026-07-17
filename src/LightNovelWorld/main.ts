@@ -34,16 +34,15 @@ import {
   parseChapterCards,
   parseChapterContent,
   parseChapterListTotal,
+  parseMostReadCards,
   parseNovelDetails,
-  parseRankingCards,
   parseUpdateCards,
-  rankingUrl,
   recommendationsUrl,
   searchUrl,
   toAdvancedSearchResultItem,
   toFeaturedItem,
   toLatestNovelItem,
-  toRankingItem,
+  toMostReadItem,
   toSearchResultItem,
   toTrendingItem,
   toUpdateItem,
@@ -123,7 +122,7 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
         title: "Trending This Week",
         type: DiscoverSectionType.simpleCarousel,
       },
-      { id: DISCOVER_POPULAR, title: "Popular", type: DiscoverSectionType.simpleCarousel },
+      { id: DISCOVER_POPULAR, title: "Most Read", type: DiscoverSectionType.simpleCarousel },
       {
         id: DISCOVER_LATEST_NOVELS,
         title: "Latest Novels",
@@ -156,8 +155,8 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
       return { items: parseBoostShelfCards(html).map(toTrendingItem) };
     }
     if (section.id === DISCOVER_POPULAR) {
-      const html = await fetchPage(rankingUrl());
-      return { items: parseRankingCards(html).map(toRankingItem) };
+      const html = await fetchPage(homeUrl());
+      return { items: parseMostReadCards(html).map(toMostReadItem) };
     }
     if (section.id === DISCOVER_LATEST_NOVELS) {
       const html = await fetchPage(advancedSearchUrl(undefined, "new", 1));

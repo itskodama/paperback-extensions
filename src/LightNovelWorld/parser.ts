@@ -34,10 +34,6 @@ export function recommendationsUrl(): string {
   return `${API_BASE}/recommendations/`;
 }
 
-export function rankingUrl(): string {
-  return `${DOMAIN}/ranking/`;
-}
-
 export function updatesUrl(): string {
   return `${DOMAIN}/updates/`;
 }
@@ -550,45 +546,62 @@ export function hasNextAdvancedSearchPage(cardCount: number, pageSize = 24): boo
   return cardCount >= pageSize;
 }
 
-// --- Discover: Popular (/ranking/) ---
+// --- Discover: Popular (homepage's "Most Read" ranking column) ---
+// The homepage's Ranking widget renders 3 columns (Most Read / New Trend / User
+// Rated) inline together, no separate URL per column. Only Most Read (view
+// count, the site's own top-billed metric) is used here — New Trend
+// (comment/review volume) and User Rated are real but marginal signals, skipped
+// to avoid stacking near-redundant carousels. /ranking/'s own dedicated page
+// has a different, unrelated tab set (Rank/Reviews/Comments/Collections).
 
-export type RankingCard = { slug: string; title: string; imageUrl: string };
+export type MostReadCard = { slug: string; title: string; imageUrl: string; viewsText?: string };
 
-const RANKING_CARD_START = /<div class="ranking-card">/g;
-const RANKING_HREF = /<a href="\/novel\/([^/]+)\/" class="card-link">/;
-const RANKING_COVER = /<div class="card-cover" data-bg-image="([^"]*)">/;
-const RANKING_TITLE = /<h3 class="card-title">([^<]*)<\/h3>/;
+const MOST_READ_START = 'ranking-column-title">Most Read';
+const MOST_READ_END = 'ranking-column-title">New Trend';
+const MOST_READ_ITEM_START = /<a href="\/novel\/([^/]+)\/" class="ranking-item">/g;
+const MOST_READ_TITLE = /<h4 class="ranking-item-title">([^<]*)<\/h4>/;
+const MOST_READ_IMG = /<img src="([^"]*)"/;
+const MOST_READ_VIEWS = /<span class="stat-item">[\s\S]*?<span>\s*([^<]*?)\s*<\/span>/;
 
-export function parseRankingCards(html: string): RankingCard[] {
-  const starts = [...html.matchAll(RANKING_CARD_START)];
+export function parseMostReadCards(html: string): MostReadCard[] {
+  const columnStart = html.indexOf(MOST_READ_START);
+  const columnEnd = columnStart >= 0 ? html.indexOf(MOST_READ_END, columnStart) : -1;
+  const column =
+    columnStart >= 0 && columnEnd > columnStart ? html.slice(columnStart, columnEnd) : "";
+
+  const starts = [...column.matchAll(MOST_READ_ITEM_START)];
 
   return starts
     .map((match, index) => {
       const from = match.index;
-      const to = starts[index + 1]?.index ?? html.length;
-      const block = html.slice(from, to);
+      const to = starts[index + 1]?.index ?? column.length;
+      const block = column.slice(from, to);
 
-      const slug = RANKING_HREF.exec(block)?.[1];
-      const title = RANKING_TITLE.exec(block)?.[1];
-      if (!slug || !title) return undefined;
+      const title = MOST_READ_TITLE.exec(block)?.[1];
+      if (!title) return undefined;
 
-      return {
-        slug,
+      const card: MostReadCard = {
+        slug: match[1]!,
         title: decodeEntities(title.trim()),
-        imageUrl: absoluteUrl(RANKING_COVER.exec(block)?.[1] ?? ""),
+        imageUrl: absoluteUrl(MOST_READ_IMG.exec(block)?.[1] ?? ""),
       };
+      const viewsText = MOST_READ_VIEWS.exec(block)?.[1];
+      if (viewsText) card.viewsText = viewsText;
+      return card;
     })
-    .filter((card): card is RankingCard => card !== undefined);
+    .filter((card): card is MostReadCard => card !== undefined);
 }
 
-export function toRankingItem(card: RankingCard): DiscoverSectionItem {
-  return {
+export function toMostReadItem(card: MostReadCard): DiscoverSectionItem {
+  const item: DiscoverSectionItem = {
     type: "simpleCarouselItem",
     mangaId: card.slug,
     title: card.title,
     imageUrl: card.imageUrl,
     contentRating: ContentRating.MATURE,
   };
+  if (card.viewsText) item.subtitle = `${card.viewsText} views`;
+  return item;
 }
 
 // --- Discover: Trending This Week (homepage boost-shelf) ---
