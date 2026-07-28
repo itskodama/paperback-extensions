@@ -4,6 +4,7 @@
 
 import { PaperbackInterceptor, type Request, type Response } from "@paperback/types";
 
+import { authorizedFetch } from "./auth";
 import { ASURA_API, ASURA_DOMAIN } from "./models";
 
 const USER_AGENT =
@@ -161,4 +162,26 @@ export async function fetchCreators(): Promise<Creators> {
     artists: Array.isArray(source.artists) ? source.artists : [],
   };
   return creatorsCache;
+}
+
+// The chapter reader's early-access unlock is a separate, uncached JSON endpoint — the HTML page
+// fetched by fetchPage above is a shared Cloudflare edge cache and never varies by auth
+export async function fetchChapterJson(
+  seriesSlug: string,
+  chapterNumber: string,
+): Promise<unknown> {
+  const result = await authorizedFetch(`/api/series/${seriesSlug}/chapters/${chapterNumber}`);
+  if (!result) return undefined;
+
+  const [response, data] = result;
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(
+      `Asura Scans returned HTTP ${response.status} for the authenticated chapter endpoint`,
+    );
+  }
+
+  const parsed = JSON.parse(Application.arrayBufferToUTF8String(data)) as {
+    data?: unknown;
+  };
+  return parsed.data ?? parsed;
 }

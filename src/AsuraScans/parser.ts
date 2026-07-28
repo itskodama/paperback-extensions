@@ -24,8 +24,8 @@ import {
   readString,
   readStringArray,
   type Island,
-} from "./astro";
-import { ASURA_DOMAIN, STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models";
+} from "./astro.ts";
+import { ASURA_DOMAIN, STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models.ts";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
@@ -449,19 +449,56 @@ function unlockedAt(unlockTime: string | undefined): string | undefined {
   return Number.isNaN(date.getTime()) ? undefined : date.toLocaleString();
 }
 
+function earlyAccessError(chapter: Chapter, unlockTime: string | undefined): Error {
+  const releasesAt = unlockedAt(unlockTime);
+  return new Error(
+    releasesAt
+      ? `Chapter ${chapter.chapNum} is in early access until ${releasesAt}. It will be readable once it is public for all users.`
+      : `Chapter ${chapter.chapNum} is in early access. It will be readable once it is public for all users.`,
+  );
+}
+
+// The chapter page is a shared Cloudflare edge cache (see network.ts), so this only ever reflects
+// the anonymous lock state — it never varies by who is asking
+export function chapterIsLocked(html: string): boolean {
+  const island = findIsland(html, CHAPTER_KEYS);
+  return readBoolean(island, "isLocked") || readBoolean(island, "isPremium");
+}
+
 export function parseChapterDetails(html: string, chapter: Chapter): ChapterDetails {
   const island = findIsland(html, CHAPTER_KEYS);
 
   if (readBoolean(island, "isLocked") || readBoolean(island, "isPremium")) {
-    const releasesAt = unlockedAt(readString(island, "unlockTime"));
-    throw new Error(
-      releasesAt
-        ? `Chapter ${chapter.chapNum} is in early access until ${releasesAt}. It will be readable once it is public for all users.`
-        : `Chapter ${chapter.chapNum} is in early access. It will be readable once it is public for all users.`,
-    );
+    throw earlyAccessError(chapter, readString(island, "unlockTime"));
   }
 
   const pages = readArray(island, "pages").flatMap((page) => {
+    const url = readString(page, "url");
+    return url ? [url] : [];
+  });
+
+  if (pages.length === 0) {
+    throw new Error(`Asura Scans served no pages for chapter ${chapter.chapNum}`);
+  }
+
+  return {
+    id: chapter.chapterId,
+    mangaId: chapter.sourceManga.mangaId,
+    pages,
+  };
+}
+
+// The authenticated JSON endpoint a subscriber's session unlocks (network.ts's fetchChapterJson) —
+// same page shape as the embedded island, but snake_case and not tuple-encoded
+export function parseChapterApiPayload(payload: unknown, chapter: Chapter): ChapterDetails {
+  const data = payload as Island;
+
+  if (readBoolean(data, "is_locked")) {
+    throw earlyAccessError(chapter, readString(data, "unlock_time"));
+  }
+
+  const chapterObj = (data.chapter ?? {}) as Island;
+  const pages = readArray(chapterObj, "pages").flatMap((page) => {
     const url = readString(page, "url");
     return url ? [url] : [];
   });
