@@ -14,19 +14,21 @@ function subscriptionSubtitle(session: AsuraSession): string {
 }
 
 export class AsuraScansSettingsForm extends Form {
-  private session: AsuraSession | undefined = getSession();
   private email = "";
   private password = "";
   private busy = false;
   private error: string | undefined;
 
   override getSections() {
-    if (this.session) {
+    // Read live, not cached at construction, so a refresh/logout elsewhere is reflected
+    const session = getSession();
+
+    if (session) {
       return [
         Section("account", [
           LabelRow("account-status", {
-            title: `Logged in as ${this.session.username}`,
-            subtitle: subscriptionSubtitle(this.session),
+            title: `Logged in as ${session.username}`,
+            subtitle: subscriptionSubtitle(session),
           }),
           ButtonRow("logout", {
             title: "Log Out",
@@ -80,7 +82,7 @@ export class AsuraScansSettingsForm extends Form {
     this.reloadForm();
 
     try {
-      this.session = await login(this.email, this.password);
+      await login(this.email, this.password);
     } catch (error) {
       this.error = error instanceof Error ? error.message : "Log in failed.";
     } finally {
@@ -92,7 +94,6 @@ export class AsuraScansSettingsForm extends Form {
 
   async handleLogout(): Promise<void> {
     await logout();
-    this.session = undefined;
     this.reloadForm();
   }
 }

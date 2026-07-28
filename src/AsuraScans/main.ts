@@ -173,15 +173,12 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
     const page = await fetchPage(chapterUrl(chapter));
 
-    // The chapter page is a shared Cloudflare edge cache and never reflects a logged-in session
-    // (see network.ts); a subscriber's session unlocks through a separate, uncached JSON endpoint
     if (chapterIsLocked(page.html) && getSession()) {
       try {
         const json = await fetchChapterJson(chapter.sourceManga.mangaId, chapter.chapterId);
         if (json !== undefined) return parseChapterApiPayload(json, chapter);
       } catch {
-        // Any failure here — network error, an expired refresh token, or still locked for this
-        // user — falls through to the familiar anonymous early-access error below
+        // Falls through to the anonymous early-access error below on any failure here
       }
     }
 

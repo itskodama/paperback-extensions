@@ -7,9 +7,7 @@ import { ASURA_API } from "./models.ts";
 
 const SESSION_STATE_KEY = "asurascans.session";
 
-// Access tokens live 15 minutes (verified against the API, not the 1-day the site's own browser
-// cookie claims — the site refreshes constantly client-side). This margin covers request latency
-// so a token is never used right up to the wire.
+// Verified 15-minute access token lifetime, not the 1-day the site's own cookie claims
 const EXPIRY_SAFETY_MARGIN_MS = 60_000;
 
 export type AsuraSession = {
@@ -23,12 +21,26 @@ export type AsuraSession = {
 };
 
 type AuthResponse = {
-  user?: { username?: unknown };
+  user?: { username?: unknown; role?: unknown; premium_until?: unknown };
   access_token?: unknown;
   refresh_token?: unknown;
   expires_at?: unknown;
   subscription_status?: { has_subscription?: unknown; tier?: unknown; status?: unknown };
 };
+
+// login never returns subscription_status (only refresh does), so this — mirroring the site's
+// own login-page isPremiumActive() — is the only signal available right after logging in
+const STAFF_ROLES = ["staff", "moderator", "uploader", "admin"];
+const PAID_ROLES = ["premium"];
+
+function isPremiumRole(role: unknown, premiumUntil: unknown): boolean {
+  if (typeof role !== "string") return false;
+  if (STAFF_ROLES.includes(role)) return true;
+  if (!PAID_ROLES.includes(role) || typeof premiumUntil !== "string") return false;
+
+  const until = new Date(premiumUntil).getTime();
+  return !Number.isNaN(until) && until > Date.now();
+}
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
@@ -53,13 +65,27 @@ export function isSessionExpired(session: AsuraSession, now: number = Date.now()
   return expiresAt - EXPIRY_SAFETY_MARGIN_MS <= now;
 }
 
+// setSecureState doesn't reliably round-trip a nested object — serialize/parse it ourselves instead
 export function getSession(): AsuraSession | undefined {
   const stored = Application.getSecureState(SESSION_STATE_KEY);
-  return isValidSession(stored) ? stored : undefined;
+  if (typeof stored !== "string" || stored.length === 0) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(stored);
+  } catch {
+    return undefined;
+  }
+
+  return isValidSession(parsed) ? parsed : undefined;
 }
 
 export function clearSession(): void {
-  Application.setSecureState(undefined, SESSION_STATE_KEY);
+  Application.setSecureState(null, SESSION_STATE_KEY);
+}
+
+function saveSession(session: AsuraSession): void {
+  Application.setSecureState(JSON.stringify(session), SESSION_STATE_KEY);
 }
 
 // The API wraps successful bodies in {"data": {...}} but error bodies are flat ({"error": "..."})
@@ -74,8 +100,11 @@ export function buildSession(data: AuthResponse, fallbackRefreshToken?: string):
   const accessToken = data.access_token;
   const refreshToken = data.refresh_token ?? fallbackRefreshToken;
   const expiresAt = data.expires_at;
-  const hasSubscription = data.subscription_status?.has_subscription === true;
-  const tier = data.subscription_status?.tier;
+  const hasSubscription =
+    typeof data.subscription_status?.has_subscription === "boolean"
+      ? data.subscription_status.has_subscription
+      : isPremiumRole(data.user?.role, data.user?.premium_until);
+  const tier = data.subscription_status?.tier ?? data.user?.role;
   const subscriptionStatus = data.subscription_status?.status;
 
   if (
@@ -117,7 +146,7 @@ export async function login(email: string, password: string): Promise<AsuraSessi
   }
 
   const session = buildSession(data as AuthResponse);
-  Application.setSecureState(session, SESSION_STATE_KEY);
+  saveSession(session);
   return session;
 }
 
@@ -135,7 +164,7 @@ export async function refreshSession(session: AsuraSession): Promise<AsuraSessio
   }
 
   const refreshed = buildSession(data as AuthResponse, session.refreshToken);
-  Application.setSecureState(refreshed, SESSION_STATE_KEY);
+  saveSession(refreshed);
   return refreshed;
 }
 

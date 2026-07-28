@@ -168,9 +168,15 @@ void test("isValidSession rejects malformed or missing shapes", () => {
   assert.equal(isValidSession(missingAccessToken), false);
 });
 
-// Captured verbatim from a real POST /api/auth/login response — the API wraps every successful
-// body in a "data" envelope, which is easy to forget to unwrap (it broke login once already: every
-// field silently reads as undefined and buildSession throws "incomplete session")
+void test("a session survives the JSON stringify/parse round trip getSession relies on", () => {
+  const original = session({ tier: "premium", subscriptionStatus: "active" });
+  const roundTripped: unknown = JSON.parse(JSON.stringify(original));
+  assert.ok(isValidSession(roundTripped));
+  assert.deepEqual(roundTripped, original);
+});
+
+// Captured verbatim from a real POST /api/auth/login response — no subscription_status here
+// (see REAL_REFRESH_RESPONSE below, where it does appear)
 const REAL_LOGIN_RESPONSE = {
   data: {
     user: {
@@ -183,10 +189,20 @@ const REAL_LOGIN_RESPONSE = {
     access_token: "token",
     refresh_token: "refresh",
     expires_at: "2026-07-28T23:16:47.58917599Z",
+  },
+};
+
+// Captured verbatim from a real POST /api/auth/refresh response for the same account
+const REAL_REFRESH_RESPONSE = {
+  data: {
+    ...REAL_LOGIN_RESPONSE.data,
     subscription_status: {
       has_subscription: true,
       status: "active",
       tier: "premium",
+      cancel_at_period_end: false,
+      migration_required: false,
+      is_banned: false,
     },
   },
 };
@@ -207,9 +223,6 @@ void test("buildSession maps a real unwrapped login response end to end", () => 
   assert.equal(built.username, "ItsKodama");
   assert.equal(built.accessToken, "token");
   assert.equal(built.refreshToken, "refresh");
-  assert.equal(built.hasSubscription, true);
-  assert.equal(built.tier, "premium");
-  assert.equal(built.subscriptionStatus, "active");
 });
 
 void test("buildSession throws rather than silently building a session with missing fields", () => {
@@ -217,4 +230,53 @@ void test("buildSession throws rather than silently building a session with miss
     () => buildSession(REAL_LOGIN_RESPONSE as unknown as Parameters<typeof buildSession>[0]),
     /incomplete session/,
   );
+});
+
+void test("login has no subscription_status, so hasSubscription falls back to role + premium_until", () => {
+  const built = buildSession(
+    unwrapEnvelope(REAL_LOGIN_RESPONSE) as Parameters<typeof buildSession>[0],
+  );
+  assert.equal(built.hasSubscription, true);
+  assert.equal(built.tier, "premium");
+  assert.equal(built.subscriptionStatus, undefined);
+});
+
+void test("a free user's login (role 'user', no premium_until) has no subscription", () => {
+  const freeUser = {
+    user: { username: "Reader", role: "user" },
+    access_token: "token",
+    refresh_token: "refresh",
+    expires_at: "2026-07-28T23:16:47Z",
+  };
+  const built = buildSession(freeUser);
+  assert.equal(built.hasSubscription, false);
+});
+
+void test("a premium role with a past premium_until has no active subscription", () => {
+  const lapsed = {
+    user: { username: "Reader", role: "premium", premium_until: "2020-01-01T00:00:00Z" },
+    access_token: "token",
+    refresh_token: "refresh",
+    expires_at: "2026-07-28T23:16:47Z",
+  };
+  assert.equal(buildSession(lapsed).hasSubscription, false);
+});
+
+void test("staff roles always count as having a subscription, premium_until or not", () => {
+  const staff = {
+    user: { username: "Mod", role: "moderator" },
+    access_token: "token",
+    refresh_token: "refresh",
+    expires_at: "2026-07-28T23:16:47Z",
+  };
+  assert.equal(buildSession(staff).hasSubscription, true);
+});
+
+void test("refresh's subscription_status is used when present, overriding the role fallback", () => {
+  const built = buildSession(
+    unwrapEnvelope(REAL_REFRESH_RESPONSE) as Parameters<typeof buildSession>[0],
+  );
+  assert.equal(built.hasSubscription, true);
+  assert.equal(built.tier, "premium");
+  assert.equal(built.subscriptionStatus, "active");
 });

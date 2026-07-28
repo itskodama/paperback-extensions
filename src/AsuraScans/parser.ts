@@ -458,8 +458,7 @@ function earlyAccessError(chapter: Chapter, unlockTime: string | undefined): Err
   );
 }
 
-// The chapter page is a shared Cloudflare edge cache (see network.ts), so this only ever reflects
-// the anonymous lock state — it never varies by who is asking
+// Reflects only the anonymous lock state — see network.ts's fetchChapterJson for why
 export function chapterIsLocked(html: string): boolean {
   const island = findIsland(html, CHAPTER_KEYS);
   return readBoolean(island, "isLocked") || readBoolean(island, "isPremium");
@@ -488,8 +487,7 @@ export function parseChapterDetails(html: string, chapter: Chapter): ChapterDeta
   };
 }
 
-// The authenticated JSON endpoint a subscriber's session unlocks (network.ts's fetchChapterJson) —
-// same page shape as the embedded island, but snake_case and not tuple-encoded
+// Same page shape as the embedded island, but snake_case and not tuple-encoded
 export function parseChapterApiPayload(payload: unknown, chapter: Chapter): ChapterDetails {
   const data = payload as Island;
 
