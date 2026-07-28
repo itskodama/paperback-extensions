@@ -62,7 +62,14 @@ export function clearSession(): void {
   Application.setSecureState(undefined, SESSION_STATE_KEY);
 }
 
-function buildSession(data: AuthResponse, fallbackRefreshToken?: string): AsuraSession {
+// The API wraps successful bodies in {"data": {...}} but error bodies are flat ({"error": "..."})
+export function unwrapEnvelope(parsed: unknown): unknown {
+  if (typeof parsed !== "object" || parsed === null) return parsed;
+  const envelope = parsed as { data?: unknown };
+  return envelope.data ?? parsed;
+}
+
+export function buildSession(data: AuthResponse, fallbackRefreshToken?: string): AsuraSession {
   const username = data.user?.username;
   const accessToken = data.access_token;
   const refreshToken = data.refresh_token ?? fallbackRefreshToken;
@@ -96,7 +103,7 @@ async function postJson(path: string, body: object): Promise<[number, unknown]> 
 
   const text = Application.arrayBufferToUTF8String(data);
   const parsed: unknown = text.length > 0 ? JSON.parse(text) : {};
-  return [response.status, parsed];
+  return [response.status, unwrapEnvelope(parsed)];
 }
 
 export async function login(email: string, password: string): Promise<AsuraSession> {

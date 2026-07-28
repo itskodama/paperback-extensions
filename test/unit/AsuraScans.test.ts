@@ -6,7 +6,13 @@ import test from "node:test";
 
 import { ContentRating, type Chapter } from "@paperback/types";
 
-import { isSessionExpired, isValidSession, type AsuraSession } from "../../src/AsuraScans/auth.ts";
+import {
+  buildSession,
+  isSessionExpired,
+  isValidSession,
+  unwrapEnvelope,
+  type AsuraSession,
+} from "../../src/AsuraScans/auth.ts";
 import { chapterIsLocked, parseChapterApiPayload } from "../../src/AsuraScans/parser.ts";
 
 const LOCKED_WITH_UNLOCK_TIME = `
@@ -160,4 +166,55 @@ void test("isValidSession rejects malformed or missing shapes", () => {
   assert.equal(isValidSession({ ...session(), hasSubscription: "yes" }), false);
   const { accessToken: _unused, ...missingAccessToken } = session();
   assert.equal(isValidSession(missingAccessToken), false);
+});
+
+// Captured verbatim from a real POST /api/auth/login response — the API wraps every successful
+// body in a "data" envelope, which is easy to forget to unwrap (it broke login once already: every
+// field silently reads as undefined and buildSession throws "incomplete session")
+const REAL_LOGIN_RESPONSE = {
+  data: {
+    user: {
+      id: 2006629,
+      email: "aaronb954@gmail.com",
+      username: "ItsKodama",
+      role: "premium",
+      premium_until: "2027-07-29T10:00:00Z",
+    },
+    access_token: "token",
+    refresh_token: "refresh",
+    expires_at: "2026-07-28T23:16:47.58917599Z",
+    subscription_status: {
+      has_subscription: true,
+      status: "active",
+      tier: "premium",
+    },
+  },
+};
+
+void test("unwrapEnvelope unwraps a successful {data: ...} response", () => {
+  assert.deepEqual(unwrapEnvelope(REAL_LOGIN_RESPONSE), REAL_LOGIN_RESPONSE.data);
+});
+
+void test("unwrapEnvelope passes a flat error body through unchanged", () => {
+  const errorBody = { error: "invalid credentials" };
+  assert.deepEqual(unwrapEnvelope(errorBody), errorBody);
+});
+
+void test("buildSession maps a real unwrapped login response end to end", () => {
+  const built = buildSession(
+    unwrapEnvelope(REAL_LOGIN_RESPONSE) as Parameters<typeof buildSession>[0],
+  );
+  assert.equal(built.username, "ItsKodama");
+  assert.equal(built.accessToken, "token");
+  assert.equal(built.refreshToken, "refresh");
+  assert.equal(built.hasSubscription, true);
+  assert.equal(built.tier, "premium");
+  assert.equal(built.subscriptionStatus, "active");
+});
+
+void test("buildSession throws rather than silently building a session with missing fields", () => {
+  assert.throws(
+    () => buildSession(REAL_LOGIN_RESPONSE as unknown as Parameters<typeof buildSession>[0]),
+    /incomplete session/,
+  );
 });
