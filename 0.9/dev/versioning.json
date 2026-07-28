@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-07-17T04:26:00.806Z",
+  "buildTime": "2026-07-28T23:17:42.584Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -19,7 +19,8 @@
       "capabilities": [
         4,
         64,
-        1
+        1,
+        32
       ],
       "badges": [],
       "developers": [
@@ -54,7 +55,7 @@
     {
       "name": "LightNovelWorld",
       "description": "Read light novels from lightnovelworld.org.",
-      "version": "1.0.0-alpha.0",
+      "version": "1.0.0-alpha.1",
       "icon": "icon.png",
       "language": "en",
       "contentRating": "MATURE",
