@@ -7,7 +7,6 @@ import {
   type ChapterDetails,
   type DiscoverSectionItem,
   type Metadata,
-  type PagedResults,
   type SearchResultItem,
   type SourceManga,
   type Tag,
@@ -324,29 +323,91 @@ function withoutHoistedPin(island: Island, entries: Island[]): Island[] {
   return outOfOrder ? entries.slice(1) : entries;
 }
 
-export function parseSearchResults(html: string): PagedResults<SearchResultItem> {
+// Carries the raw fields needed to sort comics and novels into one combined order (see
+// mergeRankedResults) alongside the finished item — comics and novels are fetched from entirely
+// separate backends that each only sort their own results, so combining them into one list
+// correctly requires re-sorting from these raw values, not just concatenating two pre-sorted lists
+export type RankedSearchResult = {
+  item: SearchResultItem;
+  title: string;
+  rating?: number;
+  createdAt?: string;
+  lastUpdate?: string;
+  bookmarks?: number;
+};
+
+export function rankedSearchResults(html: string): {
+  ranked: RankedSearchResult[];
+  currentPage: number;
+  totalPages: number;
+} {
   const island = findIsland(html, BROWSE_KEYS);
   const entries = withoutHoistedPin(island, readArray(island, "initialSeries"));
 
-  const items: SearchResultItem[] = entries.flatMap((series) => {
+  const ranked: RankedSearchResult[] = entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
     if (!mangaId || isNovel(series)) return [];
 
+    const title = readString(series, "title") ?? "Unknown Title";
     return [
       {
-        mangaId,
-        title: readString(series, "title") ?? "Unknown Title",
-        subtitle: alternativeTitles(series, "alt_titles")[0],
-        imageUrl: readString(series, "cover") ?? "",
-        contentRating: ContentRating.MATURE,
+        item: {
+          mangaId,
+          title,
+          subtitle: alternativeTitles(series, "alt_titles")[0],
+          imageUrl: readString(series, "cover") ?? "",
+          contentRating: ContentRating.MATURE,
+        },
+        title,
+        rating: readNumber(series, "rating"),
+        createdAt: readString(series, "created_at"),
+        lastUpdate: readString(series, "last_chapter_at"),
+        bookmarks: readNumber(series, "bookmark_count"),
       },
     ];
   });
 
-  const currentPage = readNumber(island, "initialCurrentPage") ?? 1;
-  const totalPages = readNumber(island, "initialTotalPages") ?? 1;
+  return {
+    ranked,
+    currentPage: readNumber(island, "initialCurrentPage") ?? 1,
+    totalPages: readNumber(island, "initialTotalPages") ?? 1,
+  };
+}
 
-  return currentPage < totalPages ? { items, metadata: currentPage + 1 } : { items };
+function rankedSortKey(entry: RankedSearchResult, sortField: string): string | number {
+  switch (sortField) {
+    case "rating":
+      return entry.rating ?? -1;
+    case "update":
+      return entry.lastUpdate ?? "";
+    case "newest":
+      // Novels expose no distinct series-creation field, so they fall back to lastUpdate —
+      // comics use their own real created_at
+      return entry.createdAt ?? entry.lastUpdate ?? "";
+    case "popular":
+      return entry.bookmarks ?? -1;
+    default:
+      return entry.title.toLowerCase();
+  }
+}
+
+// A single full re-sort of the small combined page, rather than a merge of two pre-sorted lists —
+// cheap at this scale (one comics page + the whole novel catalog) and avoids needing both
+// backends' orderings to agree on tie-breaking
+export function mergeRankedResults(
+  a: RankedSearchResult[],
+  b: RankedSearchResult[],
+  sortField: string,
+  direction: string,
+): SearchResultItem[] {
+  return [...a, ...b]
+    .sort((x, y) => {
+      const kx = rankedSortKey(x, sortField);
+      const ky = rankedSortKey(y, sortField);
+      const cmp = kx < ky ? -1 : kx > ky ? 1 : 0;
+      return direction === "asc" ? cmp : -cmp;
+    })
+    .map((entry) => entry.item);
 }
 
 // A browse result page rendered as a discover carousel rather than search results
@@ -766,8 +827,8 @@ export function novelSearchUrl(query: NovelSearchQuery): string {
 // astro-island — cast straight to Island like parseNovelChapterApiPayload does for the other
 // JSON endpoint. Multi-genre selection is AND here, not OR like comics (confirmed live) — accepted
 // as a known limitation given the tiny catalog, not worked around
-export function parseNovelSearchResults(payload: unknown): {
-  items: SearchResultItem[];
+export function rankedNovelSearchResults(payload: unknown): {
+  ranked: RankedSearchResult[];
   total: number;
 } {
   const root = payload as Island;
@@ -775,19 +836,35 @@ export function parseNovelSearchResults(payload: unknown): {
   const meta = (root.meta ?? {}) as Island;
   const total = readNumber(meta, "total") ?? entries.length;
 
-  const items: SearchResultItem[] = entries.flatMap((entry) => {
+  const ranked: RankedSearchResult[] = entries.flatMap((entry) => {
     const slug = readString(entry, "slug");
     if (!slug) return [];
 
+    const title = readString(entry, "title") ?? "Unknown Title";
+    const lastUpdate = readString(entry, "last_chapter_at");
     return [
       {
-        mangaId: NOVEL_ID_PREFIX + slug,
-        title: readString(entry, "title") ?? "Unknown Title",
-        imageUrl: readString(entry, "cover_url") ?? "",
-        contentRating: ContentRating.MATURE,
+        item: {
+          mangaId: NOVEL_ID_PREFIX + slug,
+          title,
+          imageUrl: readString(entry, "cover_url") ?? "",
+          contentRating: ContentRating.MATURE,
+        },
+        title,
+        rating: readNumber(entry, "rating"),
+        lastUpdate,
+        bookmarks: readNumber(entry, "bookmarks"),
       },
     ];
   });
 
-  return { items, total };
+  return { ranked, total };
+}
+
+export function parseNovelSearchResults(payload: unknown): {
+  items: SearchResultItem[];
+  total: number;
+} {
+  const { ranked, total } = rankedNovelSearchResults(payload);
+  return { items: ranked.map((entry) => entry.item), total };
 }

@@ -16,6 +16,7 @@ import {
 import {
   chapterIsLocked,
   isNovelMangaId,
+  mergeRankedResults,
   novelCatalogEntry,
   novelChapterIsLocked,
   novelChapterUrl,
@@ -30,6 +31,7 @@ import {
   parseNovelChapterDetails,
   parseNovelChapterList,
   parseNovelSearchResults,
+  type RankedSearchResult,
 } from "../../src/AsuraScans/parser.ts";
 
 const LOCKED_WITH_UNLOCK_TIME = `
@@ -531,4 +533,69 @@ void test("parseNovelSearchResults falls back total to entries.length when meta 
 void test("parseNovelSearchResults skips an entry with no slug rather than throwing", () => {
   const { items } = parseNovelSearchResults({ data: [{ title: "No Slug" }], meta: { total: 1 } });
   assert.equal(items.length, 0);
+});
+
+function ranked(overrides: Partial<RankedSearchResult> & { title: string }): RankedSearchResult {
+  return {
+    item: {
+      mangaId: overrides.title,
+      title: overrides.title,
+      imageUrl: "",
+      contentRating: ContentRating.MATURE,
+    },
+    ...overrides,
+  };
+}
+
+// This is the exact bug the merge exists to fix: two independently-sorted lists (one per
+// backend) concatenated is not one globally-sorted list
+void test("mergeRankedResults interleaves two independently-sorted lists by title, not just concatenates them", () => {
+  const novels = [ranked({ title: "Bravo" }), ranked({ title: "Delta" })];
+  const comics = [ranked({ title: "Alpha" }), ranked({ title: "Charlie" })];
+  const items = mergeRankedResults(novels, comics, "name", "asc");
+  assert.deepEqual(
+    items.map((i) => i.title),
+    ["Alpha", "Bravo", "Charlie", "Delta"],
+  );
+});
+
+void test("mergeRankedResults respects direction for a title sort", () => {
+  const novels = [ranked({ title: "Bravo" })];
+  const comics = [ranked({ title: "Alpha" }), ranked({ title: "Charlie" })];
+  const items = mergeRankedResults(novels, comics, "name", "desc");
+  assert.deepEqual(
+    items.map((i) => i.title),
+    ["Charlie", "Bravo", "Alpha"],
+  );
+});
+
+void test("mergeRankedResults sorts by rating, missing rating sorts last (descending)", () => {
+  const novels = [ranked({ title: "NoRating" }), ranked({ title: "Mid", rating: 5 })];
+  const comics = [ranked({ title: "High", rating: 9 })];
+  const items = mergeRankedResults(novels, comics, "rating", "desc");
+  assert.deepEqual(
+    items.map((i) => i.title),
+    ["High", "Mid", "NoRating"],
+  );
+});
+
+void test("mergeRankedResults sorts by lastUpdate for 'update'", () => {
+  const novels = [ranked({ title: "Novel", lastUpdate: "2026-07-20T00:00:00Z" })];
+  const comics = [ranked({ title: "Comic", lastUpdate: "2026-07-27T00:00:00Z" })];
+  const items = mergeRankedResults(novels, comics, "update", "desc");
+  assert.deepEqual(
+    items.map((i) => i.title),
+    ["Comic", "Novel"],
+  );
+});
+
+void test("mergeRankedResults falls back to lastUpdate for 'newest' when createdAt is absent", () => {
+  // Novels expose no distinct series-creation field — this is the documented fallback
+  const novels = [ranked({ title: "Novel", lastUpdate: "2026-07-29T00:00:00Z" })];
+  const comics = [ranked({ title: "Comic", createdAt: "2026-07-20T00:00:00Z" })];
+  const items = mergeRankedResults(novels, comics, "newest", "desc");
+  assert.deepEqual(
+    items.map((i) => i.title),
+    ["Novel", "Comic"],
+  );
 });

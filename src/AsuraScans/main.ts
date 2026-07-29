@@ -48,6 +48,7 @@ import {
   comicTypeItems,
   homeUrl,
   isNovelMangaId,
+  mergeRankedResults,
   novelCatalogEntry,
   novelCatalogUrl,
   novelChapterIsLocked,
@@ -67,8 +68,9 @@ import {
   parseNovelChapterDetails,
   parseNovelChapterList,
   parseNovelSearchResults,
-  parseSearchResults,
   parseSeriesDetails,
+  rankedNovelSearchResults,
+  rankedSearchResults,
   seriesUrl,
   statusItems,
 } from "./parser";
@@ -189,34 +191,53 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     }
 
     const comicsPage = metadata ?? 1;
-    const results = parseSearchResults(
-      (
-        await fetchPage(
-          browseUrl({
-            search: query.title,
-            page: comicsPage,
-            sort: sort.sort,
-            direction: sort.direction,
-            genres: filters?.genres,
-            status: filters?.status,
-            type: filters?.type,
-            minChapters: filters?.minChapters,
-            author: filters?.author,
-            artist: filters?.artist,
-          }),
-        )
-      ).html,
-    );
+    const comicsHtml = (
+      await fetchPage(
+        browseUrl({
+          search: query.title,
+          page: comicsPage,
+          sort: sort.sort,
+          direction: sort.direction,
+          genres: filters?.genres,
+          status: filters?.status,
+          type: filters?.type,
+          minChapters: filters?.minChapters,
+          author: filters?.author,
+          artist: filters?.artist,
+        }),
+      )
+    ).html;
 
-    // The novel catalog is small enough to fetch whole and prepend once, on a mixed (type unset
-    // or "all") search's first page only; a specific comic type keeps today's comics-only
-    // behavior, and later pages are comics-only since the whole novel catalog was already shown
+    const { ranked: comicsRanked, currentPage, totalPages } = rankedSearchResults(comicsHtml);
+    const nextPage = currentPage < totalPages ? currentPage + 1 : undefined;
+
+    // The novel catalog is small enough to fetch whole and merge-sort in once, on a mixed
+    // (type unset or "all") search's first page only; a specific comic type keeps today's
+    // comics-only behavior, and later pages are comics-only since the whole novel catalog was
+    // already merged in on page 1
     if (comicsPage === 1 && (!filters?.type || filters.type === "all")) {
-      const novels = await this.searchNovels(query.title, filters, sort, 0);
-      return { items: [...novels.items, ...results.items], metadata: results.metadata };
+      const novelPayload = await fetchNovelSearch(
+        novelSearchUrl({
+          search: query.title,
+          genres: filters?.genres,
+          status: filters?.status,
+          author: filters?.author,
+          artist: filters?.artist,
+          minChapters: filters?.minChapters,
+          sort: NOVEL_SORT_MAP[sort.sort] ?? sort.sort,
+          direction: sort.direction,
+          limit: NOVEL_SEARCH_LIMIT,
+        }),
+      );
+      const { ranked: novelsRanked } = rankedNovelSearchResults(novelPayload);
+      const items = mergeRankedResults(novelsRanked, comicsRanked, sort.sort, sort.direction);
+      return nextPage !== undefined ? { items, metadata: nextPage } : { items };
     }
 
-    return results;
+    const comicsItems = comicsRanked.map((entry) => entry.item);
+    return nextPage !== undefined
+      ? { items: comicsItems, metadata: nextPage }
+      : { items: comicsItems };
   }
 
   private async searchNovels(
