@@ -20,8 +20,20 @@ import {
 
 import { getSession } from "./auth";
 import { AsuraScansAdvancedSearchForm } from "./forms";
-import { DEFAULT_SORT, SORT_OPTIONS, type AsuraScansSearchMetadata } from "./models";
-import { MainInterceptor, fetchChapterJson, fetchNovelChapterJson, fetchPage } from "./network";
+import {
+  DEFAULT_SORT,
+  NOVEL_SORT_MAP,
+  SORT_OPTIONS,
+  type AsuraScansSearchMetadata,
+  type SortOption,
+} from "./models";
+import {
+  MainInterceptor,
+  fetchChapterJson,
+  fetchNovelChapterJson,
+  fetchNovelSearch,
+  fetchPage,
+} from "./network";
 import {
   DISCOVER_FEATURED,
   DISCOVER_LATEST_UPDATES,
@@ -40,6 +52,7 @@ import {
   novelCatalogUrl,
   novelChapterIsLocked,
   novelChapterUrl,
+  novelSearchUrl,
   novelSlugFromMangaId,
   novelToDiscoverItem,
   novelToSourceManga,
@@ -53,6 +66,7 @@ import {
   parseNovelChapterApiPayload,
   parseNovelChapterDetails,
   parseNovelChapterList,
+  parseNovelSearchResults,
   parseSearchResults,
   parseSeriesDetails,
   seriesUrl,
@@ -60,6 +74,11 @@ import {
 } from "./parser";
 import type AsuraScansConfig from "./pbconfig";
 import { AsuraScansSettingsForm } from "./settingsForm";
+
+// Comfortably above the current ~7-title novel catalog: on a mixed search's first page this
+// fetches effectively everything; as a dedicated type=novel page size it's just a normal,
+// generous page. Revisit if the novel count approaches it.
+const NOVEL_SEARCH_LIMIT = 50;
 
 export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfig> {
   mainRateLimiter = new BasicRateLimiter("main", {
@@ -104,7 +123,7 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       },
       {
         id: DISCOVER_COMIC_TYPE,
-        title: "Comic Type",
+        title: "Type",
         type: DiscoverSectionType.genres,
       },
       {
@@ -162,22 +181,68 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     const filters = query.metadata;
     const sort = SORT_OPTIONS.find((option) => option.id === sortingOption?.id) ?? DEFAULT_SORT;
 
-    const page = await fetchPage(
-      browseUrl({
-        search: query.title,
-        page: metadata ?? 1,
-        sort: sort.sort,
-        direction: sort.direction,
+    // type=novel is a dead end on comics' own /browse (confirmed), so it gets its own fully
+    // paginated branch; `metadata` is reinterpreted as an offset here rather than a page number —
+    // safe because `type` cannot change mid-pagination for a given search session
+    if (filters?.type === "novel") {
+      return this.searchNovels(query.title, filters, sort, metadata ?? 0);
+    }
+
+    const comicsPage = metadata ?? 1;
+    const results = parseSearchResults(
+      (
+        await fetchPage(
+          browseUrl({
+            search: query.title,
+            page: comicsPage,
+            sort: sort.sort,
+            direction: sort.direction,
+            genres: filters?.genres,
+            status: filters?.status,
+            type: filters?.type,
+            minChapters: filters?.minChapters,
+            author: filters?.author,
+            artist: filters?.artist,
+          }),
+        )
+      ).html,
+    );
+
+    // The novel catalog is small enough to fetch whole and prepend once, on a mixed (type unset
+    // or "all") search's first page only; a specific comic type keeps today's comics-only
+    // behavior, and later pages are comics-only since the whole novel catalog was already shown
+    if (comicsPage === 1 && (!filters?.type || filters.type === "all")) {
+      const novels = await this.searchNovels(query.title, filters, sort, 0);
+      return { items: [...novels.items, ...results.items], metadata: results.metadata };
+    }
+
+    return results;
+  }
+
+  private async searchNovels(
+    title: string,
+    filters: AsuraScansSearchMetadata | undefined,
+    sort: SortOption,
+    offset: number,
+  ): Promise<PagedResults<SearchResultItem>> {
+    const payload = await fetchNovelSearch(
+      novelSearchUrl({
+        search: title,
         genres: filters?.genres,
         status: filters?.status,
-        type: filters?.type,
-        minChapters: filters?.minChapters,
         author: filters?.author,
         artist: filters?.artist,
+        minChapters: filters?.minChapters,
+        sort: NOVEL_SORT_MAP[sort.sort] ?? sort.sort,
+        direction: sort.direction,
+        limit: NOVEL_SEARCH_LIMIT,
+        offset,
       }),
     );
 
-    return parseSearchResults(page.html);
+    const { items, total } = parseNovelSearchResults(payload);
+    const nextOffset = offset + items.length;
+    return nextOffset < total ? { items, metadata: nextOffset } : { items };
   }
 
   async getMangaDetails(mangaId: string): Promise<SourceManga> {

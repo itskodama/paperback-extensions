@@ -35,6 +35,7 @@ export const GENRES: Tag[] = [
   { id: "mystery", title: "Mystery" },
   { id: "necromancer", title: "Necromancer" },
   { id: "overpowered", title: "Overpowered" },
+  { id: "psychological", title: "Psychological" },
   { id: "regression", title: "Regression" },
   { id: "reincarnation", title: "Reincarnation" },
   { id: "revenge", title: "Revenge" },
@@ -64,6 +65,7 @@ export const TYPE_OPTIONS: Tag[] = [
   { id: "manhwa", title: "Manhwa" },
   { id: "manhua", title: "Manhua" },
   { id: "manga", title: "Manga" },
+  { id: "novel", title: "Novel" },
 ];
 
 // Asura's browse needs a field (`sort`) and a direction (`order`); Paperback's sort control models
@@ -90,6 +92,16 @@ export const SORT_OPTIONS: SortOption[] = [
 
 // The default when the user has not chosen a sort
 export const DEFAULT_SORT = TITLE_ASC;
+
+// The novel search API's sort keywords differ from comics' own SORT_OPTIONS[].sort values —
+// confirmed via Asura's own BrowseFilters.js; order/direction is shared as-is
+export const NOVEL_SORT_MAP: Record<string, string> = {
+  name: "title",
+  update: "latest",
+  popular: "popular",
+  rating: "rating",
+  newest: "newest",
+};
 
 export function statusLabel(status: string | undefined): string {
   const match = STATUS_OPTIONS.find((option) => option.id === status && option.id !== "all");

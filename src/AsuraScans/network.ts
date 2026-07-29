@@ -207,3 +207,13 @@ export async function fetchNovelChapterJson(
   };
   return parsed.data ?? parsed;
 }
+
+// Fully public — confirmed identical results with and without a token — so unlike
+// fetchChapterJson/fetchNovelChapterJson this never goes through authorizedFetch
+export async function fetchNovelSearch(url: string): Promise<unknown> {
+  const [response, data] = await Application.scheduleRequest({ url, method: "GET" });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Asura Scans returned HTTP ${response.status} for the novel search API`);
+  }
+  return JSON.parse(Application.arrayBufferToUTF8String(data));
+}

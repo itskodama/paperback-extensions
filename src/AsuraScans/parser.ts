@@ -26,7 +26,7 @@ import {
   readStringArray,
   type Island,
 } from "./astro.ts";
-import { ASURA_DOMAIN, STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models.ts";
+import { ASURA_API, ASURA_DOMAIN, STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models.ts";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
@@ -725,4 +725,69 @@ export function parseNovelChapterApiPayload(payload: unknown, chapter: Chapter):
     type: "html",
     html: toXhtml(contentHtml),
   };
+}
+
+export type NovelSearchQuery = {
+  search?: string;
+  genres?: string[];
+  status?: string;
+  author?: string;
+  artist?: string;
+  minChapters?: number;
+  sort?: string;
+  direction?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export function novelSearchUrl(query: NovelSearchQuery): string {
+  const params: string[] = [];
+  const append = (key: string, value: string) => {
+    params.push(`${key}=${encodeURIComponent(value)}`);
+  };
+
+  if (query.search) append("search", query.search);
+  if (query.genres && query.genres.length > 0) append("genres", query.genres.join(","));
+  if (query.status && query.status !== "all") append("status", query.status);
+  if (query.author) append("author", query.author);
+  if (query.artist) append("artist", query.artist);
+  if (query.minChapters !== undefined && query.minChapters > 0) {
+    append("min_chapters", String(query.minChapters));
+  }
+  if (query.sort) append("sort", query.sort);
+  if (query.direction) append("order", query.direction);
+  if (query.limit !== undefined) append("limit", String(query.limit));
+  if (query.offset !== undefined && query.offset > 0) append("offset", String(query.offset));
+
+  return `${ASURA_API}/api/novel-series${params.length > 0 ? `?${params.join("&")}` : ""}`;
+}
+
+// Same field names as the /novels catalog (see novelToSourceManga above) but plain JSON, not an
+// astro-island — cast straight to Island like parseNovelChapterApiPayload does for the other
+// JSON endpoint. Multi-genre selection is AND here, not OR like comics (confirmed live) — accepted
+// as a known limitation given the tiny catalog, not worked around
+export function parseNovelSearchResults(payload: unknown): {
+  items: SearchResultItem[];
+  total: number;
+} {
+  const root = payload as Island;
+  const entries = readArray(root, "data");
+  const meta = (root.meta ?? {}) as Island;
+  const total = readNumber(meta, "total") ?? entries.length;
+
+  const items: SearchResultItem[] = entries.flatMap((entry) => {
+    const slug = readString(entry, "slug");
+    if (!slug) return [];
+
+    return [
+      {
+        mangaId: NOVEL_ID_PREFIX + slug,
+        title: readString(entry, "title") ?? "Unknown Title",
+        imageUrl: readString(entry, "cover_url") ?? "",
+        contentRating: ContentRating.MATURE,
+      },
+    ];
+  });
+
+  return { items, total };
 }

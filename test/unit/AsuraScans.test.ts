@@ -19,6 +19,7 @@ import {
   novelCatalogEntry,
   novelChapterIsLocked,
   novelChapterUrl,
+  novelSearchUrl,
   novelSlugFromMangaId,
   novelToDiscoverItem,
   novelToSourceManga,
@@ -28,6 +29,7 @@ import {
   parseNovelChapterApiPayload,
   parseNovelChapterDetails,
   parseNovelChapterList,
+  parseNovelSearchResults,
 } from "../../src/AsuraScans/parser.ts";
 
 const LOCKED_WITH_UNLOCK_TIME = `
@@ -464,4 +466,69 @@ void test("parseNovelChapterApiPayload throws when content_html is null", () => 
     () => parseNovelChapterApiPayload(LOCKED_NOVEL_API_PAYLOAD, novelChapter),
     /100 shards/,
   );
+});
+
+void test("novelSearchUrl omits falsy/'all' params and comma-joins multiple genres", () => {
+  const url = new URL(
+    novelSearchUrl({
+      search: "dragon",
+      genres: ["fantasy", "psychological"],
+      status: "all",
+      minChapters: 0,
+    }),
+  );
+  assert.equal(url.searchParams.get("search"), "dragon");
+  assert.equal(url.searchParams.get("genres"), "fantasy,psychological");
+  assert.equal(url.searchParams.has("status"), false);
+  assert.equal(url.searchParams.has("min_chapters"), false);
+});
+
+void test("novelSearchUrl includes min_chapters/artist even though they're currently server no-ops", () => {
+  const url = new URL(novelSearchUrl({ minChapters: 50, artist: "Someone" }));
+  assert.equal(url.searchParams.get("min_chapters"), "50");
+  assert.equal(url.searchParams.get("artist"), "Someone");
+});
+
+void test("novelSearchUrl includes sort/order/limit and omits offset when it's 0", () => {
+  const url = new URL(novelSearchUrl({ sort: "title", direction: "asc", limit: 50, offset: 0 }));
+  assert.equal(url.searchParams.get("sort"), "title");
+  assert.equal(url.searchParams.get("order"), "asc");
+  assert.equal(url.searchParams.get("limit"), "50");
+  assert.equal(url.searchParams.has("offset"), false);
+  assert.equal(new URL(novelSearchUrl({ offset: 20 })).searchParams.get("offset"), "20");
+});
+
+void test("parseNovelSearchResults maps entries to SearchResultItem with the novel: prefix", () => {
+  const { items, total } = parseNovelSearchResults({
+    data: [
+      {
+        id: 10,
+        slug: "a-painter-who-draws-dungeons",
+        title: "A Painter Who Draws Dungeons",
+        cover_url: "https://cdn.asurascans.com/covers/painter.webp",
+        status: "ongoing",
+      },
+    ],
+    meta: { total: 1 },
+  });
+  assert.equal(total, 1);
+  assert.equal(items.length, 1);
+  assert.equal(items[0]!.mangaId, "novel:a-painter-who-draws-dungeons");
+  assert.equal(items[0]!.title, "A Painter Who Draws Dungeons");
+  assert.equal(items[0]!.imageUrl, "https://cdn.asurascans.com/covers/painter.webp");
+});
+
+void test("parseNovelSearchResults falls back total to entries.length when meta is missing", () => {
+  const { total } = parseNovelSearchResults({
+    data: [
+      { slug: "a", title: "A" },
+      { slug: "b", title: "B" },
+    ],
+  });
+  assert.equal(total, 2);
+});
+
+void test("parseNovelSearchResults skips an entry with no slug rather than throwing", () => {
+  const { items } = parseNovelSearchResults({ data: [{ title: "No Slug" }], meta: { total: 1 } });
+  assert.equal(items.length, 0);
 });
