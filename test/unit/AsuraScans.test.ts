@@ -507,6 +507,7 @@ void test("parseNovelSearchResults maps entries to SearchResultItem with the nov
         id: 10,
         slug: "a-painter-who-draws-dungeons",
         title: "A Painter Who Draws Dungeons",
+        alternative_titles: "The Artist Who Paints Dungeon • Dungeon Artist",
         cover_url: "https://cdn.asurascans.com/covers/painter.webp",
         status: "ongoing",
       },
@@ -517,6 +518,7 @@ void test("parseNovelSearchResults maps entries to SearchResultItem with the nov
   assert.equal(items.length, 1);
   assert.equal(items[0]!.mangaId, "novel:a-painter-who-draws-dungeons");
   assert.equal(items[0]!.title, "A Painter Who Draws Dungeons");
+  assert.equal(items[0]!.subtitle, "The Artist Who Paints Dungeon");
   assert.equal(items[0]!.imageUrl, "https://cdn.asurascans.com/covers/painter.webp");
 });
 

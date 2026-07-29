@@ -847,6 +847,7 @@ export function rankedNovelSearchResults(payload: unknown): {
         item: {
           mangaId: NOVEL_ID_PREFIX + slug,
           title,
+          subtitle: alternativeTitles(entry, "alternative_titles")[0],
           imageUrl: readString(entry, "cover_url") ?? "",
           contentRating: ContentRating.MATURE,
         },
