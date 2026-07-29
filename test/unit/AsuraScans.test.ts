@@ -355,10 +355,12 @@ void test("novelToSourceManga maps contentType, genre ids, rating fraction, and 
   );
 });
 
-void test("novelToDiscoverItem builds a simpleCarouselItem", () => {
+void test("novelToDiscoverItem builds a simpleCarouselItem with a subtitle", () => {
   const item = novelToDiscoverItem(NOVEL_ENTRY);
   assert.equal(item.type, "simpleCarouselItem");
   assert.equal(item.mangaId, "novel:test-novel");
+  assert.ok("subtitle" in item);
+  assert.equal(item.subtitle, "Alt One");
   assert.equal(item.imageUrl, "https://cdn.asurascans.com/covers/test.webp");
 });
 

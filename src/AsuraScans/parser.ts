@@ -660,6 +660,7 @@ export function novelToDiscoverItem(entry: Island): DiscoverSectionItem {
     type: "simpleCarouselItem",
     mangaId: NOVEL_ID_PREFIX + (readString(entry, "slug") ?? ""),
     title: readString(entry, "title") ?? "Unknown Title",
+    subtitle: alternativeTitles(entry, "alternative_titles")[0],
     imageUrl: readString(entry, "cover_url") ?? "",
     contentRating: ContentRating.MATURE,
   };
