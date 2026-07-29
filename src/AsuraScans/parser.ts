@@ -7,7 +7,6 @@ import {
   type ChapterDetails,
   type DiscoverSectionItem,
   type Metadata,
-  type PagedResults,
   type SearchResultItem,
   type SourceManga,
   type Tag,
@@ -21,11 +20,12 @@ import {
   readArray,
   readBoolean,
   readNumber,
+  readNumberArray,
   readString,
   readStringArray,
   type Island,
 } from "./astro.ts";
-import { ASURA_DOMAIN, STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models.ts";
+import { ASURA_API, ASURA_DOMAIN, STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models.ts";
 
 const SERIES_DETAILS_KEYS = ["title", "alternativeTitles", "seriesId"];
 const SERIES_CHAPTERS_KEYS = ["chapters", "publicUrl"];
@@ -322,29 +322,100 @@ function withoutHoistedPin(island: Island, entries: Island[]): Island[] {
   return outOfOrder ? entries.slice(1) : entries;
 }
 
-export function parseSearchResults(html: string): PagedResults<SearchResultItem> {
+// Carries the raw fields needed to sort comics and novels into one combined order (see
+// mergeRankedResults) alongside the finished item — comics and novels are fetched from entirely
+// separate backends that each only sort their own results, so combining them into one list
+// correctly requires re-sorting from these raw values, not just concatenating two pre-sorted lists
+export type RankedSearchResult = {
+  item: SearchResultItem;
+  title: string;
+  rating?: number;
+  createdAt?: string;
+  lastUpdate?: string;
+  bookmarks?: number;
+};
+
+// A comic's `alt_titles` and a novel's `alternative_titles` are independent per-record lists that
+// don't correspond to each other even for what a user would consider "the same" series, so picking
+// entry [0] as a subtitle looks inconsistent between the two. "Comic/Novel | Chapter N" instead:
+// consistent by construction, and more directly useful for search/discover than a stray alt title
+function latestChapterSubtitle(kind: "Comic" | "Novel", chapters: Island[]): string | undefined {
+  const number = readNumber(chapters[0] ?? {}, "number");
+  return number === undefined ? undefined : `${kind} | Chapter ${number}`;
+}
+
+export function rankedSearchResults(html: string): {
+  ranked: RankedSearchResult[];
+  currentPage: number;
+  totalPages: number;
+} {
   const island = findIsland(html, BROWSE_KEYS);
   const entries = withoutHoistedPin(island, readArray(island, "initialSeries"));
 
-  const items: SearchResultItem[] = entries.flatMap((series) => {
+  const ranked: RankedSearchResult[] = entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
     if (!mangaId || isNovel(series)) return [];
 
+    const title = readString(series, "title") ?? "Unknown Title";
     return [
       {
-        mangaId,
-        title: readString(series, "title") ?? "Unknown Title",
-        subtitle: alternativeTitles(series, "alt_titles")[0],
-        imageUrl: readString(series, "cover") ?? "",
-        contentRating: ContentRating.MATURE,
+        item: {
+          mangaId,
+          title,
+          subtitle: latestChapterSubtitle("Comic", readArray(series, "latest_chapters")),
+          imageUrl: readString(series, "cover") ?? "",
+          contentRating: ContentRating.MATURE,
+        },
+        title,
+        rating: readNumber(series, "rating"),
+        createdAt: readString(series, "created_at"),
+        lastUpdate: readString(series, "last_chapter_at"),
+        bookmarks: readNumber(series, "bookmark_count"),
       },
     ];
   });
 
-  const currentPage = readNumber(island, "initialCurrentPage") ?? 1;
-  const totalPages = readNumber(island, "initialTotalPages") ?? 1;
+  return {
+    ranked,
+    currentPage: readNumber(island, "initialCurrentPage") ?? 1,
+    totalPages: readNumber(island, "initialTotalPages") ?? 1,
+  };
+}
 
-  return currentPage < totalPages ? { items, metadata: currentPage + 1 } : { items };
+function rankedSortKey(entry: RankedSearchResult, sortField: string): string | number {
+  switch (sortField) {
+    case "rating":
+      return entry.rating ?? -1;
+    case "update":
+      return entry.lastUpdate ?? "";
+    case "newest":
+      // Novels expose no distinct series-creation field, so they fall back to lastUpdate —
+      // comics use their own real created_at
+      return entry.createdAt ?? entry.lastUpdate ?? "";
+    case "popular":
+      return entry.bookmarks ?? -1;
+    default:
+      return entry.title.toLowerCase();
+  }
+}
+
+// A single full re-sort of the small combined page, rather than a merge of two pre-sorted lists —
+// cheap at this scale (one comics page + the whole novel catalog) and avoids needing both
+// backends' orderings to agree on tie-breaking
+export function mergeRankedResults(
+  a: RankedSearchResult[],
+  b: RankedSearchResult[],
+  sortField: string,
+  direction: string,
+): SearchResultItem[] {
+  return [...a, ...b]
+    .sort((x, y) => {
+      const kx = rankedSortKey(x, sortField);
+      const ky = rankedSortKey(y, sortField);
+      const cmp = kx < ky ? -1 : kx > ky ? 1 : 0;
+      return direction === "asc" ? cmp : -cmp;
+    })
+    .map((entry) => entry.item);
 }
 
 // A browse result page rendered as a discover carousel rather than search results
@@ -510,4 +581,289 @@ export function parseChapterApiPayload(payload: unknown, chapter: Chapter): Chap
     mangaId: chapter.sourceManga.mangaId,
     pages,
   };
+}
+
+// --- Novels (/novels, /novels/<slug>, /novels/<slug>/chapter/<n>) ---
+// A separate pipeline from comics above: the comics route (/comics/<slug>-<hash>) resolves a
+// novel's slug too, but its chapters island is a disconnected, comic-shaped table with different
+// ids that doesn't correspond to what /novels/<slug>/chapter/<n> actually serves
+
+const NOVEL_CATALOG_KEYS = ["initialItems"];
+const NOVEL_CHAPTERS_KEYS = ["chapters", "novelSlug", "totalChapters"];
+const NOVEL_CHAPTER_KEYS = ["paragraphs", "isLocked"];
+
+// A novel and a comic can share the same slug (the comics route resolves any slug, see above), so
+// novel mangaIds get their own namespace — otherwise a manga viewed once as one type stays stuck
+// as that type in the app's own per-manga cache forever, since the cache key would be identical
+const NOVEL_ID_PREFIX = "novel:";
+
+export function isNovelMangaId(mangaId: string): boolean {
+  return mangaId.startsWith(NOVEL_ID_PREFIX);
+}
+
+export function novelSlugFromMangaId(mangaId: string): string {
+  return isNovelMangaId(mangaId) ? mangaId.slice(NOVEL_ID_PREFIX.length) : mangaId;
+}
+
+export function novelCatalogUrl(): string {
+  return `${ASURA_DOMAIN}/novels`;
+}
+
+export function novelUrl(mangaId: string): string {
+  return `${ASURA_DOMAIN}/novels/${novelSlugFromMangaId(mangaId)}`;
+}
+
+export function novelChapterUrl(chapter: Chapter): string {
+  return `${novelUrl(chapter.sourceManga.mangaId)}/chapter/${chapter.chapterId}`;
+}
+
+export function parseNovelCatalog(html: string): Island[] {
+  const island = findIsland(html, NOVEL_CATALOG_KEYS);
+  return readArray(island, "initialItems");
+}
+
+// mangaId here is the bare site slug, not the prefixed app-facing id — callers strip first
+export function novelCatalogEntry(catalog: Island[], slug: string): Island | undefined {
+  return catalog.find((entry) => readString(entry, "slug") === slug);
+}
+
+export function novelToSourceManga(entry: Island): SourceManga {
+  const mangaId = NOVEL_ID_PREFIX + (readString(entry, "slug") ?? "");
+  const genreTitles = readStringArray(entry, "genres");
+  const genreIds = readNumberArray(entry, "genre_ids");
+  const tagGroups: TagSection[] =
+    genreTitles.length > 0
+      ? [
+          {
+            id: "genres",
+            title: "Genres",
+            tags: genreTitles.map((title, i) => ({ id: String(genreIds[i] ?? title), title })),
+          },
+        ]
+      : [];
+  const thumbnailUrl = readString(entry, "cover_url") ?? "";
+  const description = readString(entry, "description");
+
+  return {
+    mangaId,
+    mangaInfo: {
+      thumbnailUrl,
+      synopsis: description ? htmlToPlainText(description) : "No synopsis.",
+      primaryTitle: readString(entry, "title") ?? "Unknown Title",
+      secondaryTitles: alternativeTitles(entry, "alternative_titles"),
+      contentType: "novel",
+      contentRating: ContentRating.MATURE,
+      status: statusLabel(readString(entry, "status")),
+      author: readString(entry, "author"),
+      rating: ratingFraction(entry, "rating"),
+      tagGroups,
+      artworkUrls: thumbnailUrl ? [thumbnailUrl] : [],
+      shareUrl: novelUrl(mangaId),
+    },
+  };
+}
+
+// Only "Nh ago"/"Nd ago" confirmed live across a full 101-chapter list — no weeks/months/years
+// observed, so this deliberately doesn't guess at units never seen
+const NOVEL_RELATIVE_TIME = /^(\d+)(h|d) ago$/i;
+
+function parseNovelRelativeTime(text: string): Date | undefined {
+  const match = NOVEL_RELATIVE_TIME.exec(text.trim());
+  if (!match) return undefined;
+
+  const amount = Number(match[1]);
+  const unitMs = match[2]!.toLowerCase() === "h" ? 3_600_000 : 86_400_000;
+  return new Date(Date.now() - amount * unitMs);
+}
+
+export function parseNovelChapterList(html: string, sourceManga: SourceManga): Chapter[] {
+  const island = findIsland(html, NOVEL_CHAPTERS_KEYS);
+  const chapters: Chapter[] = [];
+
+  for (const entry of readArray(island, "chapters")) {
+    const chapNum = readNumber(entry, "number");
+    if (chapNum === undefined) continue;
+
+    const date = readString(entry, "date");
+
+    chapters.push({
+      chapterId: String(chapNum),
+      sourceManga,
+      langCode: "en",
+      chapNum,
+      volume: 0,
+      title: readString(entry, "title"),
+      publishDate: date ? parseNovelRelativeTime(date) : undefined,
+    });
+  }
+
+  return chapters;
+}
+
+// html chapters parse as XML: unclosed void elements and named entities beyond XML's five are
+// fatal (docs/paperback/html-chapters.md). AsuraScans' own copy, not imported from LightNovelWorld
+// (each extension bundles standalone)
+const VOID_TAG =
+  /<(img|br|hr|source|wbr|area|col|embed|input|link|meta|track|param|base)(\b[^>]*?)\s*\/?>/gi;
+const NAMED_REF = /&([a-zA-Z][a-zA-Z0-9]*);/g;
+const XML_ENTITIES = new Set(["amp", "lt", "gt", "quot", "apos"]);
+const ENTITY_CODEPOINTS: Record<string, number> = {
+  copy: 0xa9,
+  deg: 0xb0,
+  eacute: 0xe9,
+  hellip: 0x2026,
+  laquo: 0xab,
+  ldquo: 0x201c,
+  lsquo: 0x2018,
+  mdash: 0x2014,
+  middot: 0xb7,
+  nbsp: 0xa0,
+  ndash: 0x2013,
+  raquo: 0xbb,
+  rdquo: 0x201d,
+  rsquo: 0x2019,
+  shy: 0xad,
+  times: 0xd7,
+  trade: 0x2122,
+};
+
+function toXhtml(content: string): string {
+  const body = content
+    .replace(VOID_TAG, (_match, tag: string, attrs: string) => `<${tag}${attrs}/>`)
+    .replace(NAMED_REF, (match: string, name: string) => {
+      if (XML_ENTITIES.has(name)) return match;
+      const codePoint = ENTITY_CODEPOINTS[name];
+      return codePoint === undefined ? `&amp;${name};` : `&#${codePoint};`;
+    });
+
+  return `<html xmlns="http://www.w3.org/1999/xhtml"><head></head><body>${body}</body></html>`;
+}
+
+function novelLockedError(chapter: Chapter, shardCost: number): Error {
+  return new Error(
+    `Chapter ${chapter.chapNum} costs ${shardCost} shards to unlock. Unlock it on asurascans.com to read it here.`,
+  );
+}
+
+export function novelChapterIsLocked(html: string): boolean {
+  const island = findIsland(html, NOVEL_CHAPTER_KEYS);
+  return readBoolean(island, "isLocked");
+}
+
+export function parseNovelChapterDetails(html: string, chapter: Chapter): ChapterDetails {
+  const island = findIsland(html, NOVEL_CHAPTER_KEYS);
+
+  if (readBoolean(island, "isLocked")) {
+    throw novelLockedError(chapter, readNumber(island, "shardCost") ?? 0);
+  }
+
+  const paragraphs = readStringArray(island, "paragraphs");
+  if (paragraphs.length === 0) {
+    throw new Error(`Asura Scans served no content for chapter ${chapter.chapNum}`);
+  }
+
+  return {
+    id: chapter.chapterId,
+    mangaId: chapter.sourceManga.mangaId,
+    type: "html",
+    html: toXhtml(paragraphs.join("")),
+  };
+}
+
+export function parseNovelChapterApiPayload(payload: unknown, chapter: Chapter): ChapterDetails {
+  const data = payload as Island;
+  const contentHtml = readString(data, "content_html");
+
+  if (readBoolean(data, "is_locked") || !contentHtml) {
+    throw novelLockedError(chapter, readNumber(data, "shard_cost") ?? 0);
+  }
+
+  return {
+    id: chapter.chapterId,
+    mangaId: chapter.sourceManga.mangaId,
+    type: "html",
+    html: toXhtml(contentHtml),
+  };
+}
+
+export type NovelSearchQuery = {
+  search?: string;
+  genres?: string[];
+  status?: string;
+  author?: string;
+  artist?: string;
+  minChapters?: number;
+  sort?: string;
+  direction?: string;
+  limit?: number;
+  offset?: number;
+};
+
+export function novelSearchUrl(query: NovelSearchQuery): string {
+  const params: string[] = [];
+  const append = (key: string, value: string) => {
+    params.push(`${key}=${encodeURIComponent(value)}`);
+  };
+
+  if (query.search) append("search", query.search);
+  if (query.genres && query.genres.length > 0) append("genres", query.genres.join(","));
+  if (query.status && query.status !== "all") append("status", query.status);
+  if (query.author) append("author", query.author);
+  if (query.artist) append("artist", query.artist);
+  if (query.minChapters !== undefined && query.minChapters > 0) {
+    append("min_chapters", String(query.minChapters));
+  }
+  if (query.sort) append("sort", query.sort);
+  if (query.direction) append("order", query.direction);
+  if (query.limit !== undefined) append("limit", String(query.limit));
+  if (query.offset !== undefined && query.offset > 0) append("offset", String(query.offset));
+
+  return `${ASURA_API}/api/novel-series${params.length > 0 ? `?${params.join("&")}` : ""}`;
+}
+
+// Same field names as the /novels catalog (see novelToSourceManga above) but plain JSON, not an
+// astro-island — cast straight to Island like parseNovelChapterApiPayload does for the other
+// JSON endpoint. Multi-genre selection is AND here, not OR like comics (confirmed live) — accepted
+// as a known limitation given the tiny catalog, not worked around
+export function rankedNovelSearchResults(payload: unknown): {
+  ranked: RankedSearchResult[];
+  total: number;
+} {
+  const root = payload as Island;
+  const entries = readArray(root, "data");
+  const meta = (root.meta ?? {}) as Island;
+  const total = readNumber(meta, "total") ?? entries.length;
+
+  const ranked: RankedSearchResult[] = entries.flatMap((entry) => {
+    const slug = readString(entry, "slug");
+    if (!slug) return [];
+
+    const title = readString(entry, "title") ?? "Unknown Title";
+    const lastUpdate = readString(entry, "last_chapter_at");
+    return [
+      {
+        item: {
+          mangaId: NOVEL_ID_PREFIX + slug,
+          title,
+          subtitle: latestChapterSubtitle("Novel", readArray(entry, "recent_chapters")),
+          imageUrl: readString(entry, "cover_url") ?? "",
+          contentRating: ContentRating.MATURE,
+        },
+        title,
+        rating: readNumber(entry, "rating"),
+        lastUpdate,
+        bookmarks: readNumber(entry, "bookmarks"),
+      },
+    ];
+  });
+
+  return { ranked, total };
+}
+
+export function parseNovelSearchResults(payload: unknown): {
+  items: SearchResultItem[];
+  total: number;
+} {
+  const { ranked, total } = rankedNovelSearchResults(payload);
+  return { items: ranked.map((entry) => entry.item), total };
 }
