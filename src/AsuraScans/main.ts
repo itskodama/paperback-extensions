@@ -10,6 +10,7 @@ import {
   type DiscoverSection,
   type DiscoverSectionItem,
   type ExtensionImpl,
+  type Form,
   type PagedResults,
   type SearchQuery,
   type SearchResultItem,
@@ -17,9 +18,10 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
+import { getSession } from "./auth";
 import { AsuraScansAdvancedSearchForm } from "./forms";
 import { DEFAULT_SORT, SORT_OPTIONS, type AsuraScansSearchMetadata } from "./models";
-import { MainInterceptor, fetchPage } from "./network";
+import { MainInterceptor, fetchChapterJson, fetchPage } from "./network";
 import {
   DISCOVER_FEATURED,
   DISCOVER_LATEST_UPDATES,
@@ -28,10 +30,12 @@ import {
   DISCOVER_STATUS,
   DISCOVER_TRENDING,
   browseUrl,
+  chapterIsLocked,
   chapterUrl,
   comicTypeItems,
   homeUrl,
   parseBrowseCarousel,
+  parseChapterApiPayload,
   parseChapterDetails,
   parseChapterList,
   parseDiscoverItems,
@@ -41,6 +45,7 @@ import {
   statusItems,
 } from "./parser";
 import type AsuraScansConfig from "./pbconfig";
+import { AsuraScansSettingsForm } from "./settingsForm";
 
 export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfig> {
   mainRateLimiter = new BasicRateLimiter("main", {
@@ -167,7 +172,21 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
     const page = await fetchPage(chapterUrl(chapter));
+
+    if (chapterIsLocked(page.html) && getSession()) {
+      try {
+        const json = await fetchChapterJson(chapter.sourceManga.mangaId, chapter.chapterId);
+        if (json !== undefined) return parseChapterApiPayload(json, chapter);
+      } catch {
+        // Falls through to the anonymous early-access error below on any failure here
+      }
+    }
+
     return parseChapterDetails(page.html, chapter);
+  }
+
+  async getSettingsForm(): Promise<Form> {
+    return new AsuraScansSettingsForm();
   }
 }
 

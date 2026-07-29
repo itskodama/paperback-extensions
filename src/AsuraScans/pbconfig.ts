@@ -7,7 +7,7 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 export default {
   name: "Asura Scans",
   description: "Read manhwa, manhua, and manga from asurascans.com.",
-  version: "1.0.0-alpha.7",
+  version: "1.0.0-alpha.8",
   icon: "icon.png",
   language: "en",
   contentRating: ContentRating.MATURE,
@@ -15,6 +15,7 @@ export default {
     SourceIntents.DISCOVER_SECTION_PROVIDING,
     SourceIntents.SEARCH_RESULT_PROVIDING,
     SourceIntents.CHAPTER_PROVIDING,
+    SourceIntents.SETTINGS_FORM_PROVIDING,
   ],
   badges: [],
   developers: [
