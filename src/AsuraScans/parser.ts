@@ -336,6 +336,15 @@ export type RankedSearchResult = {
   bookmarks?: number;
 };
 
+// A comic's `alt_titles` and a novel's `alternative_titles` are independent per-record lists that
+// don't correspond to each other even for what a user would consider "the same" series, so picking
+// entry [0] as a subtitle looks inconsistent between the two. "Comic/Novel — Chapter N" instead:
+// consistent by construction, and more directly useful for search/discover than a stray alt title
+function latestChapterSubtitle(kind: "Comic" | "Novel", chapters: Island[]): string | undefined {
+  const number = readNumber(chapters[0] ?? {}, "number");
+  return number === undefined ? undefined : `${kind} — Chapter ${number}`;
+}
+
 export function rankedSearchResults(html: string): {
   ranked: RankedSearchResult[];
   currentPage: number;
@@ -354,7 +363,7 @@ export function rankedSearchResults(html: string): {
         item: {
           mangaId,
           title,
-          subtitle: alternativeTitles(series, "alt_titles")[0],
+          subtitle: latestChapterSubtitle("Comic", readArray(series, "latest_chapters")),
           imageUrl: readString(series, "cover") ?? "",
           contentRating: ContentRating.MATURE,
         },
@@ -660,7 +669,7 @@ export function novelToDiscoverItem(entry: Island): DiscoverSectionItem {
     type: "simpleCarouselItem",
     mangaId: NOVEL_ID_PREFIX + (readString(entry, "slug") ?? ""),
     title: readString(entry, "title") ?? "Unknown Title",
-    subtitle: alternativeTitles(entry, "alternative_titles")[0],
+    subtitle: latestChapterSubtitle("Novel", readArray(entry, "recent_chapters")),
     imageUrl: readString(entry, "cover_url") ?? "",
     contentRating: ContentRating.MATURE,
   };
@@ -848,7 +857,7 @@ export function rankedNovelSearchResults(payload: unknown): {
         item: {
           mangaId: NOVEL_ID_PREFIX + slug,
           title,
-          subtitle: alternativeTitles(entry, "alternative_titles")[0],
+          subtitle: latestChapterSubtitle("Novel", readArray(entry, "recent_chapters")),
           imageUrl: readString(entry, "cover_url") ?? "",
           contentRating: ContentRating.MATURE,
         },
