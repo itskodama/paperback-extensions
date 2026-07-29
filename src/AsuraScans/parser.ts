@@ -523,12 +523,25 @@ const NOVEL_CATALOG_KEYS = ["initialItems"];
 const NOVEL_CHAPTERS_KEYS = ["chapters", "novelSlug", "totalChapters"];
 const NOVEL_CHAPTER_KEYS = ["paragraphs", "isLocked"];
 
+// A novel and a comic can share the same slug (the comics route resolves any slug, see above), so
+// novel mangaIds get their own namespace — otherwise a manga viewed once as one type stays stuck
+// as that type in the app's own per-manga cache forever, since the cache key would be identical
+const NOVEL_ID_PREFIX = "novel:";
+
+export function isNovelMangaId(mangaId: string): boolean {
+  return mangaId.startsWith(NOVEL_ID_PREFIX);
+}
+
+export function novelSlugFromMangaId(mangaId: string): string {
+  return isNovelMangaId(mangaId) ? mangaId.slice(NOVEL_ID_PREFIX.length) : mangaId;
+}
+
 export function novelCatalogUrl(): string {
   return `${ASURA_DOMAIN}/novels`;
 }
 
 export function novelUrl(mangaId: string): string {
-  return `${ASURA_DOMAIN}/novels/${mangaId}`;
+  return `${ASURA_DOMAIN}/novels/${novelSlugFromMangaId(mangaId)}`;
 }
 
 export function novelChapterUrl(chapter: Chapter): string {
@@ -540,12 +553,13 @@ export function parseNovelCatalog(html: string): Island[] {
   return readArray(island, "initialItems");
 }
 
-export function novelCatalogEntry(catalog: Island[], mangaId: string): Island | undefined {
-  return catalog.find((entry) => readString(entry, "slug") === mangaId);
+// mangaId here is the bare site slug, not the prefixed app-facing id — callers strip first
+export function novelCatalogEntry(catalog: Island[], slug: string): Island | undefined {
+  return catalog.find((entry) => readString(entry, "slug") === slug);
 }
 
 export function novelToSourceManga(entry: Island): SourceManga {
-  const mangaId = readString(entry, "slug") ?? "";
+  const mangaId = NOVEL_ID_PREFIX + (readString(entry, "slug") ?? "");
   const genreTitles = readStringArray(entry, "genres");
   const genreIds = readNumberArray(entry, "genre_ids");
   const tagGroups: TagSection[] =
@@ -583,7 +597,7 @@ export function novelToSourceManga(entry: Island): SourceManga {
 export function novelToDiscoverItem(entry: Island): DiscoverSectionItem {
   return {
     type: "simpleCarouselItem",
-    mangaId: readString(entry, "slug") ?? "",
+    mangaId: NOVEL_ID_PREFIX + (readString(entry, "slug") ?? ""),
     title: readString(entry, "title") ?? "Unknown Title",
     imageUrl: readString(entry, "cover_url") ?? "",
     contentRating: ContentRating.MATURE,

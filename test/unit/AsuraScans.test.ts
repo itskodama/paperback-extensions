@@ -15,10 +15,14 @@ import {
 } from "../../src/AsuraScans/auth.ts";
 import {
   chapterIsLocked,
+  isNovelMangaId,
   novelCatalogEntry,
   novelChapterIsLocked,
+  novelChapterUrl,
+  novelSlugFromMangaId,
   novelToDiscoverItem,
   novelToSourceManga,
+  novelUrl,
   parseChapterApiPayload,
   parseNovelCatalog,
   parseNovelChapterApiPayload,
@@ -329,7 +333,7 @@ const NOVEL_ENTRY = {
 
 void test("novelToSourceManga maps contentType, genre ids, rating fraction, and alt titles", () => {
   const manga = novelToSourceManga(NOVEL_ENTRY);
-  assert.equal(manga.mangaId, "test-novel");
+  assert.equal(manga.mangaId, "novel:test-novel");
   assert.equal(manga.mangaInfo.contentType, "novel");
   assert.equal(manga.mangaInfo.contentRating, ContentRating.MATURE);
   assert.equal(manga.mangaInfo.primaryTitle, "Test Novel");
@@ -350,8 +354,22 @@ void test("novelToSourceManga maps contentType, genre ids, rating fraction, and 
 void test("novelToDiscoverItem builds a simpleCarouselItem", () => {
   const item = novelToDiscoverItem(NOVEL_ENTRY);
   assert.equal(item.type, "simpleCarouselItem");
-  assert.equal(item.mangaId, "test-novel");
+  assert.equal(item.mangaId, "novel:test-novel");
   assert.equal(item.imageUrl, "https://cdn.asurascans.com/covers/test.webp");
+});
+
+void test("isNovelMangaId/novelSlugFromMangaId distinguish a novel id from a plain comic slug", () => {
+  assert.equal(isNovelMangaId("novel:test-novel"), true);
+  assert.equal(isNovelMangaId("test-novel"), false);
+  assert.equal(novelSlugFromMangaId("novel:test-novel"), "test-novel");
+  assert.equal(novelSlugFromMangaId("test-novel"), "test-novel");
+});
+
+void test("novelUrl/novelChapterUrl strip the novel: prefix when building the real site URL", () => {
+  const manga = novelToSourceManga(NOVEL_ENTRY);
+  assert.equal(novelUrl(manga.mangaId), "https://asurascans.com/novels/test-novel");
+  const chapter: Chapter = { chapterId: "12", sourceManga: manga, langCode: "en", chapNum: 12 };
+  assert.equal(novelChapterUrl(chapter), "https://asurascans.com/novels/test-novel/chapter/12");
 });
 
 const NOVEL_CHAPTERS_HTML = `

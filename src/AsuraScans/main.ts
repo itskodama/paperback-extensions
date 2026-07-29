@@ -35,10 +35,12 @@ import {
   chapterUrl,
   comicTypeItems,
   homeUrl,
+  isNovelMangaId,
   novelCatalogEntry,
   novelCatalogUrl,
   novelChapterIsLocked,
   novelChapterUrl,
+  novelSlugFromMangaId,
   novelToDiscoverItem,
   novelToSourceManga,
   novelUrl,
@@ -179,9 +181,13 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   }
 
   async getMangaDetails(mangaId: string): Promise<SourceManga> {
-    const catalog = parseNovelCatalog((await fetchPage(novelCatalogUrl())).html);
-    const novel = novelCatalogEntry(catalog, mangaId);
-    if (novel) return novelToSourceManga(novel);
+    if (isNovelMangaId(mangaId)) {
+      const slug = novelSlugFromMangaId(mangaId);
+      const catalog = parseNovelCatalog((await fetchPage(novelCatalogUrl())).html);
+      const novel = novelCatalogEntry(catalog, slug);
+      if (novel) return novelToSourceManga(novel);
+      throw new Error(`Asura Scans no longer lists the novel ${slug}`);
+    }
 
     const page = await fetchPage(seriesUrl(mangaId));
     return parseSeriesDetails(page.html, mangaId);
@@ -206,7 +212,8 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
 
       if (novelChapterIsLocked(page.html) && getSession()) {
         try {
-          const json = await fetchNovelChapterJson(chapter.sourceManga.mangaId, chapter.chapterId);
+          const slug = novelSlugFromMangaId(chapter.sourceManga.mangaId);
+          const json = await fetchNovelChapterJson(slug, chapter.chapterId);
           if (json !== undefined) return parseNovelChapterApiPayload(json, chapter);
         } catch {
           // Falls through to the anonymous shard-cost error below on any failure here
