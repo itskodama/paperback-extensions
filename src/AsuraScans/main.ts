@@ -21,11 +21,12 @@ import {
 import { getSession } from "./auth";
 import { AsuraScansAdvancedSearchForm } from "./forms";
 import { DEFAULT_SORT, SORT_OPTIONS, type AsuraScansSearchMetadata } from "./models";
-import { MainInterceptor, fetchChapterJson, fetchPage } from "./network";
+import { MainInterceptor, fetchChapterJson, fetchNovelChapterJson, fetchPage } from "./network";
 import {
   DISCOVER_FEATURED,
   DISCOVER_LATEST_UPDATES,
   DISCOVER_COMIC_TYPE,
+  DISCOVER_NOVELS,
   DISCOVER_RECENTLY_ADDED,
   DISCOVER_STATUS,
   DISCOVER_TRENDING,
@@ -34,11 +35,22 @@ import {
   chapterUrl,
   comicTypeItems,
   homeUrl,
+  novelCatalogEntry,
+  novelCatalogUrl,
+  novelChapterIsLocked,
+  novelChapterUrl,
+  novelToDiscoverItem,
+  novelToSourceManga,
+  novelUrl,
   parseBrowseCarousel,
   parseChapterApiPayload,
   parseChapterDetails,
   parseChapterList,
   parseDiscoverItems,
+  parseNovelCatalog,
+  parseNovelChapterApiPayload,
+  parseNovelChapterDetails,
+  parseNovelChapterList,
   parseSearchResults,
   parseSeriesDetails,
   seriesUrl,
@@ -93,6 +105,11 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         title: "Comic Type",
         type: DiscoverSectionType.genres,
       },
+      {
+        id: DISCOVER_NOVELS,
+        title: "Novels",
+        type: DiscoverSectionType.simpleCarousel,
+      },
     ];
   }
 
@@ -112,6 +129,10 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         return {
           items: parseBrowseCarousel((await fetchPage(browseUrl({ sort: "newest" }))).html),
         };
+      case DISCOVER_NOVELS: {
+        const catalog = parseNovelCatalog((await fetchPage(novelCatalogUrl())).html);
+        return { items: catalog.map(novelToDiscoverItem) };
+      }
     }
 
     // The remaining sections are all rendered into the homepage
@@ -158,19 +179,43 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   }
 
   async getMangaDetails(mangaId: string): Promise<SourceManga> {
+    const catalog = parseNovelCatalog((await fetchPage(novelCatalogUrl())).html);
+    const novel = novelCatalogEntry(catalog, mangaId);
+    if (novel) return novelToSourceManga(novel);
+
     const page = await fetchPage(seriesUrl(mangaId));
     return parseSeriesDetails(page.html, mangaId);
   }
 
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
-    // Asura embeds every chapter in the series page, so the whole list gets returned
+    // Asura embeds every chapter in the series/novel page, so the whole list gets returned
     void sinceDate;
+
+    if (sourceManga.mangaInfo.contentType === "novel") {
+      const page = await fetchPage(novelUrl(sourceManga.mangaId));
+      return parseNovelChapterList(page.html, sourceManga);
+    }
 
     const page = await fetchPage(seriesUrl(sourceManga.mangaId));
     return parseChapterList(page.html, sourceManga);
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
+    if (chapter.sourceManga.mangaInfo.contentType === "novel") {
+      const page = await fetchPage(novelChapterUrl(chapter));
+
+      if (novelChapterIsLocked(page.html) && getSession()) {
+        try {
+          const json = await fetchNovelChapterJson(chapter.sourceManga.mangaId, chapter.chapterId);
+          if (json !== undefined) return parseNovelChapterApiPayload(json, chapter);
+        } catch {
+          // Falls through to the anonymous shard-cost error below on any failure here
+        }
+      }
+
+      return parseNovelChapterDetails(page.html, chapter);
+    }
+
     const page = await fetchPage(chapterUrl(chapter));
 
     if (chapterIsLocked(page.html) && getSession()) {
