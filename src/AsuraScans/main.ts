@@ -38,7 +38,6 @@ import {
   DISCOVER_FEATURED,
   DISCOVER_LATEST_UPDATES,
   DISCOVER_COMIC_TYPE,
-  DISCOVER_NOVELS,
   DISCOVER_RECENTLY_ADDED,
   DISCOVER_STATUS,
   DISCOVER_TRENDING,
@@ -55,10 +54,8 @@ import {
   novelChapterUrl,
   novelSearchUrl,
   novelSlugFromMangaId,
-  novelToDiscoverItem,
   novelToSourceManga,
   novelUrl,
-  parseBrowseCarousel,
   parseChapterApiPayload,
   parseChapterDetails,
   parseChapterList,
@@ -128,11 +125,6 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
         title: "Type",
         type: DiscoverSectionType.genres,
       },
-      {
-        id: DISCOVER_NOVELS,
-        title: "Novels",
-        type: DiscoverSectionType.simpleCarousel,
-      },
     ];
   }
 
@@ -142,19 +134,37 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   ): Promise<PagedResults<DiscoverSectionItem>> {
     void metadata;
 
-    // Status and Media chips are compiled in; Recently Added is a browse query; the rest are homepage
+    // Status and Type chips are compiled in; Recently Added merges a comics browse query with the
+    // novel search API's own newest sort; the rest are rendered into the homepage
     switch (section.id) {
       case DISCOVER_STATUS:
         return { items: statusItems() };
       case DISCOVER_COMIC_TYPE:
         return { items: comicTypeItems() };
-      case DISCOVER_RECENTLY_ADDED:
+      case DISCOVER_RECENTLY_ADDED: {
+        const comicsHtml = (await fetchPage(browseUrl({ sort: "newest" }))).html;
+        const { ranked: comicsRanked } = rankedSearchResults(comicsHtml);
+
+        const novelPayload = await fetchNovelSearch(
+          novelSearchUrl({
+            sort: NOVEL_SORT_MAP.newest,
+            direction: "desc",
+            limit: NOVEL_SEARCH_LIMIT,
+          }),
+        );
+        const { ranked: novelsRanked } = rankedNovelSearchResults(novelPayload);
+
+        const merged = mergeRankedResults(novelsRanked, comicsRanked, "newest", "desc");
         return {
-          items: parseBrowseCarousel((await fetchPage(browseUrl({ sort: "newest" }))).html),
+          items: merged.map((item) => ({
+            type: "simpleCarouselItem" as const,
+            mangaId: item.mangaId,
+            title: item.title,
+            subtitle: item.subtitle,
+            imageUrl: item.imageUrl,
+            contentRating: item.contentRating,
+          })),
         };
-      case DISCOVER_NOVELS: {
-        const catalog = parseNovelCatalog((await fetchPage(novelCatalogUrl())).html);
-        return { items: catalog.map(novelToDiscoverItem) };
       }
     }
 

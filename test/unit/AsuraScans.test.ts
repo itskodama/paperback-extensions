@@ -22,7 +22,6 @@ import {
   novelChapterUrl,
   novelSearchUrl,
   novelSlugFromMangaId,
-  novelToDiscoverItem,
   novelToSourceManga,
   novelUrl,
   parseChapterApiPayload,
@@ -357,15 +356,6 @@ void test("novelToSourceManga maps contentType, genre ids, rating fraction, and 
   );
 });
 
-void test("novelToDiscoverItem builds a simpleCarouselItem with a 'Novel — Chapter N' subtitle", () => {
-  const item = novelToDiscoverItem(NOVEL_ENTRY);
-  assert.equal(item.type, "simpleCarouselItem");
-  assert.equal(item.mangaId, "novel:test-novel");
-  assert.ok("subtitle" in item);
-  assert.equal(item.subtitle, "Novel — Chapter 118");
-  assert.equal(item.imageUrl, "https://cdn.asurascans.com/covers/test.webp");
-});
-
 void test("isNovelMangaId/novelSlugFromMangaId distinguish a novel id from a plain comic slug", () => {
   assert.equal(isNovelMangaId("novel:test-novel"), true);
   assert.equal(isNovelMangaId("test-novel"), false);
@@ -522,7 +512,7 @@ void test("parseNovelSearchResults maps entries to SearchResultItem with the nov
   assert.equal(items.length, 1);
   assert.equal(items[0]!.mangaId, "novel:a-painter-who-draws-dungeons");
   assert.equal(items[0]!.title, "A Painter Who Draws Dungeons");
-  assert.equal(items[0]!.subtitle, "Novel — Chapter 101");
+  assert.equal(items[0]!.subtitle, "Novel | Chapter 101");
   assert.equal(items[0]!.imageUrl, "https://cdn.asurascans.com/covers/painter.webp");
 });
 
@@ -557,10 +547,10 @@ const COMIC_BROWSE_HTML = `
 <astro-island props="{&quot;initialSeries&quot;:[1,[[0,{&quot;slug&quot;:[0,&quot;test-comic&quot;],&quot;title&quot;:[0,&quot;Test Comic&quot;],&quot;cover&quot;:[0,&quot;https://cdn.asurascans.com/covers/comic.webp&quot;],&quot;rating&quot;:[0,9.0],&quot;created_at&quot;:[0,&quot;2026-07-01T00:00:00Z&quot;],&quot;last_chapter_at&quot;:[0,&quot;2026-07-28T00:00:00Z&quot;],&quot;bookmark_count&quot;:[0,500],&quot;latest_chapters&quot;:[1,[[0,{&quot;number&quot;:[0,42]}],[0,{&quot;number&quot;:[0,41]}]]]}]]],&quot;initialTotalPages&quot;:[0,1],&quot;initialCurrentPage&quot;:[0,1]}"></astro-island>
 `;
 
-void test("rankedSearchResults builds a 'Comic — Chapter N' subtitle from latest_chapters", () => {
+void test("rankedSearchResults builds a 'Comic | Chapter N' subtitle from latest_chapters", () => {
   const { ranked, currentPage, totalPages } = rankedSearchResults(COMIC_BROWSE_HTML);
   assert.equal(ranked.length, 1);
-  assert.equal(ranked[0]!.item.subtitle, "Comic — Chapter 42");
+  assert.equal(ranked[0]!.item.subtitle, "Comic | Chapter 42");
   assert.equal(ranked[0]!.rating, 9);
   assert.equal(currentPage, 1);
   assert.equal(totalPages, 1);

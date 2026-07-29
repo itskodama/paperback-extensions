@@ -40,7 +40,6 @@ export const DISCOVER_LATEST_UPDATES = "latest-updates";
 export const DISCOVER_RECENTLY_ADDED = "recently-added";
 export const DISCOVER_STATUS = "status";
 export const DISCOVER_COMIC_TYPE = "comic-type";
-export const DISCOVER_NOVELS = "novels";
 
 // A chip carousel whose taps launch a filtered browse, one chip per option
 function facetItems(options: Tag[], metadata: (id: string) => Metadata): DiscoverSectionItem[] {
@@ -338,11 +337,11 @@ export type RankedSearchResult = {
 
 // A comic's `alt_titles` and a novel's `alternative_titles` are independent per-record lists that
 // don't correspond to each other even for what a user would consider "the same" series, so picking
-// entry [0] as a subtitle looks inconsistent between the two. "Comic/Novel — Chapter N" instead:
+// entry [0] as a subtitle looks inconsistent between the two. "Comic/Novel | Chapter N" instead:
 // consistent by construction, and more directly useful for search/discover than a stray alt title
 function latestChapterSubtitle(kind: "Comic" | "Novel", chapters: Island[]): string | undefined {
   const number = readNumber(chapters[0] ?? {}, "number");
-  return number === undefined ? undefined : `${kind} — Chapter ${number}`;
+  return number === undefined ? undefined : `${kind} | Chapter ${number}`;
 }
 
 export function rankedSearchResults(html: string): {
@@ -661,17 +660,6 @@ export function novelToSourceManga(entry: Island): SourceManga {
       artworkUrls: thumbnailUrl ? [thumbnailUrl] : [],
       shareUrl: novelUrl(mangaId),
     },
-  };
-}
-
-export function novelToDiscoverItem(entry: Island): DiscoverSectionItem {
-  return {
-    type: "simpleCarouselItem",
-    mangaId: NOVEL_ID_PREFIX + (readString(entry, "slug") ?? ""),
-    title: readString(entry, "title") ?? "Unknown Title",
-    subtitle: latestChapterSubtitle("Novel", readArray(entry, "recent_chapters")),
-    imageUrl: readString(entry, "cover_url") ?? "",
-    contentRating: ContentRating.MATURE,
   };
 }
 
