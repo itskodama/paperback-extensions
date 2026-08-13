@@ -3,14 +3,17 @@
 
 import {
   BasicRateLimiter,
+  CookieStorageInterceptor,
   DiscoverSectionType,
   type Chapter,
   type ChapterDetails,
+  type Cookie,
   type DiscoverSection,
   type DiscoverSectionItem,
   type ExtensionImpl,
   type Metadata,
   type PagedResults,
+  type Request,
   type SearchQuery,
   type SearchResultItem,
   type SortingOption,
@@ -101,11 +104,27 @@ export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
     ignoreImages: true,
   });
 
+  cookieInterceptor = new CookieStorageInterceptor({ storage: "stateManager" });
+
   mainInterceptor = new MainInterceptor("main");
 
   async initialise(): Promise<void> {
     this.mainRateLimiter.registerInterceptor();
+    this.cookieInterceptor.registerInterceptor();
     this.mainInterceptor.registerInterceptor();
+  }
+
+  async cloudflareBypassCompleted(
+    request: Request,
+    cookies: Cookie[],
+    localStorage: Record<string, string>,
+  ): Promise<void> {
+    void request;
+    void localStorage;
+
+    for (const cookie of cookies) {
+      if (cookie.name === "cf_clearance") this.cookieInterceptor.setCookie(cookie);
+    }
   }
 
   async getDiscoverSections(): Promise<DiscoverSection[]> {

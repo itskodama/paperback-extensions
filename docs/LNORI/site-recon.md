@@ -1,7 +1,55 @@
 # LNORI site recon
 
 Feasibility notes for a Paperback extension for `lnori.com` ("LNORI | Curated Light Novel
-Library"). Everything here was verified with `curl` against the live site on 2026-07-12.
+Library"). Everything here was verified with `curl` against the live site on 2026-07-12, except
+where a later dated note says otherwise.
+
+## Status: site-wide Cloudflare challenge since 2026-08-09 — bypassed
+
+Sometime between `2026-08-09 05:05Z` (last passing hourly CI run) and `06:57Z` (first failing one),
+lnori.com enabled a Cloudflare **managed challenge** across the whole zone. Every path answers `403`
+with `cf-mitigated: challenge` and the "Just a moment…" interstitial (`cType: 'managed'`). The
+extension could not reach the site at all for three days; it now solves the challenge through the
+app's bypass WebView, as described under "Getting past it" below.
+
+Verified 2026-08-12 from two networks (residential + GitHub Actions), repeated, with the
+extension's own iPhone UA and with full Chrome-like headers — not a blip, not IP-specific, not
+markup drift:
+
+| URL                                    | Before | Now                 |
+| -------------------------------------- | ------ | ------------------- |
+| `/`, `/library`, `/series/<id>/<slug>` | `200`  | `403` challenge     |
+| `/me/signin`                           | `200`  | `403` challenge     |
+| `cdn.lnori.com/cover/<id>.webp`        | `200`  | `403` challenge     |
+| `img.lnori.com/<id>-NN.jpg`            | `200`  | `403` challenge     |
+| `/favicon.ico`                         | `200`  | `200` (edge-cached) |
+
+The origin is alive (favicon still serves), so this is a WAF config flip, **not** the
+takedown/domain-hop failure the Risks section predicted. Nothing in `src/LNORI/` changed — its last
+commit is 2026-07-12.
+
+### Getting past it
+
+**Declaring `CLOUDFLARE_BYPASS_PROVIDING` does nothing on its own.** The app does not detect the
+challenge and offer a bypass by itself — waiting for it to notice a `403` is the obvious wrong turn,
+and it fails silently on device with no banner and no WebView. The app raises the bypass banner only
+when the extension **throws a `CloudflareError`**, whose `resolutionRequest` tells the WebView what
+to load. The capability is a prerequisite for that throw being honoured, not a trigger.
+
+Two consequences shape where the throw goes and what it carries:
+
+- **It belongs in `interceptResponse`, not the fetch wrapper.** Covers and inline illustrations are
+  fetched by the app's image loader and never pass through `fetchPage`, so a check there would
+  leave every image broken. The interceptor sees them.
+- **`cf_clearance` is bound to the exact User-Agent that solved the challenge.** So the resolution
+  request and every outbound request must carry the same UA — `Application.getDefaultUserAgent()`
+  on both sides. The old hardcoded iPhone UA would have invalidated the clearance; so would
+  dropping the header entirely and hoping the app's default matches the WebView's.
+
+`CookieStorageInterceptor` then persists the returned `cf_clearance`. Its domain matching is
+suffix-based, so a cookie scoped to `.lnori.com` also covers `cdn.` and `img.`. Note it drops
+cookies with no `expires` when persisting — a clearance without one survives the session but not an
+app restart.
 
 ## What it is
 
@@ -15,12 +63,13 @@ markup drift but a takedown/domain hop.
 - Server-rendered plain HTML. No framework markers (no `__NEXT_DATA__`, no astro-island, no Nuxt).
   Zero external scripts on the homepage; the book page loads one `/book/script.js` plus an inline
   thumbhash module — nothing content-critical is client-rendered.
-- Cloudflare fronts it (`server: cloudflare`) but does **not** challenge; plain GETs return `200`.
-  Pages are CDN-cached aggressively (`max-age=2678400`, observed `age` in days) — the site is
-  effectively static.
+- Cloudflare fronts it (`server: cloudflare`). It did **not** challenge as of 2026-07-12 — plain
+  GETs returned `200` — but **it does now**; see the status section above. Pages are CDN-cached
+  aggressively (`max-age=2678400`, observed `age` in days) — the site is effectively static.
 - `cdn.lnori.com` (covers, `cover/<bookId>.webp`) and `img.lnori.com` (inline illustrations,
-  `<bookId>-NN.jpg`) both serve `200` with no referer and with a foreign one — **no hotlink
-  protection**.
+  `<bookId>-NN.jpg`) had no hotlink protection — both served `200` with no referer and with a
+  foreign one. Both are behind the same challenge as of 2026-08-09; the hotlink finding is
+  untestable until the challenge is passed, and unlikely to have changed independently.
 - No auth gate anywhere in the read path. `/me/signin` exists but content is fully public.
 
 ## Structure
@@ -85,5 +134,10 @@ anything.
 - **Takedown, not rot.** Markup is EPUB-derived and framework-free, so scraper rot is low; but a
   public library of licensed Yen Press novels is a prime DMCA target. Assume the domain is
   disposable; keep the domain constant in one place.
+- **The WAF is the third failure mode, and it's the one that actually fired** (2026-08-09, above).
+  A site under this much legal pressure can turn a challenge on for the whole zone in one dashboard
+  click, with no warning and nothing to diff. Neither the low-rot markup nor the "keep the domain
+  in one place" mitigation helps against it — plan for the bypass capability to be a permanent part
+  of this extension, and expect the challenge level to keep moving.
 - Volume ids are embedded in slugs (`vol-03` vs `vol-3` inconsistencies observed), so never derive
   anything from slug text; use JSON-LD `position`.

@@ -1,28 +1,51 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import { PaperbackInterceptor, type Request, type Response } from "@paperback/types";
+import {
+  CloudflareError,
+  PaperbackInterceptor,
+  type Request,
+  type Response,
+} from "@paperback/types";
 
-const USER_AGENT =
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+import { LNORI_DOMAIN } from "./parser";
+
+// Throwing this is what raises the app's bypass banner; the app opens a WebView at
+// the request below, and cf_clearance is bound to the user-agent it solves with — so
+// the same default UA has to go out on every request too
+async function cloudflareChallenge(): Promise<CloudflareError> {
+  return new CloudflareError({
+    url: `${LNORI_DOMAIN}/`,
+    method: "GET",
+    headers: { "user-agent": await Application.getDefaultUserAgent() },
+  });
+}
 
 export class MainInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
-    request.headers = {
-      ...request.headers,
-      "user-agent": USER_AGENT,
+    return {
+      ...request,
+      headers: {
+        ...request.headers,
+        "user-agent": await Application.getDefaultUserAgent(),
+      },
     };
-    return request;
   }
 
+  // Covers images too — covers and inline illustrations sit on challenged subdomains
+  // and never pass through fetchPage
   override async interceptResponse(
     request: Request,
     response: Response,
     data: ArrayBuffer,
   ): Promise<ArrayBuffer> {
     void request;
-    void response;
 
+    for (const [name, value] of Object.entries(response.headers ?? {})) {
+      if (name.toLowerCase() === "cf-mitigated" && value.toLowerCase().includes("challenge")) {
+        throw await cloudflareChallenge();
+      }
+    }
     return data;
   }
 }
@@ -82,10 +105,17 @@ export async function fetchPage(url: string): Promise<string> {
 
 async function requestPage(url: string): Promise<string> {
   const [response, data] = await Application.scheduleRequest({ url, method: "GET" });
+  const body = Application.arrayBufferToUTF8String(data);
+
+  // Backstop for a challenge served without the cf-mitigated header, which the
+  // interceptor keys off
+  if (response.status >= 400 && body.includes("_cf_chl_opt")) {
+    throw await cloudflareChallenge();
+  }
 
   if (response.status < 200 || response.status >= 300) {
     throw new Error(`LNORI returned HTTP ${response.status} for ${url}`);
   }
 
-  return Application.arrayBufferToUTF8String(data);
+  return body;
 }
