@@ -4,13 +4,13 @@ Feasibility notes for a Paperback extension for `lnori.com` ("LNORI | Curated Li
 Library"). Everything here was verified with `curl` against the live site on 2026-07-12, except
 where a later dated note says otherwise.
 
-## Status: broken since 2026-08-09 — site-wide Cloudflare challenge
+## Status: site-wide Cloudflare challenge since 2026-08-09 — bypassed
 
-**The extension cannot reach the site at all.** Sometime between `2026-08-09 05:05Z` (last passing
-hourly CI run) and `06:57Z` (first failing one), lnori.com enabled a Cloudflare **managed
-challenge** across the whole zone. Every path now answers `403` with `cf-mitigated: challenge` and
-the "Just a moment…" interstitial (`cType: 'managed'`), so `requestPage` in `network.ts` throws
-`LNORI returned HTTP 403` on every entry point.
+Sometime between `2026-08-09 05:05Z` (last passing hourly CI run) and `06:57Z` (first failing one),
+lnori.com enabled a Cloudflare **managed challenge** across the whole zone. Every path answers `403`
+with `cf-mitigated: challenge` and the "Just a moment…" interstitial (`cType: 'managed'`). The
+extension could not reach the site at all for three days; it now solves the challenge through the
+app's bypass WebView, as described under "Getting past it" below.
 
 Verified 2026-08-12 from two networks (residential + GitHub Actions), repeated, with the
 extension's own iPhone UA and with full Chrome-like headers — not a blip, not IP-specific, not
@@ -28,11 +28,28 @@ The origin is alive (favicon still serves), so this is a WAF config flip, **not*
 takedown/domain-hop failure the Risks section predicted. Nothing in `src/LNORI/` changed — its last
 commit is 2026-07-12.
 
-Fixing it means the `CLOUDFLARE_BYPASS_PROVIDING` capability (WebView solves the challenge, app
-returns `cf_clearance`). Two traps that fall out of the table above: `cf_clearance` is bound to the
-exact UA that solved it, so the hardcoded iPhone UA at `network.ts:6` would invalidate it; and the
-two image subdomains are challenged too, but they are fetched by the app's image loader rather than
-this extension's fetch layer.
+### Getting past it
+
+**Declaring `CLOUDFLARE_BYPASS_PROVIDING` does nothing on its own.** The app does not detect the
+challenge and offer a bypass by itself — waiting for it to notice a `403` is the obvious wrong turn,
+and it fails silently on device with no banner and no WebView. The app raises the bypass banner only
+when the extension **throws a `CloudflareError`**, whose `resolutionRequest` tells the WebView what
+to load. The capability is a prerequisite for that throw being honoured, not a trigger.
+
+Two consequences shape where the throw goes and what it carries:
+
+- **It belongs in `interceptResponse`, not the fetch wrapper.** Covers and inline illustrations are
+  fetched by the app's image loader and never pass through `fetchPage`, so a check there would
+  leave every image broken. The interceptor sees them.
+- **`cf_clearance` is bound to the exact User-Agent that solved the challenge.** So the resolution
+  request and every outbound request must carry the same UA — `Application.getDefaultUserAgent()`
+  on both sides. The old hardcoded iPhone UA would have invalidated the clearance; so would
+  dropping the header entirely and hoping the app's default matches the WebView's.
+
+`CookieStorageInterceptor` then persists the returned `cf_clearance`. Its domain matching is
+suffix-based, so a cookie scoped to `.lnori.com` also covers `cdn.` and `img.`. Note it drops
+cookies with no `expires` when persisting — a clearance without one survives the session but not an
+app restart.
 
 ## What it is
 
