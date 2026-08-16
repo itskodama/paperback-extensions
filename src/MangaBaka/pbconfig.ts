@@ -7,7 +7,7 @@ export default {
   name: "MangaBaka",
   description:
     "Track your reading progress on mangabaka.org, a manga and light novel database aggregating AniList, MyAnimeList, MangaUpdates, Kitsu, Anime-Planet, Shikimori and Anime News Network.",
-  version: "1.0.0-alpha.1",
+  version: "1.0.0-alpha.2",
   icon: "icon.png",
   language: "en",
   // The catalog spans safe through pornographic; per-title ratings are set on each
