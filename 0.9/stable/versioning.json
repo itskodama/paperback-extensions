@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-08-13T00:51:14.089Z",
+  "buildTime": "2026-08-16T04:09:31.188Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -73,6 +73,29 @@
         }
       ],
       "id": "LightNovelWorld"
+    },
+    {
+      "name": "MangaBaka",
+      "description": "Track your reading progress on mangabaka.org, a manga and light novel database aggregating AniList, MyAnimeList, MangaUpdates, Kitsu, Anime-Planet, Shikimori and Anime News Network.",
+      "version": "1.0.0-alpha.1",
+      "icon": "icon.png",
+      "language": "en",
+      "contentRating": "MATURE",
+      "capabilities": [
+        2,
+        64,
+        32,
+        4,
+        8
+      ],
+      "badges": [],
+      "developers": [
+        {
+          "name": "Kodama",
+          "github": "https://github.com/itskodama"
+        }
+      ],
+      "id": "MangaBaka"
     },
     {
       "name": "NovelArchive",
