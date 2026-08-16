@@ -25,6 +25,24 @@ markup. Prefer that approach; reach for a parser only when a site offers no stru
 - Anything else you are unsure about: check before relying on it, because the Node test runner will
   happily provide globals the device lacks (see [Testing](testing.md)).
 
+## Present globals worth knowing about
+
+**WebCrypto is available**, despite being absent from the platform typings. Probed on device
+2026-08-15 from an extension's `initialise`:
+
+```
+crypto: present, getRandomValues: yes, subtle: yes
+```
+
+So `crypto.getRandomValues` and `crypto.subtle.digest("SHA-256", …)` both work, and neither needs
+a bundled implementation. MangaBaka's `crypto.ts` carried a 110-line FIPS 180-4 transcription of
+SHA-256 for PKCE before this was confirmed; it now calls `subtle` and is a third of the size.
+
+Two caveats. `subtle.digest` is **async**, so anything built on it becomes async — for MangaBaka
+that meant a PKCE challenge could no longer be produced in a `Form` field initialiser and moved to
+`formWillAppear`. And since none of this is typed, it has to be reached through a cast and
+feature-detected, so a runtime without it fails with a clear message rather than a `TypeError`.
+
 ## Module state
 
 Module-level variables (caches, memos) live as long as the app keeps the extension's JS context

@@ -9,6 +9,7 @@
 | [Asura Scans](src/AsuraScans)          | [asurascans.com](https://asurascans.com)           | Comics       |
 | [LightNovelWorld](src/LightNovelWorld) | [lightnovelworld.org](https://lightnovelworld.org) | Light novels |
 | [LNORI](src/LNORI)                     | [lnori.com](https://lnori.com)                     | Light novels |
+| [MangaBaka](src/MangaBaka)             | [mangabaka.org](https://mangabaka.org)             | Tracker      |
 | [NovelArchive](src/NovelArchive)       | [novelarchive.cc](https://novelarchive.cc)         | Web novels   |
 
 ## Installation
