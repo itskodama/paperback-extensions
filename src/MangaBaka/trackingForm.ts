@@ -93,6 +93,9 @@ export class MangaBakaTrackingForm extends Form {
   }
 
   private async load(): Promise<void> {
+    // Fires again returning from the delete sub-form; reloading would discard edits.
+    if (this.loaded) return;
+
     try {
       const [resolved, entry] = await Promise.all([
         fetchSeries(this.seriesId),
@@ -290,12 +293,12 @@ export class MangaBakaTrackingForm extends Form {
   // Handlers — named methods, since Application.Selector resolves by name
   // -------------------------------------------------------------------------
 
+  // No reloadForm(): rebuilding a SelectRow from its own onValueChange drops the pick.
   async handleStateChange(value: string[]): Promise<void> {
     const next = value[0];
     if (next === undefined) return;
 
     this.draft.state = next;
-    this.reloadForm();
   }
 
   async handleChapterChange(value: number): Promise<void> {
