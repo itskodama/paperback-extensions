@@ -19,6 +19,24 @@ import {
 } from "@paperback/types";
 
 import { getSession } from "./auth";
+import {
+  chapterIsLocked,
+  parseChapterApiPayload,
+  parseChapterDetails,
+  parseChapterList,
+  parseSeriesDetails,
+} from "./comics";
+import {
+  DISCOVER_COMIC_TYPE,
+  DISCOVER_FEATURED,
+  DISCOVER_LATEST_UPDATES,
+  DISCOVER_RECENTLY_ADDED,
+  DISCOVER_STATUS,
+  DISCOVER_TRENDING,
+  comicTypeItems,
+  parseDiscoverItems,
+  statusItems,
+} from "./discover";
 import { AsuraScansAdvancedSearchForm } from "./forms";
 import {
   DEFAULT_SORT,
@@ -35,44 +53,34 @@ import {
   fetchPage,
 } from "./network";
 import {
-  DISCOVER_FEATURED,
-  DISCOVER_LATEST_UPDATES,
-  DISCOVER_COMIC_TYPE,
-  DISCOVER_RECENTLY_ADDED,
-  DISCOVER_STATUS,
-  DISCOVER_TRENDING,
-  browseUrl,
-  chapterIsLocked,
-  chapterUrl,
-  comicTypeItems,
-  homeUrl,
-  isNovelMangaId,
-  mergeRankedResults,
   novelCatalogEntry,
-  novelCatalogUrl,
   novelChapterIsLocked,
-  novelChapterUrl,
-  novelSearchUrl,
-  novelSlugFromMangaId,
   novelToSourceManga,
-  novelUrl,
-  parseChapterApiPayload,
-  parseChapterDetails,
-  parseChapterList,
-  parseDiscoverItems,
   parseNovelCatalog,
   parseNovelChapterApiPayload,
   parseNovelChapterDetails,
   parseNovelChapterList,
+} from "./novels";
+import type AsuraScansConfig from "./pbconfig";
+import {
+  mergeRankedResults,
   parseNovelSearchResults,
-  parseSeriesDetails,
   rankedNovelSearchResults,
   rankedSearchResults,
-  seriesUrl,
-  statusItems,
-} from "./parser";
-import type AsuraScansConfig from "./pbconfig";
+} from "./search";
 import { AsuraScansSettingsForm } from "./settingsForm";
+import {
+  browseUrl,
+  chapterUrl,
+  homeUrl,
+  isNovelMangaId,
+  novelCatalogUrl,
+  novelChapterUrl,
+  novelSearchUrl,
+  novelSlugFromMangaId,
+  novelUrl,
+  seriesUrl,
+} from "./urls";
 
 // Comfortably above the current ~7-title novel catalog: on a mixed search's first page this
 // fetches effectively everything; as a dedicated type=novel page size it's just a normal,

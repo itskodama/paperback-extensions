@@ -13,26 +13,29 @@ import {
   unwrapEnvelope,
   type AsuraSession,
 } from "../../src/AsuraScans/auth.ts";
+import { chapterIsLocked, parseChapterApiPayload } from "../../src/AsuraScans/comics.ts";
 import {
-  chapterIsLocked,
-  isNovelMangaId,
-  mergeRankedResults,
   novelCatalogEntry,
   novelChapterIsLocked,
-  novelChapterUrl,
-  novelSearchUrl,
-  novelSlugFromMangaId,
   novelToSourceManga,
-  novelUrl,
-  parseChapterApiPayload,
   parseNovelCatalog,
   parseNovelChapterApiPayload,
   parseNovelChapterDetails,
   parseNovelChapterList,
+} from "../../src/AsuraScans/novels.ts";
+import {
+  type RankedSearchResult,
+  mergeRankedResults,
   parseNovelSearchResults,
   rankedSearchResults,
-  type RankedSearchResult,
-} from "../../src/AsuraScans/parser.ts";
+} from "../../src/AsuraScans/search.ts";
+import {
+  isNovelMangaId,
+  novelChapterUrl,
+  novelSearchUrl,
+  novelSlugFromMangaId,
+  novelUrl,
+} from "../../src/AsuraScans/urls.ts";
 
 const LOCKED_WITH_UNLOCK_TIME = `
 <astro-island props="{&quot;pages&quot;:[1,[]],&quot;chapterId&quot;:[0,173],&quot;isLocked&quot;:[0,true],&quot;isPremium&quot;:[0,true],&quot;unlockTime&quot;:[0,&quot;2026-07-28T23:10:15Z&quot;]}"></astro-island>
