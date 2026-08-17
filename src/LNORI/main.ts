@@ -227,6 +227,10 @@ export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
       }),
     );
 
+    // docs/paperback/chapters.md records a device test where sortingIndex did not override the
+    // visible order, so this is probably inert — but it is the only expression of true reading
+    // order across volumes (chapNum restarts inside each one), it costs nothing, and removing it
+    // has never been tried on a device. Left until someone checks.
     const chapters = perVolume.flat();
     chapters.forEach((chapter, index) => {
       chapter.sortingIndex = index;
