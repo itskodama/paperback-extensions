@@ -37,6 +37,13 @@ Fields worth thinking about:
   Volume"; see [Chapters](chapters.md#version-priority-collapses-repeated-chapnums)).
 - **`icon`** resolves against the extension's `static/` directory. A square PNG; a transparent
   background follows the app's theming, but check a dark surface if the mark itself is dark.
+- **`badges`** are free-form: `{ label, textColor, backgroundColor }`, no enum and no validation.
+  There is a de-facto palette, though — `@paperback/types`' 0.8 compat layer maps the legacy
+  `BadgeColor` names to concrete hex, so these are what every migrated 0.8 source already renders:
+  blue `#1E40AF`, green `#15803d`, grey `#1F2937`, red `#991B1B` (all on `#ffffff`) and yellow
+  `#EAB308` on `#000000`. Badge what the app cannot work out for itself: it already renders
+  `contentRating` and derives one from `capabilities`, so **content type** is the real gap. This
+  repository badges comic sources blue and novel sources green, and leaves the tracker bare.
 - **`contentRating`** gates visibility by the user's profile settings: `EVERYONE`, `MATURE`, or
   `ADULT`. If any subset of the source's content is mature, declare `MATURE`.
 

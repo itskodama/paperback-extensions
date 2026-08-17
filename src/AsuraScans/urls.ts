@@ -24,7 +24,6 @@ export type BrowseQuery = {
   artist?: string;
 };
 
-// The site's own sign-in page, opened in a web view so the extension never handles credentials
 export function loginUrl(): string {
   return `${ASURA_DOMAIN}/login`;
 }

@@ -135,9 +135,7 @@ async function postJson(path: string, body: object): Promise<[number, unknown]> 
   return [response.status, unwrapEnvelope(parsed)];
 }
 
-// Asura's own login page stores its tokens with document.cookie (path=/, SameSite=Lax, not
-// HttpOnly), so the pair survives into the web view's cookie jar and the extension never has to
-// see an email or a password. See docs/AsuraScans/auth.md.
+// Asura's login page writes these with document.cookie, so they are not HttpOnly. See auth.md.
 const ACCESS_TOKEN_COOKIE = "access_token";
 const REFRESH_TOKEN_COOKIE = "refresh_token";
 
@@ -152,13 +150,7 @@ export function asuraCookieValue(cookies: Cookie[], name: string): string | unde
   return undefined;
 }
 
-/**
- * The captured cookies carry the two tokens and nothing else — no expiry the extension can
- * trust (the cookie claims a day; the token really lasts fifteen minutes), no username, no
- * subscription. Spending the refresh token immediately is what fills those in: `/api/auth/refresh`
- * is the only endpoint that returns `subscription_status` at all, so this lands a *better*
- * session than the password flow it replaces, not merely an equivalent one.
- */
+// Only the refresh response states the real expiry, username and tier. See auth.md.
 export async function loginWithCookies(cookies: Cookie[]): Promise<AsuraSession> {
   const refreshToken = asuraCookieValue(cookies, REFRESH_TOKEN_COOKIE);
   if (!refreshToken) {
@@ -173,21 +165,18 @@ export async function loginWithCookies(cookies: Cookie[]): Promise<AsuraSession>
     return await refreshSession({
       accessToken,
       refreshToken,
-      // Already expired, so the very next authorized request renews rather than trusting this.
+      // Already expired: the next request renews rather than trusting the cookie's own claim.
       expiresAt: new Date(0).toISOString(),
       username: "",
       hasSubscription: false,
     });
   } catch {
-    // refreshSession's own wording is "session expired, log in again", which reads as nonsense
-    // to someone who just did. A stale cookie from a previous sign-in is the likely cause.
+    // refreshSession's "session expired" wording reads as nonsense to someone who just did.
     throw new Error("Asura Scans did not accept that sign-in. Please try logging in again.");
   }
 }
 
-// Asura rotates the refresh token, so a second concurrent renewal would present one the first
-// already spent and get a 401 — which clears the session out from under a working login. Callers
-// share the first in-flight renewal instead.
+// Asura rotates the refresh token, so a second concurrent renewal would present a spent one.
 let inFlightRefresh: Promise<AsuraSession> | undefined;
 
 export async function refreshSession(session: AsuraSession): Promise<AsuraSession> {

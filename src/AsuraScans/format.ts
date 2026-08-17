@@ -16,18 +16,13 @@ const COUNT_UNITS = [
   { suffix: "K", scale: 1_000 },
 ];
 
-/**
- * Each unit is entered at the point the *smaller* unit's own rounding would produce four digits,
- * not at its round number — otherwise 999,500 renders as "1000K" rather than "1M", and the same
- * artefact repeats at every boundary above it.
- */
+// Each unit starts where the smaller one would round to four digits, so 999,500 is "1M".
 export function formatCount(value: number): string {
   for (const { suffix, scale } of COUNT_UNITS) {
     if (value < scale - scale / 2_000) continue;
 
     const scaled = value / scale;
-    // One decimal below ten (1.5M), none above it (256K) — a three-digit mantissa plus a decimal
-    // is more precision than a view count deserves in a carousel badge.
+    // One decimal below ten (1.5M), none above (256K).
     const rounded = scaled < 9.95 ? Math.round(scaled * 10) / 10 : Math.round(scaled);
     return `${rounded}${suffix}`;
   }

@@ -14,16 +14,8 @@ import {
 import { getSession, loginWithCookies, logout, type AsuraSession } from "./auth.ts";
 import { loginUrl } from "./urls.ts";
 
-/**
- * `subscription_status.status` is the billing lifecycle, not whether the subscription currently
- * grants anything — `has_subscription` already answered that, and is what gets checked above.
- * The two disagree routinely: turning auto-renew off reports `canceled` while premium keeps
- * working until the paid period ends, so printing the raw word made a working account read as a
- * broken one.
- *
- * Only states a reader can act on are named, and in plain language. Anything else — `active`
- * included, and any state Asura adds later — says nothing beyond the tier.
- */
+// `status` is billing lifecycle, not access: auto-renew off reports `canceled` while premium
+// still works. Only states worth acting on are named. See auth.md#subscription-status.
 const SUBSCRIPTION_NOTES: Record<string, string> = {
   canceled: "does not renew",
   cancelled: "does not renew",
@@ -74,14 +66,8 @@ export class AsuraScansSettingsForm extends Form {
     );
   }
 
-  /**
-   * Asura's own login page is what takes the credentials; it stores its tokens in ordinary
-   * JavaScript cookies, which is what makes capturing them enough. The extension never sees an
-   * email or a password. See docs/AsuraScans/auth.md.
-   *
-   * No `subtitle` on WebViewRow: `WebViewRowProps` has no such field, and an unknown key can stop
-   * the row rendering on device without `tsc` objecting.
-   */
+  // No `subtitle`: WebViewRowProps has no such field, and an unknown key can stop the row
+  // rendering on device without tsc objecting.
   private loginSection(): FormSectionElement<unknown> {
     return Section(
       {

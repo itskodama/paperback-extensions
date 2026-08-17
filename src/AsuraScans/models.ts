@@ -90,10 +90,7 @@ export const SORT_OPTIONS: SortOption[] = [
   { id: "title-desc", label: "Title — Z to A", sort: "name", direction: "desc" },
 ];
 
-// The default when the user has not chosen a sort. Asura offers no relevance sort at all, and
-// `update`/`desc` is what its own /browse falls back to — including for a text search, confirmed
-// live from the browse island's `initialOrder`. Alphabetical was a strange thing to answer a
-// search with: typing "solo" led with "30 Years Since the Prologue".
+// Asura has no relevance sort; update/desc is what its own /browse defaults to, search included.
 export const DEFAULT_SORT = LATEST_UPDATE;
 
 // The novel search API's sort keywords differ from comics' own SORT_OPTIONS[].sort values —

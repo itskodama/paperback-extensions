@@ -27,9 +27,7 @@ export function isFutureDate(value: string | undefined): boolean {
   return !Number.isNaN(date.getTime()) && date.getTime() > Date.now();
 }
 
-// An id crossing the bridge must be alphanumeric or only `._-@()[]%?#+=/&:`, and a raw genre
-// name ("Slice of Life") is neither — it throws when the value is used, not when it is built.
-// See docs/paperback/forms.md.
+// A raw genre name is not a legal id, and throws when the value is used. See forms.md.
 export function tagId(value: string): string {
   const sanitized = value
     .trim()

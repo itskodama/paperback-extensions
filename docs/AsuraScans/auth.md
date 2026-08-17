@@ -66,6 +66,21 @@ Everything else the extension reads is public HTML fetched anonymously. The cata
 behind a shared Cloudflare edge cache and never vary by auth, which is why they are never fetched
 with a token.
 
+## Subscription status
+
+`subscription_status` carries two fields that answer different questions, and they disagree
+routinely:
+
+- **`has_subscription`** — does this grant access right now? This is the one to branch on.
+- **`status`** — the billing lifecycle. Turning auto-renew off reports `canceled` from that moment
+  on, while premium keeps working until the paid period ends.
+
+Printing `status` verbatim therefore labelled a working premium account "canceled" (reported from
+a real account whose early access worked fine throughout). `subscriptionSubtitle` names only the
+states a reader can act on — `canceled`/`cancelled` as "does not renew", `past_due`/`unpaid` as
+"payment overdue", `trialing` as "trial". Everything else, `active` and any state Asura adds
+later included, shows just the tier.
+
 ## Renewal
 
 `refreshSession` swaps the refresh token for a new pair. Asura **rotates** the refresh token on
