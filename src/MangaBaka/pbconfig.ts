@@ -22,6 +22,10 @@ export default {
     SourceIntents.DISCOVER_SECTION_PROVIDING,
     SourceIntents.MANAGED_COLLECTION_PROVIDING,
   ],
+  // Deliberately empty. The other extensions badge their content type, which the app cannot
+  // infer; a tracker is already distinguished by the app from its capabilities (no
+  // CHAPTER_PROVIDING), and this catalogs comics and novels alike, so either label would be
+  // wrong and both together would say nothing.
   badges: [],
   developers: [
     {
