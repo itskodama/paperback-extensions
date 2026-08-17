@@ -72,26 +72,29 @@ export const TYPE_OPTIONS: Tag[] = [
 // one flat list, so field and direction are combined into a single option each
 export type SortOption = { id: string; label: string; sort: string; direction: string };
 
-const TITLE_ASC: SortOption = {
-  id: "title-asc",
-  label: "Title — A to Z",
-  sort: "name",
-  direction: "asc",
+const LATEST_UPDATE: SortOption = {
+  id: "update",
+  label: "Latest Update",
+  sort: "update",
+  direction: "desc",
 };
 
 export const SORT_OPTIONS: SortOption[] = [
-  TITLE_ASC,
-  { id: "title-desc", label: "Title — Z to A", sort: "name", direction: "desc" },
-  { id: "update", label: "Latest Update", sort: "update", direction: "desc" },
+  LATEST_UPDATE,
   { id: "popular", label: "Popularity", sort: "popular", direction: "desc" },
   { id: "rating-desc", label: "Rating — High to Low", sort: "rating", direction: "desc" },
   { id: "rating-asc", label: "Rating — Low to High", sort: "rating", direction: "asc" },
   { id: "newest", label: "Newest", sort: "newest", direction: "desc" },
   { id: "oldest", label: "Oldest", sort: "newest", direction: "asc" },
+  { id: "title-asc", label: "Title — A to Z", sort: "name", direction: "asc" },
+  { id: "title-desc", label: "Title — Z to A", sort: "name", direction: "desc" },
 ];
 
-// The default when the user has not chosen a sort
-export const DEFAULT_SORT = TITLE_ASC;
+// The default when the user has not chosen a sort. Asura offers no relevance sort at all, and
+// `update`/`desc` is what its own /browse falls back to — including for a text search, confirmed
+// live from the browse island's `initialOrder`. Alphabetical was a strange thing to answer a
+// search with: typing "solo" led with "30 Years Since the Prologue".
+export const DEFAULT_SORT = LATEST_UPDATE;
 
 // The novel search API's sort keywords differ from comics' own SORT_OPTIONS[].sort values —
 // confirmed via Asura's own BrowseFilters.js; order/direction is shared as-is
