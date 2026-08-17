@@ -77,7 +77,15 @@ export function decodeProp(encoded: unknown): unknown {
 
 export type Island = Record<string, unknown>;
 
+// One page yields several lookups — two islands per series page, three discover sections off
+// the homepage — and the response cache hands back the identical string each time, so the sweep
+// and JSON.parse ran once per lookup. Callers only read islands, never mutate them.
+let lastHtml: string | undefined;
+let lastIslands: Island[] | undefined;
+
 export function extractIslands(html: string): Island[] {
+  if (html === lastHtml && lastIslands) return lastIslands;
+
   const islands: Island[] = [];
 
   for (const match of html.matchAll(ISLAND_PROPS)) {
@@ -99,6 +107,8 @@ export function extractIslands(html: string): Island[] {
     islands.push(island);
   }
 
+  lastHtml = html;
+  lastIslands = islands;
   return islands;
 }
 
