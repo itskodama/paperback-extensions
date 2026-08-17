@@ -11,6 +11,8 @@ import {
   chaptersFromSource,
   toFeaturedItem,
   toGenreOptions,
+  toSearchResultItem,
+  toSourceManga,
   type NovelJson,
 } from "../../src/NovelArchive/parser.ts";
 
@@ -158,4 +160,83 @@ void test("toFeaturedItem keeps the ordinary K and M cases intact", () => {
   assert.equal(viewsBadge(999), "999");
   assert.equal(viewsBadge(255_678), "256K");
   assert.equal(viewsBadge(3_965_770), "4M");
+});
+
+// --- toSourceManga: the mapping every screen in the app renders from ---
+
+function detail(overrides: Partial<NovelJson> = {}): NovelJson {
+  return {
+    ...novel(["Chapter 1: Leaving", "Chapter 2: Arrival"]),
+    id: "1234/the-beginning-after-the-end",
+    author: "TurtleMe",
+    genres: "Action, Adventure, Fantasy",
+    cover_url: "/covers/1234.jpg",
+    title: "The Beginning After The End",
+    associated_names: ["TBATE"],
+    description: "King Grey has unrivaled strength…",
+    ...overrides,
+  };
+}
+
+void test("toSourceManga makes a relative cover absolute", () => {
+  // An empty or host-relative imageUrl is rejected by the bridge as an invalid URL.
+  const manga = toSourceManga(detail(), "1234/the-beginning-after-the-end");
+
+  assert.ok(manga.mangaInfo.thumbnailUrl.startsWith("https://"));
+  assert.deepEqual(manga.mangaInfo.artworkUrls, [manga.mangaInfo.thumbnailUrl]);
+});
+
+void test("toSourceManga leaves an already-absolute cover alone", () => {
+  assert.equal(
+    toSourceManga(detail({ cover_url: "https://cdn.test/x.jpg" }), "1").mangaInfo.thumbnailUrl,
+    "https://cdn.test/x.jpg",
+  );
+});
+
+void test("toSourceManga always declares itself a novel", () => {
+  assert.equal(toSourceManga(detail(), "1").mangaInfo.contentType, "novel");
+});
+
+void test("toSourceManga substitutes text for an empty synopsis", () => {
+  // "" is legal but renders as a blank panel, so the app shows a fallback instead.
+  assert.equal(toSourceManga(detail({ description: "" }), "1").mangaInfo.synopsis, "No synopsis.");
+});
+
+void test("toSourceManga splits the comma-joined genre string into tags", () => {
+  const tags = toSourceManga(detail(), "1").mangaInfo.tagGroups?.[0]?.tags ?? [];
+
+  assert.deepEqual(
+    tags.map((tag) => tag.title),
+    ["Action", "Adventure", "Fantasy"],
+  );
+  // Ids must survive the bridge's charset; titles keep their display casing.
+  for (const tag of tags) assert.match(tag.id, /^[a-z0-9._\-@()[\]%?#+=/&:]+$/);
+});
+
+void test("toSourceManga omits the tag group entirely when there are no genres", () => {
+  assert.deepEqual(toSourceManga(detail({ genres: "" }), "1").mangaInfo.tagGroups, []);
+});
+
+void test("toSourceManga rates an adult genre ADULT and everything else MATURE", () => {
+  assert.equal(
+    toSourceManga(detail({ genres: "Action, Adult" }), "1").mangaInfo.contentRating,
+    ContentRating.ADULT,
+  );
+  assert.equal(
+    toSourceManga(detail({ genres: "Action, Fantasy" }), "1").mangaInfo.contentRating,
+    ContentRating.MATURE,
+  );
+  // Case-insensitive, so a differently-cased genre still trips it.
+  assert.equal(
+    toSourceManga(detail({ genres: "EROTICA" }), "1").mangaInfo.contentRating,
+    ContentRating.ADULT,
+  );
+});
+
+void test("toSearchResultItem carries the fields a result cell needs", () => {
+  const item = toSearchResultItem(detail());
+
+  assert.equal(item.mangaId, "1234/the-beginning-after-the-end");
+  assert.equal(item.title, "The Beginning After The End");
+  assert.ok(item.imageUrl.startsWith("https://"));
 });
