@@ -150,7 +150,26 @@ export async function login(email: string, password: string): Promise<AsuraSessi
   return session;
 }
 
+// Asura rotates the refresh token, so a second concurrent renewal would present one the first
+// already spent and get a 401 — which clears the session out from under a working login. Callers
+// share the first in-flight renewal instead.
+let inFlightRefresh: Promise<AsuraSession> | undefined;
+
 export async function refreshSession(session: AsuraSession): Promise<AsuraSession> {
+  const pending = inFlightRefresh;
+  if (pending) return pending;
+
+  const renewal = requestRefresh(session);
+  inFlightRefresh = renewal;
+
+  try {
+    return await renewal;
+  } finally {
+    inFlightRefresh = undefined;
+  }
+}
+
+async function requestRefresh(session: AsuraSession): Promise<AsuraSession> {
   const [status, data] = await postJson("/api/auth/refresh", {
     refresh_token: session.refreshToken,
   });
