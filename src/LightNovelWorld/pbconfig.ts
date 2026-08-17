@@ -5,7 +5,12 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 
 export default {
   name: "LightNovelWorld",
-  description: "Read light novels from lightnovelworld.org.",
+  // The description is the only surface a user sees before installing, so the wind-down goes
+  // here rather than anywhere inside the app. See docs/LightNovelWorld/status.md.
+  description:
+    "NO LONGER MAINTAINED — lightnovelworld.org is merging into chikari.moe. This extension " +
+    "still works and still receives fixes for breakage, but it will be removed once the site " +
+    "goes offline. Read light novels from lightnovelworld.org.",
   version: "1.0.0-alpha.1",
   icon: "icon.png",
   language: "en",
