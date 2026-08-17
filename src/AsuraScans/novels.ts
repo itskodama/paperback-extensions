@@ -22,7 +22,7 @@ import {
   readStringArray,
   type Island,
 } from "./astro.ts";
-import { alternativeTitles, ratingFraction } from "./fields.ts";
+import { alternativeTitles, ratingFraction, tagId } from "./fields.ts";
 import { statusLabel } from "./models.ts";
 import { NOVEL_ID_PREFIX, novelUrl } from "./urls.ts";
 
@@ -55,7 +55,12 @@ export function novelToSourceManga(entry: Island): SourceManga {
           {
             id: "genres",
             title: "Genres",
-            tags: genreTitles.map((title, i) => ({ id: String(genreIds[i] ?? title), title })),
+            // genre_ids is present on every novel today, but the fallback has to be sanitized
+            // anyway: a raw genre name as a Tag.id is the exact crash forms.md documents
+            tags: genreTitles.map((title, i) => ({
+              id: genreIds[i] === undefined ? tagId(title) : String(genreIds[i]),
+              title,
+            })),
           },
         ]
       : [];

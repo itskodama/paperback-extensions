@@ -27,6 +27,20 @@ export function isFutureDate(value: string | undefined): boolean {
   return !Number.isNaN(date.getTime()) && date.getTime() > Date.now();
 }
 
+// An id crossing the bridge must be alphanumeric or only `._-@()[]%?#+=/&:`, and a raw genre
+// name ("Slice of Life") is neither — it throws when the value is used, not when it is built.
+// See docs/paperback/forms.md.
+export function tagId(value: string): string {
+  const sanitized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._\-@()[\]%?#+=/&:]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^-|-$/g, "");
+
+  return sanitized.length > 0 ? sanitized : "unknown";
+}
+
 // The series page joins alternative titles with a bullet; browse returns them as an array
 export function alternativeTitles(source: Island, key: string): string[] {
   const joined = readString(source, key);
