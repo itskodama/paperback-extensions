@@ -66,9 +66,7 @@ const DISCOVER_LATEST_NOVELS = "latest-novels";
 const DISCOVER_LATEST_UPDATES = "latest";
 const DISCOVER_GENRES = "genres";
 
-// A 5,000-chapter novel is 100 pages. Firing them all at once holds 100 responses in memory at
-// peak and hands the rate limiter a queue it will drain for a minute regardless; batching keeps
-// the concurrency bounded without making the whole listing serial.
+// A 5,000-chapter novel is 100 pages; the rate limiter paces them either way, so cap the burst.
 const CHAPTER_LIST_BATCH = 8;
 
 // Falls back to fetching sequentially until a short page if the total can't be parsed
@@ -217,11 +215,8 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
     const filters = query.metadata;
     const title = query.title.trim();
 
-    // Only the API can answer free text, and only /advanced-search/ can answer filters, so a
-    // query carrying both has to pick one and make up the difference. It picks the API and
-    // re-applies the filters over its results — previously whichever half was not covered by
-    // the chosen endpoint was dropped without telling anyone, so a title plus a Status filter
-    // silently returned unfiltered results.
+    // Only the API answers free text and only /advanced-search/ answers filters, so a query
+    // carrying both takes the API and re-applies the filters here rather than dropping them.
     if (title) {
       const response = await fetchJson<SearchApiResponse>(searchUrl(title));
       const matching = response.novels.filter((novel) => matchesFilters(novel, filters));

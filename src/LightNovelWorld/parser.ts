@@ -425,9 +425,7 @@ export type SearchNovelJson = {
 
 export type SearchApiResponse = { novels: SearchNovelJson[] };
 
-// The JSON API spells genres with spaces ("Slice of Life") and the filter vocabulary with
-// hyphens ("Slice-of-Life"); statuses are Title Case one side and lowercase ids the other.
-// Confirmed against /api/search/ live, not assumed.
+// The API spells genres with spaces, the filter vocabulary with hyphens; statuses differ in case.
 function sameTerm(a: string, b: string): boolean {
   const flatten = (value: string) =>
     value
@@ -445,11 +443,7 @@ function inChapterRange(chapters: number, range: string): boolean {
   return low !== undefined && high !== undefined && chapters >= low && chapters <= high;
 }
 
-/**
- * /advanced-search/ has no free-text parameter, so a filtered search *with* a title cannot be
- * answered server-side. The API answers the title and these re-apply the filters over its
- * results, rather than the extension silently dropping one half of what the user asked for.
- */
+// Applied over API results, which /advanced-search/'s filters cannot reach when a title is set.
 export function matchesFilters(
   novel: SearchNovelJson,
   filters: LightNovelWorldSearchMetadata | undefined,
@@ -461,7 +455,7 @@ export function matchesFilters(
   const include = filters.genresInclude ?? [];
   if (include.length > 0) {
     const matched = (wanted: string) => genres.some((genre) => sameTerm(genre, wanted));
-    // The site's own default is AND; the form offers OR explicitly.
+    // The site's own default is AND.
     const ok = filters.genreLogic === "OR" ? include.some(matched) : include.every(matched);
     if (!ok) return false;
   }
