@@ -289,9 +289,7 @@ export class MangaBakaTrackingForm extends Form {
     ]);
   }
 
-  // -------------------------------------------------------------------------
   // Handlers — named methods, since Application.Selector resolves by name
-  // -------------------------------------------------------------------------
 
   // No reloadForm(): rebuilding a SelectRow from its own onValueChange drops the pick.
   async handleStateChange(value: string[]): Promise<void> {
