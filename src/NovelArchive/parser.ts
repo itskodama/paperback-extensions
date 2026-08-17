@@ -507,10 +507,16 @@ export function toChapterDetailsFromSource(
 
 export type GenreOption = { id: string; label: string; value: string };
 
+// Nav labels the endpoint returns alongside the real genres. Confirmed live 2026-08-16:
+// 283 values, these three among them, and none of them appears on an actual novel.
+const NON_GENRES = new Set(["browse", "completed novels", "latest novels"]);
+
 export function toGenreOptions(response: GenresResponse): GenreOption[] {
-  return response.genres.map((genre) => ({
-    id: genreId(genre.value),
-    label: genre.label,
-    value: genre.value,
-  }));
+  return response.genres
+    .filter((genre) => !NON_GENRES.has(genre.value.trim().toLowerCase()))
+    .map((genre) => ({
+      id: genreId(genre.value),
+      label: genre.label,
+      value: genre.value,
+    }));
 }

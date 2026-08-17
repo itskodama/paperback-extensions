@@ -9,6 +9,7 @@ import { ContentRating, type SourceManga } from "@paperback/types";
 import {
   chaptersFromDetail,
   chaptersFromSource,
+  toGenreOptions,
   type NovelJson,
 } from "../../src/NovelArchive/parser.ts";
 
@@ -92,4 +93,29 @@ void test("chaptersFromSource drops a purely numeric title with no real text (Ra
     sourceManga,
   );
   assert.equal(chapters[0]!.title, undefined);
+});
+
+void test("toGenreOptions drops the nav labels the genre endpoint mixes in", () => {
+  // /api/novels/genres returns these three alongside 280 real genres. Unfiltered they
+  // became selectable chips in advanced search — "Browse" offered as a genre.
+  const options = toGenreOptions({
+    genres: [
+      { value: "action", label: "Action" },
+      { value: "browse", label: "Browse" },
+      { value: "completed novels", label: "Completed Novels" },
+      { value: "latest novels", label: "Latest Novels" },
+      { value: "romance", label: "Romance" },
+    ],
+  });
+
+  assert.deepEqual(
+    options.map((option) => option.value),
+    ["action", "romance"],
+  );
+});
+
+void test("toGenreOptions matches nav labels regardless of case or padding", () => {
+  const options = toGenreOptions({ genres: [{ value: " Browse ", label: "Browse" }] });
+
+  assert.deepEqual(options, []);
 });
