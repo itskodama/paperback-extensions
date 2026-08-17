@@ -149,17 +149,21 @@ const featuredNovel: NovelJson = {
   rating_count: 0,
 };
 
-void test("toFeaturedItem rolls the view count over to M instead of printing 1000K", () => {
+void test("toFeaturedItem rolls the view count over at every unit boundary", () => {
   assert.equal(viewsBadge(999_499), "999K");
   assert.equal(viewsBadge(999_500), "1M");
   assert.equal(viewsBadge(999_999), "1M");
   assert.equal(viewsBadge(1_000_000), "1M");
+  assert.equal(viewsBadge(999_499_999), "999M");
+  assert.equal(viewsBadge(999_500_000), "1B");
 });
 
 void test("toFeaturedItem keeps the ordinary K and M cases intact", () => {
   assert.equal(viewsBadge(999), "999");
   assert.equal(viewsBadge(255_678), "256K");
   assert.equal(viewsBadge(3_965_770), "4M");
+  assert.equal(viewsBadge(1_500), "1.5K");
+  assert.equal(viewsBadge(1_500_000_000), "1.5B");
 });
 
 // --- toSourceManga: the mapping every screen in the app renders from ---

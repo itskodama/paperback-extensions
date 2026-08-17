@@ -122,10 +122,27 @@ function titleCase(value: string): string {
   return value.length > 0 ? `${value[0]!.toUpperCase()}${value.slice(1)}` : value;
 }
 
-// 255678 -> "256K", 3965770 -> "4M". The M cutoff sits where the K form would round to "1000K".
+// 255678 -> "256K", 3965770 -> "4M", 1500000000 -> "1.5B"
+const COUNT_UNITS = [
+  { suffix: "B", scale: 1_000_000_000 },
+  { suffix: "M", scale: 1_000_000 },
+  { suffix: "K", scale: 1_000 },
+];
+
+// Each unit is entered at the point the *smaller* unit's own rounding would produce four digits,
+// not at its round number — otherwise 999,500 renders as "1000K" rather than "1M", and the same
+// artefact repeats at every boundary above it. AsuraScans' own copy; each extension bundles
+// standalone, so the two are kept in step by hand.
 function formatCount(value: number): string {
-  if (value >= 999_500) return `${Math.round(value / 100_000) / 10}M`;
-  if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
+  for (const { suffix, scale } of COUNT_UNITS) {
+    if (value < scale - scale / 2_000) continue;
+
+    const scaled = value / scale;
+    // One decimal below ten (1.5M), none above it (256K).
+    const rounded = scaled < 9.95 ? Math.round(scaled * 10) / 10 : Math.round(scaled);
+    return `${rounded}${suffix}`;
+  }
+
   return String(value);
 }
 
