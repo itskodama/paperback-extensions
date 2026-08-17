@@ -157,10 +157,7 @@ function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
   return items;
 }
 
-function seriesCarouselItems(
-  entries: Island[],
-  type: "simpleCarouselItem" | "prominentCarouselItem",
-): DiscoverSectionItem[] {
+function seriesCarouselItems(entries: Island[]): DiscoverSectionItem[] {
   return entries.flatMap((series) => {
     const mangaId = readString(series, "slug");
     if (!mangaId || isNovel(series)) return [];
@@ -169,7 +166,7 @@ function seriesCarouselItems(
 
     return [
       {
-        type,
+        type: "simpleCarouselItem" as const,
         mangaId,
         title: readString(series, "title") ?? "Unknown Title",
         subtitle: latest === undefined ? undefined : `Chapter ${latest}`,
@@ -189,7 +186,6 @@ export function parseDiscoverItems(html: string, sectionId: string): DiscoverSec
     case DISCOVER_TRENDING:
       return seriesCarouselItems(
         discoverEntries(islands, "items", "latest_chapter_number", "title"),
-        "simpleCarouselItem",
       );
     case DISCOVER_LATEST_UPDATES:
       return latestUpdateItems(islands);
