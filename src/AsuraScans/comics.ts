@@ -116,8 +116,6 @@ function earlyAccessError(chapter: Chapter, unlockTime: string | undefined): Err
 }
 
 // Reflects only the anonymous lock state — see network.ts's fetchChapterJson for why
-
-// Reflects only the anonymous lock state — see network.ts's fetchChapterJson for why
 export function chapterIsLocked(html: string): boolean {
   const island = findIsland(html, CHAPTER_KEYS);
   return readBoolean(island, "isLocked") || readBoolean(island, "isPremium");
@@ -145,8 +143,6 @@ export function parseChapterDetails(html: string, chapter: Chapter): ChapterDeta
     pages,
   };
 }
-
-// Same page shape as the embedded island, but snake_case and not tuple-encoded
 
 // Same page shape as the embedded island, but snake_case and not tuple-encoded
 export function parseChapterApiPayload(payload: unknown, chapter: Chapter): ChapterDetails {

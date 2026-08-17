@@ -47,8 +47,6 @@ export function parseNovelCatalog(html: string): Island[] {
 }
 
 // mangaId here is the bare site slug, not the prefixed app-facing id — callers strip first
-
-// mangaId here is the bare site slug, not the prefixed app-facing id — callers strip first
 export function novelCatalogEntry(catalog: Island[], slug: string): Island | undefined {
   return catalog.find((entry) => readString(entry, "slug") === slug);
 }

@@ -34,8 +34,6 @@ export const DISCOVER_STATUS = "status";
 export const DISCOVER_COMIC_TYPE = "comic-type";
 
 // A chip carousel whose taps launch a filtered browse, one chip per option
-
-// A chip carousel whose taps launch a filtered browse, one chip per option
 function facetItems(options: Tag[], metadata: (id: string) => Metadata): DiscoverSectionItem[] {
   return options
     .filter((option) => option.id !== "all")

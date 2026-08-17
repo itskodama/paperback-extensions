@@ -15,14 +15,10 @@ export function ratingFraction(source: Island, key: string): number | undefined 
 }
 
 // Asura serves novels from the same payloads as comics, under /novels/
-
-// Asura serves novels from the same payloads as comics, under /novels/
 export function isNovel(entry: Island): boolean {
   const path = readString(entry, "public_url") ?? readString(entry, "comic_public_url");
   return path !== undefined && path.startsWith("/novels/");
 }
-
-// Free chapters carry the epoch as their early-access deadline; a future one is still locked
 
 // Free chapters carry the epoch as their early-access deadline; a future one is still locked
 export function isFutureDate(value: string | undefined): boolean {
@@ -30,8 +26,6 @@ export function isFutureDate(value: string | undefined): boolean {
   const date = new Date(value);
   return !Number.isNaN(date.getTime()) && date.getTime() > Date.now();
 }
-
-// The series page joins alternative titles with a bullet; browse returns them as an array
 
 // The series page joins alternative titles with a bullet; browse returns them as an array
 export function alternativeTitles(source: Island, key: string): string[] {
