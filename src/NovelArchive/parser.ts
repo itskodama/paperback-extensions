@@ -122,9 +122,9 @@ function titleCase(value: string): string {
   return value.length > 0 ? `${value[0]!.toUpperCase()}${value.slice(1)}` : value;
 }
 
-// 255678 -> "256K", 3965770 -> "4M"
+// 255678 -> "256K", 3965770 -> "4M". The M cutoff sits where the K form would round to "1000K".
 function formatCount(value: number): string {
-  if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`;
+  if (value >= 999_500) return `${Math.round(value / 100_000) / 10}M`;
   if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
   return String(value);
 }

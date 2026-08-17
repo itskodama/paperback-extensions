@@ -9,6 +9,7 @@ import { ContentRating, type SourceManga } from "@paperback/types";
 import {
   chaptersFromDetail,
   chaptersFromSource,
+  toFeaturedItem,
   toGenreOptions,
   type NovelJson,
 } from "../../src/NovelArchive/parser.ts";
@@ -118,4 +119,43 @@ void test("toGenreOptions matches nav labels regardless of case or padding", () 
   const options = toGenreOptions({ genres: [{ value: " Browse ", label: "Browse" }] });
 
   assert.deepEqual(options, []);
+});
+
+// formatCount is internal; toFeaturedItem is the only way in. The K form rounds, so every value
+// from 999,500 up would otherwise print as "1000K" instead of rolling over to "1M".
+function viewsBadge(views: number): string | undefined {
+  const item = toFeaturedItem({ ...featuredNovel, views_number: views });
+  assert.equal(item.type, "featuredCarouselItem");
+  return item.type === "featuredCarouselItem"
+    ? item.infoItems?.find((entry) => entry.symbol === "eye.fill")?.text
+    : undefined;
+}
+
+const featuredNovel: NovelJson = {
+  id: "counted",
+  author: "Author",
+  chapter_names: [],
+  genres: "action",
+  cover_url: "/covers/x.webp",
+  title: "Counted",
+  associated_names: [],
+  description: "A synopsis.",
+  total_chapters: "1",
+  release_status: "ongoing",
+  views_number: 0,
+  rating: 0,
+  rating_count: 0,
+};
+
+void test("toFeaturedItem rolls the view count over to M instead of printing 1000K", () => {
+  assert.equal(viewsBadge(999_499), "999K");
+  assert.equal(viewsBadge(999_500), "1M");
+  assert.equal(viewsBadge(999_999), "1M");
+  assert.equal(viewsBadge(1_000_000), "1M");
+});
+
+void test("toFeaturedItem keeps the ordinary K and M cases intact", () => {
+  assert.equal(viewsBadge(999), "999");
+  assert.equal(viewsBadge(255_678), "256K");
+  assert.equal(viewsBadge(3_965_770), "4M");
 });
