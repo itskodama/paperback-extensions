@@ -41,11 +41,11 @@ import type MangaBakaConfig from "./pbconfig";
 import { collapseReadActions, progressChapter, today } from "./progress";
 import {
   autoCompleteEnabled,
-  MangaBakaSettingsForm,
   recordCryptoSupport,
   recordSyncStatus,
   titlePreference,
-} from "./settingsForm";
+} from "./settings";
+import { MangaBakaSettingsForm } from "./settingsForm";
 import { MangaBakaTrackingForm } from "./trackingForm";
 import { BROWSE_SORT, DEFAULT_SORT, LIBRARY_STATES, SEARCH_PAGE_SIZE, SORT_OPTIONS } from "./types";
 import { searchPath } from "./urls";

@@ -27,63 +27,22 @@ import {
 import { humanizeSlug } from "./mapping";
 import { clearCache } from "./network";
 import { authorizeUrl, newAuthorizeSession } from "./oauth";
-import { DEFAULT_TITLE_PREFERENCE, TITLE_PREFERENCES, type TitlePreference } from "./titles";
+import {
+  autoCompleteEnabled,
+  debugEnabled,
+  getCryptoSupport,
+  getSyncStatus,
+  STATE_KEYS,
+  titlePreference,
+} from "./settings";
+import { TITLE_PREFERENCES } from "./titles";
 import { LIBRARY_STATES, SITE_BASE } from "./types";
-
-const CRYPTO_SUPPORT_STATE = "mangabaka.cryptoSupport";
-const AUTO_COMPLETE_STATE = "mangabaka.autoComplete";
-const TITLE_LANGUAGE_STATE = "mangabaka.titleLanguage";
-const SYNC_STATUS_STATE = "mangabaka.syncStatus";
-const DEBUG_STATE = "mangabaka.debug";
-
-/** The queue must swallow its own errors, so without this a failed sync is invisible. */
-export function recordSyncStatus(status: string): void {
-  Application.setState(
-    `${new Date().toISOString().slice(0, 19).replace("T", " ")} ${status}`,
-    SYNC_STATUS_STATE,
-  );
-}
 
 /** Long row titles are truncated on screen, so they are split across rows. */
 function chunk(text: string, width: number): string[] {
   const lines: string[] = [];
   for (let i = 0; i < text.length; i += width) lines.push(text.slice(i, i + width));
   return lines.length > 0 ? lines : [text];
-}
-
-/** See {@link cryptoSupport}. */
-export function recordCryptoSupport(support: string): void {
-  Application.setState(support, CRYPTO_SUPPORT_STATE);
-}
-
-function getCryptoSupport(): string | undefined {
-  const stored = Application.getState(CRYPTO_SUPPORT_STATE);
-  return typeof stored === "string" && stored.length > 0 ? stored : undefined;
-}
-
-export function getSyncStatus(): string | undefined {
-  const stored = Application.getState(SYNC_STATUS_STATE);
-  return typeof stored === "string" && stored.length > 0 ? stored : undefined;
-}
-
-/** Off by default: diagnostics are for reporting a problem, not for everyday reading. */
-export function debugEnabled(): boolean {
-  const stored = Application.getState(DEBUG_STATE);
-  return typeof stored === "boolean" ? stored : false;
-}
-
-/** Defaults to on. */
-export function autoCompleteEnabled(): boolean {
-  const stored = Application.getState(AUTO_COMPLETE_STATE);
-  return typeof stored === "boolean" ? stored : true;
-}
-
-/** Defaults to English. */
-export function titlePreference(): TitlePreference {
-  const stored = Application.getState(TITLE_LANGUAGE_STATE);
-  return stored === "romanized" || stored === "native" || stored === "english"
-    ? stored
-    : DEFAULT_TITLE_PREFERENCE;
 }
 
 export class MangaBakaSettingsForm extends Form {
@@ -490,12 +449,12 @@ export class MangaBakaSettingsForm extends Form {
   }
 
   async handleDebugChange(value: boolean): Promise<void> {
-    Application.setState(value, DEBUG_STATE);
+    Application.setState(value, STATE_KEYS.debug);
     this.reloadForm();
   }
 
   async handleAutoCompleteChange(value: boolean): Promise<void> {
-    Application.setState(value, AUTO_COMPLETE_STATE);
+    Application.setState(value, STATE_KEYS.autoComplete);
   }
 
   async handleTitleLanguageChange(value: string[]): Promise<void> {
@@ -503,6 +462,6 @@ export class MangaBakaSettingsForm extends Form {
     if (next === undefined) return;
 
     // The cache holds raw payloads, not mapped titles, so the next render re-maps them.
-    Application.setState(next, TITLE_LANGUAGE_STATE);
+    Application.setState(next, STATE_KEYS.titleLanguage);
   }
 }

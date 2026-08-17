@@ -20,7 +20,7 @@ import { getProfile } from "./auth";
 import { count } from "./decode";
 import { humanizeSlug, snapRating } from "./mapping";
 import { today } from "./progress";
-import { titlePreference } from "./settingsForm";
+import { titlePreference } from "./settings";
 import { primaryTitle } from "./titles";
 import {
   DEFAULT_LIBRARY_STATE,
