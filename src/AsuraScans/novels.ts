@@ -26,20 +26,14 @@ import { alternativeTitles, ratingFraction } from "./fields.ts";
 import { statusLabel } from "./models.ts";
 import { NOVEL_ID_PREFIX, novelUrl } from "./urls.ts";
 
-// --- Novels (/novels, /novels/<slug>, /novels/<slug>/chapter/<n>) ---
-// A separate pipeline from comics above: the comics route (/comics/<slug>-<hash>) resolves a
-// novel's slug too, but its chapters island is a disconnected, comic-shaped table with different
-// ids that doesn't correspond to what /novels/<slug>/chapter/<n> actually serves
-
+// A separate pipeline from comics.ts: the comics route (/comics/<slug>-<hash>) resolves a novel's
+// slug too, but its chapters island is a disconnected, comic-shaped table with different ids that
+// doesn't correspond to what /novels/<slug>/chapter/<n> actually serves
 const NOVEL_CATALOG_KEYS = ["initialItems"];
 
 const NOVEL_CHAPTERS_KEYS = ["chapters", "novelSlug", "totalChapters"];
 
 const NOVEL_CHAPTER_KEYS = ["paragraphs", "isLocked"];
-
-// A novel and a comic can share the same slug (the comics route resolves any slug, see above), so
-// novel mangaIds get their own namespace — otherwise a manga viewed once as one type stays stuck
-// as that type in the app's own per-manga cache forever, since the cache key would be identical
 
 export function parseNovelCatalog(html: string): Island[] {
   const island = findIsland(html, NOVEL_CATALOG_KEYS);
@@ -89,9 +83,6 @@ export function novelToSourceManga(entry: Island): SourceManga {
 
 // Only "Nh ago"/"Nd ago" confirmed live across a full 101-chapter list — no weeks/months/years
 // observed, so this deliberately doesn't guess at units never seen
-
-// Only "Nh ago"/"Nd ago" confirmed live across a full 101-chapter list — no weeks/months/years
-// observed, so this deliberately doesn't guess at units never seen
 const NOVEL_RELATIVE_TIME = /^(\d+)(h|d) ago$/i;
 
 function parseNovelRelativeTime(text: string): Date | undefined {
@@ -126,10 +117,6 @@ export function parseNovelChapterList(html: string, sourceManga: SourceManga): C
 
   return chapters;
 }
-
-// html chapters parse as XML: unclosed void elements and named entities beyond XML's five are
-// fatal (docs/paperback/html-chapters.md). AsuraScans' own copy, not imported from LightNovelWorld
-// (each extension bundles standalone)
 
 // html chapters parse as XML: unclosed void elements and named entities beyond XML's five are
 // fatal (docs/paperback/html-chapters.md). AsuraScans' own copy, not imported from LightNovelWorld

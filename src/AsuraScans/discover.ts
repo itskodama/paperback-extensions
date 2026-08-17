@@ -113,9 +113,6 @@ function featuredItems(islands: Island[]): DiscoverSectionItem[] {
 
 // Asura groups the feed by series and pins one entry to the top, so it is neither
 // one entry per series nor in publish order
-
-// Asura groups the feed by series and pins one entry to the top, so it is neither
-// one entry per series nor in publish order
 function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
   const chapters = discoverEntries(islands, "chapters", "comic_slug")
     .flatMap((chapter) => {
@@ -197,10 +194,6 @@ export function parseDiscoverItems(html: string, sectionId: string): DiscoverSec
 // Asura hoists a pinned series to the top of its default ordering, out of order with the rest.
 // `is_pinned` marks the series permanently rather than the hoisted row, so it cannot be filtered on
 // its own without making that series unfindable.
-
-// Asura hoists a pinned series to the top of its default ordering, out of order with the rest.
-// `is_pinned` marks the series permanently rather than the hoisted row, so it cannot be filtered on
-// its own without making that series unfindable.
 export function withoutHoistedPin(island: Island, entries: Island[]): Island[] {
   if (readString(island, "initialQuery")) return entries;
   if (readString(island, "initialOrder") !== "update") return entries;
@@ -217,11 +210,6 @@ export function withoutHoistedPin(island: Island, entries: Island[]): Island[] {
 
   return outOfOrder ? entries.slice(1) : entries;
 }
-
-// Carries the raw fields needed to sort comics and novels into one combined order (see
-// mergeRankedResults) alongside the finished item — comics and novels are fetched from entirely
-// separate backends that each only sort their own results, so combining them into one list
-// correctly requires re-sorting from these raw values, not just concatenating two pre-sorted lists
 
 // A browse result page rendered as a discover carousel rather than search results
 export function parseBrowseCarousel(html: string): DiscoverSectionItem[] {

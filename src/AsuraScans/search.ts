@@ -27,11 +27,6 @@ export type RankedSearchResult = {
 // don't correspond to each other even for what a user would consider "the same" series, so picking
 // entry [0] as a subtitle looks inconsistent between the two. "Comic/Novel | Chapter N" instead:
 // consistent by construction, and more directly useful for search/discover than a stray alt title
-
-// A comic's `alt_titles` and a novel's `alternative_titles` are independent per-record lists that
-// don't correspond to each other even for what a user would consider "the same" series, so picking
-// entry [0] as a subtitle looks inconsistent between the two. "Comic/Novel | Chapter N" instead:
-// consistent by construction, and more directly useful for search/discover than a stray alt title
 function latestChapterSubtitle(kind: "Comic" | "Novel", chapters: Island[]): string | undefined {
   const number = readNumber(chapters[0] ?? {}, "number");
   return number === undefined ? undefined : `${kind} | Chapter ${number}`;
@@ -95,10 +90,6 @@ function rankedSortKey(entry: RankedSearchResult, sortField: string): string | n
 // A single full re-sort of the small combined page, rather than a merge of two pre-sorted lists —
 // cheap at this scale (one comics page + the whole novel catalog) and avoids needing both
 // backends' orderings to agree on tie-breaking
-
-// A single full re-sort of the small combined page, rather than a merge of two pre-sorted lists —
-// cheap at this scale (one comics page + the whole novel catalog) and avoids needing both
-// backends' orderings to agree on tie-breaking
 export function mergeRankedResults(
   a: RankedSearchResult[],
   b: RankedSearchResult[],
@@ -115,10 +106,8 @@ export function mergeRankedResults(
     .map((entry) => entry.item);
 }
 
-// A browse result page rendered as a discover carousel rather than search results
-
-// Same field names as the /novels catalog (see novelToSourceManga above) but plain JSON, not an
-// astro-island — cast straight to Island like parseNovelChapterApiPayload does for the other
+// Same field names as the /novels catalog (see novels.ts's novelToSourceManga) but plain JSON, not
+// an astro-island — cast straight to Island like parseNovelChapterApiPayload does for the other
 // JSON endpoint. Multi-genre selection is AND here, not OR like comics (confirmed live) — accepted
 // as a known limitation given the tiny catalog, not worked around
 export function rankedNovelSearchResults(payload: unknown): {

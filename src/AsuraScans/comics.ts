@@ -168,8 +168,3 @@ export function parseChapterApiPayload(payload: unknown, chapter: Chapter): Chap
     pages,
   };
 }
-
-// --- Novels (/novels, /novels/<slug>, /novels/<slug>/chapter/<n>) ---
-// A separate pipeline from comics above: the comics route (/comics/<slug>-<hash>) resolves a
-// novel's slug too, but its chapters island is a disconnected, comic-shaped table with different
-// ids that doesn't correspond to what /novels/<slug>/chapter/<n> actually serves

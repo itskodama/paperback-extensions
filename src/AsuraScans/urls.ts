@@ -24,8 +24,6 @@ export type BrowseQuery = {
   artist?: string;
 };
 
-// Paperback renders `rating` as a percentage, so it expects a 0-1 fraction
-
 export function seriesUrl(mangaId: string): string {
   return `${ASURA_DOMAIN}/comics/${mangaId}`;
 }
@@ -54,9 +52,6 @@ export function browseUrl(query: BrowseQuery): string {
     ? `${ASURA_DOMAIN}/browse?${params.join("&")}`
     : `${ASURA_DOMAIN}/browse`;
 }
-
-// Several islands share the `items` key. Entries tell most of them apart, but the two ten-entry
-// lists are identical in shape: Trending carries the site's own `title`, Popular an `editorsPick`.
 
 export function chapterUrl(chapter: Chapter): string {
   const publicUrl = chapter.additionalInfo?.publicUrl;
@@ -123,8 +118,3 @@ export function novelSearchUrl(query: NovelSearchQuery): string {
 
   return `${ASURA_API}/api/novel-series${params.length > 0 ? `?${params.join("&")}` : ""}`;
 }
-
-// Same field names as the /novels catalog (see novelToSourceManga above) but plain JSON, not an
-// astro-island — cast straight to Island like parseNovelChapterApiPayload does for the other
-// JSON endpoint. Multi-genre selection is AND here, not OR like comics (confirmed live) — accepted
-// as a known limitation given the tiny catalog, not worked around
