@@ -66,6 +66,11 @@ const DISCOVER_LATEST_NOVELS = "latest-novels";
 const DISCOVER_LATEST_UPDATES = "latest";
 const DISCOVER_GENRES = "genres";
 
+// A 5,000-chapter novel is 100 pages. Firing them all at once holds 100 responses in memory at
+// peak and hands the rate limiter a queue it will drain for a minute regardless; batching keeps
+// the concurrency bounded without making the whole listing serial.
+const CHAPTER_LIST_BATCH = 8;
+
 // Falls back to fetching sequentially until a short page if the total can't be parsed
 async function fetchAllChapterListPages(slug: string): Promise<string[]> {
   const first = await fetchPage(chapterListUrl(slug, 1));
@@ -73,12 +78,19 @@ async function fetchAllChapterListPages(slug: string): Promise<string[]> {
 
   if (total !== undefined) {
     const totalPages = Math.max(1, Math.ceil(total / CHAPTER_LIST_PAGE_SIZE));
-    const rest = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, index) =>
-        fetchPage(chapterListUrl(slug, index + 2)),
-      ),
-    );
-    return [first, ...rest];
+    const pages = [first];
+
+    for (let from = 2; from <= totalPages; from += CHAPTER_LIST_BATCH) {
+      const to = Math.min(from + CHAPTER_LIST_BATCH - 1, totalPages);
+      const batch = await Promise.all(
+        Array.from({ length: to - from + 1 }, (_, index) =>
+          fetchPage(chapterListUrl(slug, from + index)),
+        ),
+      );
+      pages.push(...batch);
+    }
+
+    return pages;
   }
 
   const pages = [first];
