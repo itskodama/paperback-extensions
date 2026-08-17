@@ -113,6 +113,7 @@ export function mergeRankedResults(
 export function rankedNovelSearchResults(payload: unknown): {
   ranked: RankedSearchResult[];
   total: number;
+  received: number;
 } {
   const root = payload as Island;
   const entries = readArray(root, "data");
@@ -142,13 +143,16 @@ export function rankedNovelSearchResults(payload: unknown): {
     ];
   });
 
-  return { ranked, total };
+  // `received` is the raw entry count, not `ranked.length`: an entry dropped for having no slug
+  // still consumed one offset slot, so paging by the filtered count would re-request it forever
+  return { ranked, total, received: entries.length };
 }
 
 export function parseNovelSearchResults(payload: unknown): {
   items: SearchResultItem[];
   total: number;
+  received: number;
 } {
-  const { ranked, total } = rankedNovelSearchResults(payload);
-  return { items: ranked.map((entry) => entry.item), total };
+  const { ranked, total, received } = rankedNovelSearchResults(payload);
+  return { items: ranked.map((entry) => entry.item), total, received };
 }

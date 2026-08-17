@@ -279,9 +279,13 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       }),
     );
 
-    const { items, total } = parseNovelSearchResults(payload);
-    const nextOffset = offset + items.length;
-    return nextOffset < total ? { items, metadata: nextOffset } : { items };
+    const { items, total, received } = parseNovelSearchResults(payload);
+
+    // Advance by what the API returned, not by what survived parsing, and stop outright on an
+    // empty page — paging by items.length would re-request the same offset forever if a page
+    // ever came back with nothing usable on it
+    const nextOffset = offset + received;
+    return received > 0 && nextOffset < total ? { items, metadata: nextOffset } : { items };
   }
 
   async getMangaDetails(mangaId: string): Promise<SourceManga> {

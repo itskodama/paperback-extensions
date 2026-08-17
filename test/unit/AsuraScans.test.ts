@@ -359,6 +359,39 @@ void test("novelToSourceManga maps contentType, genre ids, rating fraction, and 
   );
 });
 
+// A Tag.id outside the bridge's charset throws on device the moment the series page opens,
+// so the genre_ids fallback can never be a raw genre name. See docs/paperback/forms.md.
+void test("novelToSourceManga sanitizes the genre tag id when genre_ids is short", () => {
+  const tags = novelToSourceManga({
+    ...NOVEL_ENTRY,
+    genres: ["Psychological", "Slice of Life", "Sci-Fi & Fantasy"],
+    genre_ids: [7],
+  }).mangaInfo.tagGroups?.[0]?.tags;
+
+  assert.deepEqual(
+    tags?.map((t) => t.id),
+    ["7", "slice-of-life", "sci-fi-&-fantasy"],
+  );
+  // The display text keeps the site's own spelling either way.
+  assert.deepEqual(
+    tags?.map((t) => t.title),
+    ["Psychological", "Slice of Life", "Sci-Fi & Fantasy"],
+  );
+});
+
+void test("novelToSourceManga never emits an empty tag id", () => {
+  const tags = novelToSourceManga({
+    ...NOVEL_ENTRY,
+    genres: ["!!!"],
+    genre_ids: [],
+  }).mangaInfo.tagGroups?.[0]?.tags;
+
+  assert.deepEqual(
+    tags?.map((t) => t.id),
+    ["unknown"],
+  );
+});
+
 void test("isNovelMangaId/novelSlugFromMangaId distinguish a novel id from a plain comic slug", () => {
   assert.equal(isNovelMangaId("novel:test-novel"), true);
   assert.equal(isNovelMangaId("test-novel"), false);
@@ -527,6 +560,29 @@ void test("parseNovelSearchResults falls back total to entries.length when meta 
     ],
   });
   assert.equal(total, 2);
+});
+
+// `received` is what the offset advances by. Paging on items.length would stall on any page
+// whose entries were dropped for having no slug, re-requesting the same offset forever.
+void test("parseNovelSearchResults counts entries the API sent, not entries that parsed", () => {
+  const { items, received, total } = parseNovelSearchResults({
+    data: [{ slug: "a", title: "A" }, { title: "no slug" }, { slug: "c", title: "C" }],
+    meta: { total: 30 },
+  });
+
+  assert.equal(items.length, 2);
+  assert.equal(received, 3);
+  assert.equal(total, 30);
+});
+
+void test("parseNovelSearchResults reports zero received for a page with nothing usable", () => {
+  const { items, received } = parseNovelSearchResults({
+    data: [{ title: "no slug" }, { title: "also no slug" }],
+    meta: { total: 30 },
+  });
+
+  assert.equal(items.length, 0);
+  assert.equal(received, 2);
 });
 
 void test("parseNovelSearchResults skips an entry with no slug rather than throwing", () => {
