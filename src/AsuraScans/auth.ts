@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import type { Response } from "@paperback/types";
+import type { Cookie, Response } from "@paperback/types";
 
 import { ASURA_API } from "./models.ts";
 
@@ -135,19 +135,54 @@ async function postJson(path: string, body: object): Promise<[number, unknown]> 
   return [response.status, unwrapEnvelope(parsed)];
 }
 
-export async function login(email: string, password: string): Promise<AsuraSession> {
-  const [status, data] = await postJson("/api/auth/login", { email, password });
+// Asura's own login page stores its tokens with document.cookie (path=/, SameSite=Lax, not
+// HttpOnly), so the pair survives into the web view's cookie jar and the extension never has to
+// see an email or a password. See docs/AsuraScans/auth.md.
+const ACCESS_TOKEN_COOKIE = "access_token";
+const REFRESH_TOKEN_COOKIE = "refresh_token";
 
-  if (status === 401 || status === 403 || status === 422) {
-    throw new Error("Incorrect email or password.");
+export function asuraCookieValue(cookies: Cookie[], name: string): string | undefined {
+  for (const cookie of cookies) {
+    const domain = cookie.domain.replace(/^\./, "").toLowerCase();
+    const onAsura = domain === "asurascans.com" || domain.endsWith(".asurascans.com");
+    if (onAsura && cookie.name === name && cookie.value.length > 0) {
+      return decodeURIComponent(cookie.value);
+    }
   }
-  if (status < 200 || status >= 300) {
-    throw new Error(`Asura Scans returned HTTP ${status} for login`);
+  return undefined;
+}
+
+/**
+ * The captured cookies carry the two tokens and nothing else — no expiry the extension can
+ * trust (the cookie claims a day; the token really lasts fifteen minutes), no username, no
+ * subscription. Spending the refresh token immediately is what fills those in: `/api/auth/refresh`
+ * is the only endpoint that returns `subscription_status` at all, so this lands a *better*
+ * session than the password flow it replaces, not merely an equivalent one.
+ */
+export async function loginWithCookies(cookies: Cookie[]): Promise<AsuraSession> {
+  const refreshToken = asuraCookieValue(cookies, REFRESH_TOKEN_COOKIE);
+  if (!refreshToken) {
+    throw new Error(
+      "No Asura Scans session was captured. Sign in fully, then close the page with Done.",
+    );
   }
 
-  const session = buildSession(data as AuthResponse);
-  saveSession(session);
-  return session;
+  const accessToken = asuraCookieValue(cookies, ACCESS_TOKEN_COOKIE) ?? "";
+
+  try {
+    return await refreshSession({
+      accessToken,
+      refreshToken,
+      // Already expired, so the very next authorized request renews rather than trusting this.
+      expiresAt: new Date(0).toISOString(),
+      username: "",
+      hasSubscription: false,
+    });
+  } catch {
+    // refreshSession's own wording is "session expired, log in again", which reads as nonsense
+    // to someone who just did. A stale cookie from a previous sign-in is the likely cause.
+    throw new Error("Asura Scans did not accept that sign-in. Please try logging in again.");
+  }
 }
 
 // Asura rotates the refresh token, so a second concurrent renewal would present one the first

@@ -4,9 +4,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ContentRating, type Chapter } from "@paperback/types";
+import { ContentRating, type Chapter, type Cookie } from "@paperback/types";
 
 import {
+  asuraCookieValue,
   buildSession,
   isSessionExpired,
   isValidSession,
@@ -14,6 +15,8 @@ import {
   type AsuraSession,
 } from "../../src/AsuraScans/auth.ts";
 import { chapterIsLocked, parseChapterApiPayload } from "../../src/AsuraScans/comics.ts";
+import { formatCount } from "../../src/AsuraScans/format.ts";
+import { DEFAULT_SORT, SORT_OPTIONS } from "../../src/AsuraScans/models.ts";
 import {
   novelCatalogEntry,
   novelChapterIsLocked,
@@ -666,4 +669,68 @@ void test("mergeRankedResults falls back to lastUpdate for 'newest' when created
     items.map((i) => i.title),
     ["Novel", "Comic"],
   );
+});
+
+// The web-view login reads the tokens straight out of the captured jar, so the jar is the whole
+// trust boundary: anything from another host must not be mistaken for an Asura session.
+function cookie(name: string, value: string, domain = "asurascans.com"): Cookie {
+  return { name, value, domain, path: "/" };
+}
+
+void test("asuraCookieValue reads a token set on the site or a subdomain", () => {
+  const jar = [
+    cookie("refresh_token", "refresh-value"),
+    cookie("access_token", "access-value", ".www.asurascans.com"),
+  ];
+
+  assert.equal(asuraCookieValue(jar, "refresh_token"), "refresh-value");
+  assert.equal(asuraCookieValue(jar, "access_token"), "access-value");
+});
+
+void test("asuraCookieValue ignores a same-named cookie from another host", () => {
+  const jar = [
+    cookie("refresh_token", "attacker", "notasurascans.com"),
+    cookie("refresh_token", "evil", "asurascans.com.example.net"),
+  ];
+
+  assert.equal(asuraCookieValue(jar, "refresh_token"), undefined);
+});
+
+void test("asuraCookieValue percent-decodes, since the site encodes on write", () => {
+  const jar = [cookie("refresh_token", "a%2Fb%2Bc%3D")];
+
+  assert.equal(asuraCookieValue(jar, "refresh_token"), "a/b+c=");
+});
+
+void test("asuraCookieValue treats an empty cookie as absent", () => {
+  assert.equal(asuraCookieValue([cookie("refresh_token", "")], "refresh_token"), undefined);
+  assert.equal(asuraCookieValue([], "refresh_token"), undefined);
+});
+
+void test("formatCount rolls over at the point the smaller unit would print four digits", () => {
+  assert.equal(formatCount(999_499), "999K");
+  assert.equal(formatCount(999_500), "1M");
+  assert.equal(formatCount(999_499_999), "999M");
+  assert.equal(formatCount(999_500_000), "1B");
+});
+
+void test("formatCount keeps one decimal below ten and drops it above", () => {
+  assert.equal(formatCount(1_500), "1.5K");
+  assert.equal(formatCount(9_949), "9.9K");
+  assert.equal(formatCount(9_950), "10K");
+  assert.equal(formatCount(255_678), "256K");
+  assert.equal(formatCount(3_965_770), "4M");
+  assert.equal(formatCount(1_500_000_000), "1.5B");
+});
+
+void test("formatCount leaves values below a thousand alone", () => {
+  assert.equal(formatCount(0), "0");
+  assert.equal(formatCount(999), "999");
+});
+
+void test("DEFAULT_SORT is a real option and matches the site's own browse default", () => {
+  assert.ok(SORT_OPTIONS.some((option) => option.id === DEFAULT_SORT.id));
+  // Asura has no relevance sort; its /browse island reports initialOrder "update", "desc".
+  assert.equal(DEFAULT_SORT.sort, "update");
+  assert.equal(DEFAULT_SORT.direction, "desc");
 });
