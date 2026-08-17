@@ -400,7 +400,9 @@ const INNER_TAG = /<[^>]+>/g;
 // content's own section ids, and whose text carries the real chapter titles
 export function parseVolumeToc(html: string): TocEntry[] {
   const start = html.indexOf(TOC_START);
-  const end = html.indexOf(TOC_END);
+  // Searched from `start`, not 0: "content-wrapper" also appears above the sidebar on some
+  // pages, and finding that copy first made the whole TOC unreadable.
+  const end = html.indexOf(TOC_END, start);
   if (start < 0 || end <= start) return [];
 
   const entries: TocEntry[] = [];
@@ -426,6 +428,8 @@ export function parseBookPublishDate(html: string): Date | undefined {
 // and a fully unnumbered TOC falls back to plain ordinals.
 const EXPLICIT_CHAPTER = /^Chapter\s+(\d+(?:\.\d+)?)\s*[:.—-]?\s*(.*)$/i;
 
+const INTERPOLATION_STEP = 0.1;
+
 type NumberedEntry = { chapNum: number; title: string; anchor: string };
 
 export function numberTocEntries(entries: TocEntry[]): NumberedEntry[] {
@@ -438,19 +442,35 @@ export function numberTocEntries(entries: TocEntry[]): NumberedEntry[] {
     }));
   }
 
+  // How many unnumbered entries run from `index`, so a run can be sized to fit in its own gap
+  const runLength = (index: number): number => {
+    let length = 0;
+    while (index + length < entries.length && explicit[index + length] === null) length++;
+    return length;
+  };
+
   let previous = 0;
-  let fraction = 0;
+  let step = INTERPOLATION_STEP;
+  let position = 0;
+
   return entries.map((entry, index) => {
     const match = explicit[index];
     if (match) {
       previous = Number(match[1]);
-      fraction = 0;
+      position = 0;
       // Keep the subtitle if there is one; "Chapter 2" alone stays as-is
       return { chapNum: previous, title: match[2] || entry.title, anchor: entry.anchor };
     }
-    fraction += 0.1;
+
+    // Ten interludes at 0.1 apiece would land on `previous + 1` and collide with the real
+    // chapter of that number, which the app then collapses into one chapter with two versions
+    // — hiding one behind version priority. Long runs get a smaller step so they stay inside
+    // the gap; runs of nine or fewer keep the plain 0.1 spacing.
+    if (position === 0) step = Math.min(INTERPOLATION_STEP, 1 / (runLength(index) + 1));
+    position++;
+
     return {
-      chapNum: Math.round((previous + fraction) * 10) / 10,
+      chapNum: Math.round((previous + position * step) * 10_000) / 10_000,
       title: entry.title,
       anchor: entry.anchor,
     };
@@ -508,7 +528,7 @@ const IMG_SRC = /<img\b[^>]*\bsrc="([^"]*)"/;
 const IMG_ALT = /<img\b[^>]*\balt="([^"]*)"/;
 // HTML5 void elements, which the site serializes unclosed
 const VOID_TAG =
-  /<(img|br|hr|source|wbr|area|col|embed|input|link|meta|track|param|base)(\b[^>]*?)\s*\/?>/g;
+  /<(img|br|hr|source|wbr|area|col|embed|input|link|meta|track|param|base)(\b[^>]*?)\s*\/?>/gi;
 const EPUB_ATTR = /\s+epub:type="[^"]*"/g;
 const NAMED_REF = /&([a-zA-Z][a-zA-Z0-9]*);/g;
 
