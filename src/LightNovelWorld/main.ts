@@ -31,6 +31,7 @@ import {
   genreChipItems,
   hasNextAdvancedSearchPage,
   homeUrl,
+  matchesFilters,
   novelUrl,
   parseAdvancedSearchResults,
   parseBoostShelfCards,
@@ -202,13 +203,17 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
     sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     const filters = query.metadata;
-    const hasFilters = !!(filters?.genresInclude?.length || filters?.genresExclude?.length);
     const title = query.title.trim();
 
-    // advanced-search has no free-text param, so a plain title search prefers the API
-    if (!hasFilters && title) {
+    // Only the API can answer free text, and only /advanced-search/ can answer filters, so a
+    // query carrying both has to pick one and make up the difference. It picks the API and
+    // re-applies the filters over its results — previously whichever half was not covered by
+    // the chosen endpoint was dropped without telling anyone, so a title plus a Status filter
+    // silently returned unfiltered results.
+    if (title) {
       const response = await fetchJson<SearchApiResponse>(searchUrl(title));
-      return { items: response.novels.map(toSearchResultItem) };
+      const matching = response.novels.filter((novel) => matchesFilters(novel, filters));
+      return { items: matching.map(toSearchResultItem) };
     }
 
     const page = typeof metadata === "number" ? metadata : 1;
