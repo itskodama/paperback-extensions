@@ -11,15 +11,36 @@ import {
   type FormSectionElement,
 } from "@paperback/types";
 
-import { getSession, loginWithCookies, logout, type AsuraSession } from "./auth";
-import { loginUrl } from "./urls";
+import { getSession, loginWithCookies, logout, type AsuraSession } from "./auth.ts";
+import { loginUrl } from "./urls.ts";
 
-function subscriptionSubtitle(session: AsuraSession): string {
+/**
+ * `subscription_status.status` is the billing lifecycle, not whether the subscription currently
+ * grants anything — `has_subscription` already answered that, and is what gets checked above.
+ * The two disagree routinely: turning auto-renew off reports `canceled` while premium keeps
+ * working until the paid period ends, so printing the raw word made a working account read as a
+ * broken one.
+ *
+ * Only states a reader can act on are named, and in plain language. Anything else — `active`
+ * included, and any state Asura adds later — says nothing beyond the tier.
+ */
+const SUBSCRIPTION_NOTES: Record<string, string> = {
+  canceled: "does not renew",
+  cancelled: "does not renew",
+  incomplete: "payment incomplete",
+  past_due: "payment overdue",
+  trialing: "trial",
+  unpaid: "payment overdue",
+};
+
+export function subscriptionSubtitle(session: AsuraSession): string {
   if (!session.hasSubscription) return "No active subscription";
 
   const tier = session.tier ?? "premium";
   const label = tier.charAt(0).toUpperCase() + tier.slice(1);
-  return session.subscriptionStatus ? `${label} — ${session.subscriptionStatus}` : label;
+  const note = SUBSCRIPTION_NOTES[(session.subscriptionStatus ?? "").toLowerCase()];
+
+  return note ? `${label} — ${note}` : label;
 }
 
 export class AsuraScansSettingsForm extends Form {

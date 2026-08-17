@@ -32,6 +32,7 @@ import {
   parseNovelSearchResults,
   rankedSearchResults,
 } from "../../src/AsuraScans/search.ts";
+import { subscriptionSubtitle } from "../../src/AsuraScans/settingsForm.ts";
 import {
   isNovelMangaId,
   novelChapterUrl,
@@ -733,4 +734,50 @@ void test("DEFAULT_SORT is a real option and matches the site's own browse defau
   // Asura has no relevance sort; its /browse island reports initialOrder "update", "desc".
   assert.equal(DEFAULT_SORT.sort, "update");
   assert.equal(DEFAULT_SORT.direction, "desc");
+});
+
+// has_subscription is the access answer; subscription_status is billing lifecycle. Turning
+// auto-renew off reports "canceled" while premium keeps working to the end of the paid period,
+// so the raw word made a working account look broken (reported from a real account).
+void test("subscriptionSubtitle does not call a working subscription canceled", () => {
+  const premium = { hasSubscription: true, tier: "premium" } as AsuraSession;
+
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "canceled" }),
+    "Premium — does not renew",
+  );
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "cancelled" }),
+    "Premium — does not renew",
+  );
+});
+
+void test("subscriptionSubtitle says nothing extra for a healthy or unknown status", () => {
+  const premium = { hasSubscription: true, tier: "premium" } as AsuraSession;
+
+  assert.equal(subscriptionSubtitle({ ...premium, subscriptionStatus: "active" }), "Premium");
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "something_new" }),
+    "Premium",
+  );
+  assert.equal(subscriptionSubtitle(premium), "Premium");
+});
+
+void test("subscriptionSubtitle surfaces states the reader can act on", () => {
+  const premium = { hasSubscription: true, tier: "premium" } as AsuraSession;
+
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "past_due" }),
+    "Premium — payment overdue",
+  );
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "trialing" }),
+    "Premium — trial",
+  );
+});
+
+void test("subscriptionSubtitle ignores the status entirely without a subscription", () => {
+  const none = { hasSubscription: false, subscriptionStatus: "canceled" } as AsuraSession;
+
+  assert.equal(subscriptionSubtitle(none), "No active subscription");
 });
