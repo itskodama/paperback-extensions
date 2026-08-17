@@ -115,6 +115,31 @@ export function isLoggedIn(): boolean {
   return getTokens() !== undefined;
 }
 
+/**
+ * A refresh token is single-use, so two renewals racing means the second presents one the first
+ * already spent — a 401 that reads as "logged out" on a session that was fine. The progress queue
+ * makes that reachable: it walks a batch of series, and the first two can expire together.
+ * Everything that renews shares the first in-flight attempt.
+ */
+let inFlightRenewal: Promise<OAuthTokens> | undefined;
+
+async function renew(refreshToken: string): Promise<OAuthTokens> {
+  const pending = inFlightRenewal;
+  if (pending) return pending;
+
+  const renewal = refreshTokens(refreshToken).then((tokens) => {
+    saveTokens(tokens);
+    return tokens;
+  });
+  inFlightRenewal = renewal;
+
+  try {
+    return await renewal;
+  } finally {
+    inFlightRenewal = undefined;
+  }
+}
+
 /** Async because an expired token is renewed before the caller ever sees it. */
 export async function authHeaders(): Promise<Record<string, string> | undefined> {
   let tokens = getTokens();
@@ -122,8 +147,7 @@ export async function authHeaders(): Promise<Record<string, string> | undefined>
 
   if (tokensExpired(tokens) && tokens.refreshToken !== undefined) {
     try {
-      tokens = await refreshTokens(tokens.refreshToken);
-      saveTokens(tokens);
+      tokens = await renew(tokens.refreshToken);
     } catch {
       // Fall through with the stale token: a 401 is a clearer outcome than failing here.
     }
@@ -138,7 +162,7 @@ export async function renewTokens(): Promise<boolean> {
   if (!tokens?.refreshToken) return false;
 
   try {
-    saveTokens(await refreshTokens(tokens.refreshToken));
+    await renew(tokens.refreshToken);
     return true;
   } catch {
     return false;
