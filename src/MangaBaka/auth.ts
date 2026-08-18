@@ -115,12 +115,8 @@ export function isLoggedIn(): boolean {
   return getTokens() !== undefined;
 }
 
-/**
- * A refresh token is single-use, so two renewals racing means the second presents one the first
- * already spent — a 401 that reads as "logged out" on a session that was fine. The progress queue
- * makes that reachable: it walks a batch of series, and the first two can expire together.
- * Everything that renews shares the first in-flight attempt.
- */
+// A refresh token is single-use, so a second concurrent renewal would present a spent one —
+// reachable from the progress queue, which walks a batch of series at once.
 let inFlightRenewal: Promise<OAuthTokens> | undefined;
 
 async function renew(refreshToken: string): Promise<OAuthTokens> {
