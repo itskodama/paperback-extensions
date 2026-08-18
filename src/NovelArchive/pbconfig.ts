@@ -6,7 +6,7 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 export default {
   name: "NovelArchive",
   description: "Read web novels from novelarchive.cc.",
-  version: "1.0.0-alpha.1",
+  version: "1.0.0-alpha.2",
   icon: "icon.png",
   language: "en",
   contentRating: ContentRating.MATURE,
@@ -15,7 +15,7 @@ export default {
     SourceIntents.SEARCH_RESULT_PROVIDING,
     SourceIntents.CHAPTER_PROVIDING,
   ],
-  badges: [],
+  badges: [{ label: "Novel", backgroundColor: "#15803d", textColor: "#ffffff" }],
   developers: [
     {
       name: "Kodama",

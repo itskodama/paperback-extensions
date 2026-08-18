@@ -122,10 +122,24 @@ function titleCase(value: string): string {
   return value.length > 0 ? `${value[0]!.toUpperCase()}${value.slice(1)}` : value;
 }
 
-// 255678 -> "256K", 3965770 -> "4M"
+// 255678 -> "256K", 3965770 -> "4M", 1500000000 -> "1.5B"
+const COUNT_UNITS = [
+  { suffix: "B", scale: 1_000_000_000 },
+  { suffix: "M", scale: 1_000_000 },
+  { suffix: "K", scale: 1_000 },
+];
+
+// Each unit starts where the smaller one would round to four digits, so 999,500 is "1M".
 function formatCount(value: number): string {
-  if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`;
-  if (value >= 1_000) return `${Math.round(value / 1_000)}K`;
+  for (const { suffix, scale } of COUNT_UNITS) {
+    if (value < scale - scale / 2_000) continue;
+
+    const scaled = value / scale;
+    // One decimal below ten (1.5M), none above (256K).
+    const rounded = scaled < 9.95 ? Math.round(scaled * 10) / 10 : Math.round(scaled);
+    return `${rounded}${suffix}`;
+  }
+
   return String(value);
 }
 
@@ -507,10 +521,16 @@ export function toChapterDetailsFromSource(
 
 export type GenreOption = { id: string; label: string; value: string };
 
+// Nav labels the endpoint returns alongside the real genres. Confirmed live 2026-08-16:
+// 283 values, these three among them, and none of them appears on an actual novel.
+const NON_GENRES = new Set(["browse", "completed novels", "latest novels"]);
+
 export function toGenreOptions(response: GenresResponse): GenreOption[] {
-  return response.genres.map((genre) => ({
-    id: genreId(genre.value),
-    label: genre.label,
-    value: genre.value,
-  }));
+  return response.genres
+    .filter((genre) => !NON_GENRES.has(genre.value.trim().toLowerCase()))
+    .map((genre) => ({
+      id: genreId(genre.value),
+      label: genre.label,
+      value: genre.value,
+    }));
 }

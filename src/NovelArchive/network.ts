@@ -27,6 +27,7 @@ export class MainInterceptor extends PaperbackInterceptor {
     return request;
   }
 
+  // Required: interceptResponse is abstract on PaperbackInterceptor, so this cannot be dropped.
   override async interceptResponse(
     request: Request,
     response: Response,
