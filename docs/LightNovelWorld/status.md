@@ -1,13 +1,14 @@
-# LightNovelWorld — winding down
+# LightNovelWorld — deprecated
 
-**This extension is no longer being developed.** lightnovelworld.org is merging into
-**chikari.moe**, and support is being dropped rather than followed across.
+**Deprecated as of 2026-08-18.** lightnovelworld.org is merging into **chikari.moe**, and
+support is being dropped rather than followed across.
 
 ## What that means in practice
 
-- **It still works, and breakage still gets fixed.** People have it installed and reading; a
-  markup change that breaks parsing is still a bug worth a release while the site is up.
-- **No new features.** The open ideas below stay open.
+- **It still works.** Nothing has been switched off and the site is up, so anyone reading through
+  it can carry on.
+- **It is not supported.** No new features, and no commitment to fix breakage: if the site changes
+  shape and parsing stops working, that is likely where it ends rather than where a fix starts.
 - **It gets removed once lightnovelworld.org is offline.** Not before — an installed extension
   pointing at a live site is doing its job.
 

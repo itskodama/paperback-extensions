@@ -7,8 +7,8 @@ export default {
   name: "LightNovelWorld",
   // The only surface visible before install; see docs/LightNovelWorld/status.md.
   description:
-    "NO LONGER MAINTAINED — lightnovelworld.org is merging into chikari.moe. This extension " +
-    "still works and still receives fixes for breakage, but it will be removed once the site " +
+    "DEPRECATED — lightnovelworld.org is merging into chikari.moe, and this extension is no " +
+    "longer maintained or supported. It still works for now, and will be removed once the site " +
     "goes offline. Read light novels from lightnovelworld.org.",
   version: "1.0.0-alpha.1",
   icon: "icon.png",
@@ -19,7 +19,10 @@ export default {
     SourceIntents.SEARCH_RESULT_PROVIDING,
     SourceIntents.CHAPTER_PROVIDING,
   ],
-  badges: [{ label: "Novel", backgroundColor: "#15803d", textColor: "#ffffff" }],
+  badges: [
+    { label: "Deprecated", backgroundColor: "#991B1B", textColor: "#ffffff" },
+    { label: "Novel", backgroundColor: "#15803d", textColor: "#ffffff" },
+  ],
   developers: [
     {
       name: "Kodama",
