@@ -17,9 +17,6 @@ export default {
     SourceIntents.CHAPTER_PROVIDING,
     SourceIntents.CLOUDFLARE_BYPASS_PROVIDING,
   ],
-  // Content type is the one thing the app cannot infer for the repo list: it already renders
-  // badges for contentRating and for capabilities. Green is the app's own — the 0.8 compat layer
-  // in @paperback/types maps its legacy GREEN to #15803d on white.
   badges: [{ label: "Novel", backgroundColor: "#15803d", textColor: "#ffffff" }],
   developers: [
     {

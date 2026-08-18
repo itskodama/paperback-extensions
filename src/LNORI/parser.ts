@@ -400,8 +400,7 @@ const INNER_TAG = /<[^>]+>/g;
 // content's own section ids, and whose text carries the real chapter titles
 export function parseVolumeToc(html: string): TocEntry[] {
   const start = html.indexOf(TOC_START);
-  // Searched from `start`, not 0: "content-wrapper" also appears above the sidebar on some
-  // pages, and finding that copy first made the whole TOC unreadable.
+  // From `start`, not 0: "content-wrapper" also appears above the sidebar on some pages.
   const end = html.indexOf(TOC_END, start);
   if (start < 0 || end <= start) return [];
 
@@ -462,10 +461,8 @@ export function numberTocEntries(entries: TocEntry[]): NumberedEntry[] {
       return { chapNum: previous, title: match[2] || entry.title, anchor: entry.anchor };
     }
 
-    // Ten interludes at 0.1 apiece would land on `previous + 1` and collide with the real
-    // chapter of that number, which the app then collapses into one chapter with two versions
-    // — hiding one behind version priority. Long runs get a smaller step so they stay inside
-    // the gap; runs of nine or fewer keep the plain 0.1 spacing.
+    // Ten entries at 0.1 would land on `previous + 1` and collide with that real chapter, which
+    // the app then collapses as two versions of one. Long runs step smaller; nine or fewer don't.
     if (position === 0) step = Math.min(INTERPOLATION_STEP, 1 / (runLength(index) + 1));
     position++;
 
