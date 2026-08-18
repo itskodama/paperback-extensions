@@ -31,6 +31,7 @@ import {
   genreChipItems,
   hasNextAdvancedSearchPage,
   homeUrl,
+  matchesFilters,
   novelUrl,
   parseAdvancedSearchResults,
   parseBoostShelfCards,
@@ -65,6 +66,9 @@ const DISCOVER_LATEST_NOVELS = "latest-novels";
 const DISCOVER_LATEST_UPDATES = "latest";
 const DISCOVER_GENRES = "genres";
 
+// A 5,000-chapter novel is 100 pages; the rate limiter paces them either way, so cap the burst.
+const CHAPTER_LIST_BATCH = 8;
+
 // Falls back to fetching sequentially until a short page if the total can't be parsed
 async function fetchAllChapterListPages(slug: string): Promise<string[]> {
   const first = await fetchPage(chapterListUrl(slug, 1));
@@ -72,12 +76,19 @@ async function fetchAllChapterListPages(slug: string): Promise<string[]> {
 
   if (total !== undefined) {
     const totalPages = Math.max(1, Math.ceil(total / CHAPTER_LIST_PAGE_SIZE));
-    const rest = await Promise.all(
-      Array.from({ length: totalPages - 1 }, (_, index) =>
-        fetchPage(chapterListUrl(slug, index + 2)),
-      ),
-    );
-    return [first, ...rest];
+    const pages = [first];
+
+    for (let from = 2; from <= totalPages; from += CHAPTER_LIST_BATCH) {
+      const to = Math.min(from + CHAPTER_LIST_BATCH - 1, totalPages);
+      const batch = await Promise.all(
+        Array.from({ length: to - from + 1 }, (_, index) =>
+          fetchPage(chapterListUrl(slug, from + index)),
+        ),
+      );
+      pages.push(...batch);
+    }
+
+    return pages;
   }
 
   const pages = [first];
@@ -202,13 +213,14 @@ export class LightNovelWorldExtension implements ExtensionImpl<typeof LightNovel
     sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     const filters = query.metadata;
-    const hasFilters = !!(filters?.genresInclude?.length || filters?.genresExclude?.length);
     const title = query.title.trim();
 
-    // advanced-search has no free-text param, so a plain title search prefers the API
-    if (!hasFilters && title) {
+    // Only the API answers free text and only /advanced-search/ answers filters, so a query
+    // carrying both takes the API and re-applies the filters here rather than dropping them.
+    if (title) {
       const response = await fetchJson<SearchApiResponse>(searchUrl(title));
-      return { items: response.novels.map(toSearchResultItem) };
+      const matching = response.novels.filter((novel) => matchesFilters(novel, filters));
+      return { items: matching.map(toSearchResultItem) };
     }
 
     const page = typeof metadata === "number" ? metadata : 1;

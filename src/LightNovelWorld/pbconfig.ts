@@ -5,8 +5,12 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 
 export default {
   name: "LightNovelWorld",
-  description: "Read light novels from lightnovelworld.org.",
-  version: "1.0.0-alpha.1",
+  // The only surface visible before install; see docs/LightNovelWorld/status.md.
+  description:
+    "DEPRECATED — lightnovelworld.org is merging into chikari.moe, and this extension is no " +
+    "longer maintained or supported. It still works for now, and will be removed once the site " +
+    "goes offline. Read light novels from lightnovelworld.org.",
+  version: "1.0.0-alpha.2",
   icon: "icon.png",
   language: "en",
   contentRating: ContentRating.MATURE,
@@ -15,7 +19,10 @@ export default {
     SourceIntents.SEARCH_RESULT_PROVIDING,
     SourceIntents.CHAPTER_PROVIDING,
   ],
-  badges: [],
+  badges: [
+    { label: "Deprecated", backgroundColor: "#991B1B", textColor: "#ffffff" },
+    { label: "Novel", backgroundColor: "#15803d", textColor: "#ffffff" },
+  ],
   developers: [
     {
       name: "Kodama",

@@ -10,6 +10,8 @@ import {
   DEFAULT_SORT,
   advancedSearchUrl,
   findSortOption,
+  genreChipItems,
+  matchesFilters,
   parseChapterCards,
   parseChapterContent,
   parseNovelDetails,
@@ -202,4 +204,68 @@ void test("toFeaturedItem carries chapter count and status as free info items", 
     { symbol: "book.fill", text: "250 ch" },
     { symbol: "checkmark.circle.fill", text: "Completed" },
   ]);
+});
+
+// The API spells genres with spaces and the filter vocabulary with hyphens; confirmed live
+// against /api/search/, where "Slice of Life" and "Martial Arts" both come back spaced.
+function apiNovel(overrides: Partial<SearchNovelJson> = {}): SearchNovelJson {
+  return {
+    id: 1,
+    title: "A Novel",
+    author: "Author",
+    slug: "a-novel",
+    status: "Ongoing",
+    genres: ["Action", "Slice of Life", "Martial Arts"],
+    cover_path: "/covers/a.jpg",
+    latest_chapter_number: 420,
+    ...overrides,
+  };
+}
+
+void test("matchesFilters bridges the hyphen/space spelling difference", () => {
+  assert.equal(matchesFilters(apiNovel(), { genresInclude: ["Slice-of-Life"] }), true);
+  assert.equal(matchesFilters(apiNovel(), { genresInclude: ["Martial-Arts"] }), true);
+  assert.equal(matchesFilters(apiNovel(), { genresInclude: ["Romance"] }), false);
+});
+
+void test("matchesFilters defaults included genres to AND and honours OR", () => {
+  const both = { genresInclude: ["Action", "Romance"] };
+  assert.equal(matchesFilters(apiNovel(), both), false);
+  assert.equal(matchesFilters(apiNovel(), { ...both, genreLogic: "OR" }), true);
+});
+
+void test("matchesFilters excludes on any excluded genre", () => {
+  assert.equal(matchesFilters(apiNovel(), { genresExclude: ["Romance"] }), true);
+  assert.equal(matchesFilters(apiNovel(), { genresExclude: ["Slice-of-Life"] }), false);
+});
+
+void test("matchesFilters compares status case-insensitively", () => {
+  assert.equal(matchesFilters(apiNovel(), { status: "ongoing" }), true);
+  assert.equal(matchesFilters(apiNovel(), { status: "completed" }), false);
+});
+
+void test("matchesFilters reads the API's own chapter_range spellings", () => {
+  const chapters = (n: number) => apiNovel({ latest_chapter_number: n });
+
+  assert.equal(matchesFilters(chapters(20), { chapterRange: "<50" }), true);
+  assert.equal(matchesFilters(chapters(60), { chapterRange: "<50" }), false);
+  assert.equal(matchesFilters(chapters(60), { chapterRange: "50-100" }), true);
+  assert.equal(matchesFilters(chapters(120), { chapterRange: "50-100" }), false);
+  assert.equal(matchesFilters(chapters(2000), { chapterRange: ">1000" }), true);
+  assert.equal(matchesFilters(chapters(900), { chapterRange: ">1000" }), false);
+});
+
+void test("matchesFilters passes everything through when no filters were set", () => {
+  assert.equal(matchesFilters(apiNovel(), undefined), true);
+  assert.equal(matchesFilters(apiNovel(), {}), true);
+});
+
+void test("genreChipItems replaces every hyphen, not just the first", () => {
+  const names = genreChipItems().map((item) =>
+    item.type === "genresCarouselItem" ? item.name : "",
+  );
+
+  assert.ok(names.includes("Slice of Life"), "Slice-of-Life still renders with a stray hyphen");
+  assert.ok(names.includes("School Life"));
+  assert.ok(!names.some((name) => name.includes("-")));
 });

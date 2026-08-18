@@ -150,7 +150,8 @@ function contentRatingFor(genres: string[]): ContentRating {
 export function genreChipItems(): DiscoverSectionItem[] {
   return DISCOVER_GENRES.map((name) => ({
     type: "genresCarouselItem",
-    name: name.replace("-", " "),
+    // replaceAll, not replace: "Slice-of-Life" has two hyphens and rendered "Slice of-Life"
+    name: name.replaceAll("-", " "),
     searchQuery: { title: "", metadata: { genresInclude: [name] } },
     contentRating: ContentRating.MATURE,
   }));
@@ -423,6 +424,57 @@ export type SearchNovelJson = {
 };
 
 export type SearchApiResponse = { novels: SearchNovelJson[] };
+
+// The API spells genres with spaces, the filter vocabulary with hyphens; statuses differ in case.
+function sameTerm(a: string, b: string): boolean {
+  const flatten = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[\s-]+/g, " ")
+      .trim();
+  return flatten(a) === flatten(b);
+}
+
+function inChapterRange(chapters: number, range: string): boolean {
+  if (range.startsWith("<")) return chapters < Number(range.slice(1));
+  if (range.startsWith(">")) return chapters > Number(range.slice(1));
+
+  const [low, high] = range.split("-").map(Number);
+  return low !== undefined && high !== undefined && chapters >= low && chapters <= high;
+}
+
+// Applied over API results, which /advanced-search/'s filters cannot reach when a title is set.
+export function matchesFilters(
+  novel: SearchNovelJson,
+  filters: LightNovelWorldSearchMetadata | undefined,
+): boolean {
+  if (!filters) return true;
+
+  const genres = novel.genres ?? [];
+
+  const include = filters.genresInclude ?? [];
+  if (include.length > 0) {
+    const matched = (wanted: string) => genres.some((genre) => sameTerm(genre, wanted));
+    // The site's own default is AND.
+    const ok = filters.genreLogic === "OR" ? include.some(matched) : include.every(matched);
+    if (!ok) return false;
+  }
+
+  for (const excluded of filters.genresExclude ?? []) {
+    if (genres.some((genre) => sameTerm(genre, excluded))) return false;
+  }
+
+  if (filters.status && !sameTerm(novel.status ?? "", filters.status)) return false;
+
+  if (filters.chapterRange !== undefined) {
+    const chapters = novel.latest_chapter_number;
+    if (typeof chapters !== "number" || !inChapterRange(chapters, filters.chapterRange)) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 export function toSearchResultItem(novel: SearchNovelJson): SearchResultItem {
   return {

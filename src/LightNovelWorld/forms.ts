@@ -57,7 +57,7 @@ export class LightNovelWorldSearchForm extends AdvancedSearchForm {
           title: "Genres",
           layout: "flow",
           value: this.genreState,
-          items: GENRES.map((genre) => ({ id: genre, title: genre.replace("-", " ") })),
+          items: GENRES.map((genre) => ({ id: genre, title: genre.replaceAll("-", " ") })),
           allowExclusion: true,
           allowEmptySelection: true,
           onValueChange: Application.Selector(
