@@ -227,6 +227,8 @@ export class LNORIExtension implements ExtensionImpl<typeof LNORIConfig> {
       }),
     );
 
+    // Probably inert (chapters.md), but it is the only cross-volume order signal — chapNum
+    // restarts per volume. Kept until someone checks on a device.
     const chapters = perVolume.flat();
     chapters.forEach((chapter, index) => {
       chapter.sortingIndex = index;
