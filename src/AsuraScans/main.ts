@@ -68,6 +68,7 @@ import {
   rankedNovelSearchResults,
   rankedSearchResults,
 } from "./search";
+import { hidesEarlyAccess } from "./settings";
 import { AsuraScansSettingsForm } from "./settingsForm";
 import {
   browseUrl,
@@ -178,7 +179,7 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
 
     // The remaining sections are all rendered into the homepage
     const page = await fetchPage(homeUrl());
-    return { items: parseDiscoverItems(page.html, section.id) };
+    return { items: parseDiscoverItems(page.html, section.id, hidesEarlyAccess()) };
   }
 
   async getAdvancedSearchForm(
@@ -309,7 +310,7 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     }
 
     const page = await fetchPage(seriesUrl(sourceManga.mangaId));
-    return parseChapterList(page.html, sourceManga);
+    return parseChapterList(page.html, sourceManga, hidesEarlyAccess());
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {

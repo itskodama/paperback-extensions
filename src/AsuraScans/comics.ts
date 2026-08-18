@@ -21,7 +21,7 @@ import {
   readString,
   type Island,
 } from "./astro.ts";
-import { alternativeTitles, ratingFraction } from "./fields.ts";
+import { alternativeTitles, isEarlyAccess, ratingFraction } from "./fields.ts";
 import { ASURA_DOMAIN, statusLabel } from "./models.ts";
 import { seriesUrl } from "./urls.ts";
 
@@ -69,7 +69,11 @@ export function parseSeriesDetails(html: string, mangaId: string): SourceManga {
   };
 }
 
-export function parseChapterList(html: string, sourceManga: SourceManga): Chapter[] {
+export function parseChapterList(
+  html: string,
+  sourceManga: SourceManga,
+  hideEarlyAccess = false,
+): Chapter[] {
   const island = findIsland(html, SERIES_CHAPTERS_KEYS);
   const publicUrl = readString(island, "publicUrl");
   const chapters: Chapter[] = [];
@@ -77,6 +81,7 @@ export function parseChapterList(html: string, sourceManga: SourceManga): Chapte
   for (const entry of readArray(island, "chapters")) {
     const chapNum = readNumber(entry, "number");
     if (chapNum === undefined) continue;
+    if (hideEarlyAccess && isEarlyAccess(entry)) continue;
 
     const additionalInfo: Record<string, string> = {};
     if (publicUrl) additionalInfo.publicUrl = publicUrl;

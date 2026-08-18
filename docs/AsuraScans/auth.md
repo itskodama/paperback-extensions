@@ -81,6 +81,24 @@ states a reader can act on — `canceled`/`cancelled` as "does not renew", `past
 "payment overdue", `trialing` as "trial". Everything else, `active` and any state Asura adds
 later included, shows just the tier.
 
+## Hiding early access
+
+An optional setting drops early-access chapters from series lists and Latest Updates. It is gated
+on `has_subscription`, so it does nothing for an account that can actually open them — hiding
+chapters a user is paying for would be a bug, not a preference.
+
+The marker is `is_premium || early_access_until in the future`, read from the same fields on both
+the series island and the updates feed, through one shared `isEarlyAccess`. Verified live across
+307 chapters of three series: the two fields agree exactly, and ORing them only guards against one
+going missing.
+
+Default off. Locked chapters otherwise stay listed and explain themselves when opened, which
+`docs/paperback/chapters.md` prefers to hiding them — a shorter-looking series is its own
+confusion. The setting exists because that argument does not convince everyone.
+
+Novels are not covered: their chapters lock behind shard purchases rather than a timed window, and
+there is no subscription that unlocks them wholesale.
+
 ## Renewal
 
 `refreshSession` swaps the refresh token for a new pair. Asura **rotates** the refresh token on

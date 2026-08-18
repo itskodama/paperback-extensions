@@ -14,7 +14,11 @@ import {
   unwrapEnvelope,
   type AsuraSession,
 } from "../../src/AsuraScans/auth.ts";
-import { chapterIsLocked, parseChapterApiPayload } from "../../src/AsuraScans/comics.ts";
+import {
+  chapterIsLocked,
+  parseChapterApiPayload,
+  parseChapterList,
+} from "../../src/AsuraScans/comics.ts";
 import { formatCount } from "../../src/AsuraScans/format.ts";
 import { DEFAULT_SORT, SORT_OPTIONS } from "../../src/AsuraScans/models.ts";
 import {
@@ -780,4 +784,30 @@ void test("subscriptionSubtitle ignores the status entirely without a subscripti
   const none = { hasSubscription: false, subscriptionStatus: "canceled" } as AsuraSession;
 
   assert.equal(subscriptionSubtitle(none), "No active subscription");
+});
+
+// The series island and the updates feed spell the markers identically; both are ORed so one
+// field going missing cannot hide a lock. Verified live: is_premium is true exactly when
+// early_access_until is in the future, across 307 chapters of three series.
+const SERIES_CHAPTERS = `
+<astro-island props="{&quot;publicUrl&quot;:[0,&quot;/comics/test&quot;],&quot;chapters&quot;:[1,[{&quot;number&quot;:[0,3],&quot;is_premium&quot;:[0,true],&quot;early_access_until&quot;:[0,&quot;2099-01-01T00:00:00Z&quot;]},{&quot;number&quot;:[0,2],&quot;is_premium&quot;:[0,false],&quot;early_access_until&quot;:[0,&quot;2020-01-01T00:00:00Z&quot;]},{&quot;number&quot;:[0,1],&quot;is_premium&quot;:[0,false]}]]}"></astro-island>
+`;
+
+void test("parseChapterList lists every chapter, early access included, by default", () => {
+  const chapters = parseChapterList(SERIES_CHAPTERS, testChapter.sourceManga);
+
+  assert.deepEqual(
+    chapters.map((chapter) => chapter.chapNum),
+    [3, 2, 1],
+  );
+});
+
+void test("parseChapterList drops only the still-locked chapter when asked to", () => {
+  const chapters = parseChapterList(SERIES_CHAPTERS, testChapter.sourceManga, true);
+
+  // 2 has a past early_access_until and 1 has none, so both are free and stay.
+  assert.deepEqual(
+    chapters.map((chapter) => chapter.chapNum),
+    [2, 1],
+  );
 });

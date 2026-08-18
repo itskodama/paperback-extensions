@@ -3,7 +3,7 @@
 
 /** Reading typed values out of an Astro island's props. */
 
-import { readNumber, readString, readStringArray, type Island } from "./astro.ts";
+import { readBoolean, readNumber, readString, readStringArray, type Island } from "./astro.ts";
 
 const ASURA_RATING_MAX = 10;
 
@@ -25,6 +25,12 @@ export function isFutureDate(value: string | undefined): boolean {
   if (!value) return false;
   const date = new Date(value);
   return !Number.isNaN(date.getTime()) && date.getTime() > Date.now();
+}
+
+// Both markers agree on every chapter sampled; ORing them keeps one field's absence from hiding a
+// lock. Series pages and the updates feed spell them identically.
+export function isEarlyAccess(entry: Island): boolean {
+  return readBoolean(entry, "is_premium") || isFutureDate(readString(entry, "early_access_until"));
 }
 
 // A raw genre name is not a legal id, and throws when the value is used. See forms.md.

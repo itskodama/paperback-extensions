@@ -15,7 +15,7 @@ import {
   readString,
   type Island,
 } from "./astro.ts";
-import { alternativeTitles, isFutureDate, isNovel } from "./fields.ts";
+import { alternativeTitles, isEarlyAccess, isNovel } from "./fields.ts";
 import { type InfoItem, formatCount, formatRating, shortSummary, titleCase } from "./format.ts";
 import { STATUS_OPTIONS, TYPE_OPTIONS, statusLabel } from "./models.ts";
 
@@ -113,7 +113,7 @@ function featuredItems(islands: Island[]): DiscoverSectionItem[] {
 
 // Asura groups the feed by series and pins one entry to the top, so it is neither
 // one entry per series nor in publish order
-function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
+function latestUpdateItems(islands: Island[], hideEarlyAccess: boolean): DiscoverSectionItem[] {
   const chapters = discoverEntries(islands, "chapters", "comic_slug")
     .flatMap((chapter) => {
       const mangaId = readString(chapter, "comic_slug");
@@ -132,12 +132,12 @@ function latestUpdateItems(islands: Island[]): DiscoverSectionItem[] {
   const items: DiscoverSectionItem[] = [];
 
   for (const { chapter, mangaId, chapNum, publishDate } of chapters) {
+    if (hideEarlyAccess && isEarlyAccess(chapter)) continue;
     if (seen.has(mangaId)) continue;
     seen.add(mangaId);
 
     const name = readString(chapter, "name") ?? String(chapNum);
-    const earlyAccess =
-      readBoolean(chapter, "is_premium") || isFutureDate(readString(chapter, "early_access_until"));
+    const earlyAccess = isEarlyAccess(chapter);
 
     items.push({
       type: "chapterUpdatesCarouselItem",
@@ -174,7 +174,11 @@ function seriesCarouselItems(entries: Island[]): DiscoverSectionItem[] {
   });
 }
 
-export function parseDiscoverItems(html: string, sectionId: string): DiscoverSectionItem[] {
+export function parseDiscoverItems(
+  html: string,
+  sectionId: string,
+  hideEarlyAccess = false,
+): DiscoverSectionItem[] {
   const islands = extractIslands(html);
 
   switch (sectionId) {
@@ -185,7 +189,7 @@ export function parseDiscoverItems(html: string, sectionId: string): DiscoverSec
         discoverEntries(islands, "items", "latest_chapter_number", "title"),
       );
     case DISCOVER_LATEST_UPDATES:
-      return latestUpdateItems(islands);
+      return latestUpdateItems(islands, hideEarlyAccess);
     default:
       return [];
   }

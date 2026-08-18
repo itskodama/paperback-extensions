@@ -6,12 +6,14 @@ import {
   Form,
   LabelRow,
   Section,
+  ToggleRow,
   WebViewRow,
   type Cookie,
   type FormSectionElement,
 } from "@paperback/types";
 
 import { getSession, loginWithCookies, logout, type AsuraSession } from "./auth.ts";
+import { STATE_KEYS, canReadEarlyAccess, hideEarlyAccessEnabled } from "./settings.ts";
 import { loginUrl } from "./urls.ts";
 
 // `status` is billing lifecycle, not access: auto-renew off reports `canceled` while premium
@@ -43,7 +45,36 @@ export class AsuraScansSettingsForm extends Form {
     // Read live, not cached at construction, so a refresh/logout elsewhere is reflected
     const session = getSession();
 
-    return session ? [this.accountSection(session)] : [this.loginSection()];
+    return [session ? this.accountSection(session) : this.loginSection(), this.chaptersSection()];
+  }
+
+  private chaptersSection(): FormSectionElement<unknown> {
+    return Section(
+      {
+        id: "chapters",
+        header: "Chapters",
+        footer: canReadEarlyAccess()
+          ? "Your subscription can open early access chapters, so they stay listed."
+          : "Early access chapters stay in the list until they unlock, where opening one explains " +
+            "when it will. Turn this on to leave them out of series and Latest Updates instead.",
+      },
+      [
+        ToggleRow("hide-early-access", {
+          title: "Hide early access chapters",
+          value: hideEarlyAccessEnabled(),
+          onValueChange: Application.Selector(
+            this as AsuraScansSettingsForm,
+            "handleHideEarlyAccessChange",
+          ),
+        }),
+      ],
+    );
+  }
+
+  async handleHideEarlyAccessChange(value: boolean): Promise<void> {
+    Application.setState(value, STATE_KEYS.hideEarlyAccess);
+    // The footer above depends on it, and a subscription makes the toggle inert.
+    this.reloadForm();
   }
 
   private accountSection(session: AsuraSession): FormSectionElement<unknown> {
