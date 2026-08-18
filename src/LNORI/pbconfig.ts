@@ -7,7 +7,7 @@ export default {
   name: "LNORI",
   description:
     "Read light novels from lnori.com. Enable 'Chapters Unique by Volume' under Manage Version Priority for correct chapter lists.",
-  version: "1.0.0-alpha.3",
+  version: "1.0.0-alpha.4",
   icon: "icon.png",
   language: "en",
   contentRating: ContentRating.MATURE,
