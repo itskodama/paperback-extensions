@@ -10,7 +10,7 @@ export default {
     "DEPRECATED — lightnovelworld.org is merging into chikari.moe, and this extension is no " +
     "longer maintained or supported. It still works for now, and will be removed once the site " +
     "goes offline. Read light novels from lightnovelworld.org.",
-  version: "1.0.0-alpha.1",
+  version: "1.0.0-alpha.2",
   icon: "icon.png",
   language: "en",
   contentRating: ContentRating.MATURE,
