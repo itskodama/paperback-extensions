@@ -4,9 +4,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { ContentRating, type Chapter } from "@paperback/types";
+import { ContentRating, type Chapter, type Cookie } from "@paperback/types";
 
 import {
+  asuraCookieValue,
   buildSession,
   isSessionExpired,
   isValidSession,
@@ -15,24 +16,34 @@ import {
 } from "../../src/AsuraScans/auth.ts";
 import {
   chapterIsLocked,
-  isNovelMangaId,
-  mergeRankedResults,
+  parseChapterApiPayload,
+  parseChapterList,
+} from "../../src/AsuraScans/comics.ts";
+import { formatCount } from "../../src/AsuraScans/format.ts";
+import { DEFAULT_SORT, SORT_OPTIONS } from "../../src/AsuraScans/models.ts";
+import {
   novelCatalogEntry,
   novelChapterIsLocked,
-  novelChapterUrl,
-  novelSearchUrl,
-  novelSlugFromMangaId,
   novelToSourceManga,
-  novelUrl,
-  parseChapterApiPayload,
   parseNovelCatalog,
   parseNovelChapterApiPayload,
   parseNovelChapterDetails,
   parseNovelChapterList,
+} from "../../src/AsuraScans/novels.ts";
+import {
+  type RankedSearchResult,
+  mergeRankedResults,
   parseNovelSearchResults,
   rankedSearchResults,
-  type RankedSearchResult,
-} from "../../src/AsuraScans/parser.ts";
+} from "../../src/AsuraScans/search.ts";
+import { subscriptionSubtitle } from "../../src/AsuraScans/settingsForm.ts";
+import {
+  isNovelMangaId,
+  novelChapterUrl,
+  novelSearchUrl,
+  novelSlugFromMangaId,
+  novelUrl,
+} from "../../src/AsuraScans/urls.ts";
 
 const LOCKED_WITH_UNLOCK_TIME = `
 <astro-island props="{&quot;pages&quot;:[1,[]],&quot;chapterId&quot;:[0,173],&quot;isLocked&quot;:[0,true],&quot;isPremium&quot;:[0,true],&quot;unlockTime&quot;:[0,&quot;2026-07-28T23:10:15Z&quot;]}"></astro-island>
@@ -356,6 +367,39 @@ void test("novelToSourceManga maps contentType, genre ids, rating fraction, and 
   );
 });
 
+// A Tag.id outside the bridge's charset throws on device the moment the series page opens,
+// so the genre_ids fallback can never be a raw genre name. See docs/paperback/forms.md.
+void test("novelToSourceManga sanitizes the genre tag id when genre_ids is short", () => {
+  const tags = novelToSourceManga({
+    ...NOVEL_ENTRY,
+    genres: ["Psychological", "Slice of Life", "Sci-Fi & Fantasy"],
+    genre_ids: [7],
+  }).mangaInfo.tagGroups?.[0]?.tags;
+
+  assert.deepEqual(
+    tags?.map((t) => t.id),
+    ["7", "slice-of-life", "sci-fi-&-fantasy"],
+  );
+  // The display text keeps the site's own spelling either way.
+  assert.deepEqual(
+    tags?.map((t) => t.title),
+    ["Psychological", "Slice of Life", "Sci-Fi & Fantasy"],
+  );
+});
+
+void test("novelToSourceManga never emits an empty tag id", () => {
+  const tags = novelToSourceManga({
+    ...NOVEL_ENTRY,
+    genres: ["!!!"],
+    genre_ids: [],
+  }).mangaInfo.tagGroups?.[0]?.tags;
+
+  assert.deepEqual(
+    tags?.map((t) => t.id),
+    ["unknown"],
+  );
+});
+
 void test("isNovelMangaId/novelSlugFromMangaId distinguish a novel id from a plain comic slug", () => {
   assert.equal(isNovelMangaId("novel:test-novel"), true);
   assert.equal(isNovelMangaId("test-novel"), false);
@@ -526,6 +570,29 @@ void test("parseNovelSearchResults falls back total to entries.length when meta 
   assert.equal(total, 2);
 });
 
+// `received` is what the offset advances by. Paging on items.length would stall on any page
+// whose entries were dropped for having no slug, re-requesting the same offset forever.
+void test("parseNovelSearchResults counts entries the API sent, not entries that parsed", () => {
+  const { items, received, total } = parseNovelSearchResults({
+    data: [{ slug: "a", title: "A" }, { title: "no slug" }, { slug: "c", title: "C" }],
+    meta: { total: 30 },
+  });
+
+  assert.equal(items.length, 2);
+  assert.equal(received, 3);
+  assert.equal(total, 30);
+});
+
+void test("parseNovelSearchResults reports zero received for a page with nothing usable", () => {
+  const { items, received } = parseNovelSearchResults({
+    data: [{ title: "no slug" }, { title: "also no slug" }],
+    meta: { total: 30 },
+  });
+
+  assert.equal(items.length, 0);
+  assert.equal(received, 2);
+});
+
 void test("parseNovelSearchResults skips an entry with no slug rather than throwing", () => {
   const { items } = parseNovelSearchResults({ data: [{ title: "No Slug" }], meta: { total: 1 } });
   assert.equal(items.length, 0);
@@ -606,5 +673,141 @@ void test("mergeRankedResults falls back to lastUpdate for 'newest' when created
   assert.deepEqual(
     items.map((i) => i.title),
     ["Novel", "Comic"],
+  );
+});
+
+// The web-view login reads the tokens straight out of the captured jar, so the jar is the whole
+// trust boundary: anything from another host must not be mistaken for an Asura session.
+function cookie(name: string, value: string, domain = "asurascans.com"): Cookie {
+  return { name, value, domain, path: "/" };
+}
+
+void test("asuraCookieValue reads a token set on the site or a subdomain", () => {
+  const jar = [
+    cookie("refresh_token", "refresh-value"),
+    cookie("access_token", "access-value", ".www.asurascans.com"),
+  ];
+
+  assert.equal(asuraCookieValue(jar, "refresh_token"), "refresh-value");
+  assert.equal(asuraCookieValue(jar, "access_token"), "access-value");
+});
+
+void test("asuraCookieValue ignores a same-named cookie from another host", () => {
+  const jar = [
+    cookie("refresh_token", "attacker", "notasurascans.com"),
+    cookie("refresh_token", "evil", "asurascans.com.example.net"),
+  ];
+
+  assert.equal(asuraCookieValue(jar, "refresh_token"), undefined);
+});
+
+void test("asuraCookieValue percent-decodes, since the site encodes on write", () => {
+  const jar = [cookie("refresh_token", "a%2Fb%2Bc%3D")];
+
+  assert.equal(asuraCookieValue(jar, "refresh_token"), "a/b+c=");
+});
+
+void test("asuraCookieValue treats an empty cookie as absent", () => {
+  assert.equal(asuraCookieValue([cookie("refresh_token", "")], "refresh_token"), undefined);
+  assert.equal(asuraCookieValue([], "refresh_token"), undefined);
+});
+
+void test("formatCount rolls over at the point the smaller unit would print four digits", () => {
+  assert.equal(formatCount(999_499), "999K");
+  assert.equal(formatCount(999_500), "1M");
+  assert.equal(formatCount(999_499_999), "999M");
+  assert.equal(formatCount(999_500_000), "1B");
+});
+
+void test("formatCount keeps one decimal below ten and drops it above", () => {
+  assert.equal(formatCount(1_500), "1.5K");
+  assert.equal(formatCount(9_949), "9.9K");
+  assert.equal(formatCount(9_950), "10K");
+  assert.equal(formatCount(255_678), "256K");
+  assert.equal(formatCount(3_965_770), "4M");
+  assert.equal(formatCount(1_500_000_000), "1.5B");
+});
+
+void test("formatCount leaves values below a thousand alone", () => {
+  assert.equal(formatCount(0), "0");
+  assert.equal(formatCount(999), "999");
+});
+
+void test("DEFAULT_SORT is a real option and matches the site's own browse default", () => {
+  assert.ok(SORT_OPTIONS.some((option) => option.id === DEFAULT_SORT.id));
+  // Asura has no relevance sort; its /browse island reports initialOrder "update", "desc".
+  assert.equal(DEFAULT_SORT.sort, "update");
+  assert.equal(DEFAULT_SORT.direction, "desc");
+});
+
+// has_subscription is the access answer; subscription_status is billing lifecycle. Turning
+// auto-renew off reports "canceled" while premium keeps working to the end of the paid period,
+// so the raw word made a working account look broken (reported from a real account).
+void test("subscriptionSubtitle does not call a working subscription canceled", () => {
+  const premium = { hasSubscription: true, tier: "premium" } as AsuraSession;
+
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "canceled" }),
+    "Premium — does not renew",
+  );
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "cancelled" }),
+    "Premium — does not renew",
+  );
+});
+
+void test("subscriptionSubtitle says nothing extra for a healthy or unknown status", () => {
+  const premium = { hasSubscription: true, tier: "premium" } as AsuraSession;
+
+  assert.equal(subscriptionSubtitle({ ...premium, subscriptionStatus: "active" }), "Premium");
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "something_new" }),
+    "Premium",
+  );
+  assert.equal(subscriptionSubtitle(premium), "Premium");
+});
+
+void test("subscriptionSubtitle surfaces states the reader can act on", () => {
+  const premium = { hasSubscription: true, tier: "premium" } as AsuraSession;
+
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "past_due" }),
+    "Premium — payment overdue",
+  );
+  assert.equal(
+    subscriptionSubtitle({ ...premium, subscriptionStatus: "trialing" }),
+    "Premium — trial",
+  );
+});
+
+void test("subscriptionSubtitle ignores the status entirely without a subscription", () => {
+  const none = { hasSubscription: false, subscriptionStatus: "canceled" } as AsuraSession;
+
+  assert.equal(subscriptionSubtitle(none), "No active subscription");
+});
+
+// The series island and the updates feed spell the markers identically; both are ORed so one
+// field going missing cannot hide a lock. Verified live: is_premium is true exactly when
+// early_access_until is in the future, across 307 chapters of three series.
+const SERIES_CHAPTERS = `
+<astro-island props="{&quot;publicUrl&quot;:[0,&quot;/comics/test&quot;],&quot;chapters&quot;:[1,[{&quot;number&quot;:[0,3],&quot;is_premium&quot;:[0,true],&quot;early_access_until&quot;:[0,&quot;2099-01-01T00:00:00Z&quot;]},{&quot;number&quot;:[0,2],&quot;is_premium&quot;:[0,false],&quot;early_access_until&quot;:[0,&quot;2020-01-01T00:00:00Z&quot;]},{&quot;number&quot;:[0,1],&quot;is_premium&quot;:[0,false]}]]}"></astro-island>
+`;
+
+void test("parseChapterList lists every chapter, early access included, by default", () => {
+  const chapters = parseChapterList(SERIES_CHAPTERS, testChapter.sourceManga);
+
+  assert.deepEqual(
+    chapters.map((chapter) => chapter.chapNum),
+    [3, 2, 1],
+  );
+});
+
+void test("parseChapterList drops only the still-locked chapter when asked to", () => {
+  const chapters = parseChapterList(SERIES_CHAPTERS, testChapter.sourceManga, true);
+
+  // 2 has a past early_access_until and 1 has none, so both are free and stay.
+  assert.deepEqual(
+    chapters.map((chapter) => chapter.chapNum),
+    [2, 1],
   );
 });

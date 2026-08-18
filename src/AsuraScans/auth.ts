@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import type { Response } from "@paperback/types";
+import type { Cookie, Response } from "@paperback/types";
 
 import { ASURA_API } from "./models.ts";
 
@@ -135,22 +135,65 @@ async function postJson(path: string, body: object): Promise<[number, unknown]> 
   return [response.status, unwrapEnvelope(parsed)];
 }
 
-export async function login(email: string, password: string): Promise<AsuraSession> {
-  const [status, data] = await postJson("/api/auth/login", { email, password });
+// Asura's login page writes these with document.cookie, so they are not HttpOnly. See auth.md.
+const ACCESS_TOKEN_COOKIE = "access_token";
+const REFRESH_TOKEN_COOKIE = "refresh_token";
 
-  if (status === 401 || status === 403 || status === 422) {
-    throw new Error("Incorrect email or password.");
+export function asuraCookieValue(cookies: Cookie[], name: string): string | undefined {
+  for (const cookie of cookies) {
+    const domain = cookie.domain.replace(/^\./, "").toLowerCase();
+    const onAsura = domain === "asurascans.com" || domain.endsWith(".asurascans.com");
+    if (onAsura && cookie.name === name && cookie.value.length > 0) {
+      return decodeURIComponent(cookie.value);
+    }
   }
-  if (status < 200 || status >= 300) {
-    throw new Error(`Asura Scans returned HTTP ${status} for login`);
-  }
-
-  const session = buildSession(data as AuthResponse);
-  saveSession(session);
-  return session;
+  return undefined;
 }
 
+// Only the refresh response states the real expiry, username and tier. See auth.md.
+export async function loginWithCookies(cookies: Cookie[]): Promise<AsuraSession> {
+  const refreshToken = asuraCookieValue(cookies, REFRESH_TOKEN_COOKIE);
+  if (!refreshToken) {
+    throw new Error(
+      "No Asura Scans session was captured. Sign in fully, then close the page with Done.",
+    );
+  }
+
+  const accessToken = asuraCookieValue(cookies, ACCESS_TOKEN_COOKIE) ?? "";
+
+  try {
+    return await refreshSession({
+      accessToken,
+      refreshToken,
+      // Already expired: the next request renews rather than trusting the cookie's own claim.
+      expiresAt: new Date(0).toISOString(),
+      username: "",
+      hasSubscription: false,
+    });
+  } catch {
+    // refreshSession's "session expired" wording reads as nonsense to someone who just did.
+    throw new Error("Asura Scans did not accept that sign-in. Please try logging in again.");
+  }
+}
+
+// Asura rotates the refresh token, so a second concurrent renewal would present a spent one.
+let inFlightRefresh: Promise<AsuraSession> | undefined;
+
 export async function refreshSession(session: AsuraSession): Promise<AsuraSession> {
+  const pending = inFlightRefresh;
+  if (pending) return pending;
+
+  const renewal = requestRefresh(session);
+  inFlightRefresh = renewal;
+
+  try {
+    return await renewal;
+  } finally {
+    inFlightRefresh = undefined;
+  }
+}
+
+async function requestRefresh(session: AsuraSession): Promise<AsuraSession> {
   const [status, data] = await postJson("/api/auth/refresh", {
     refresh_token: session.refreshToken,
   });

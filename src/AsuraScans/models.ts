@@ -72,26 +72,26 @@ export const TYPE_OPTIONS: Tag[] = [
 // one flat list, so field and direction are combined into a single option each
 export type SortOption = { id: string; label: string; sort: string; direction: string };
 
-const TITLE_ASC: SortOption = {
-  id: "title-asc",
-  label: "Title — A to Z",
-  sort: "name",
-  direction: "asc",
+const LATEST_UPDATE: SortOption = {
+  id: "update",
+  label: "Latest Update",
+  sort: "update",
+  direction: "desc",
 };
 
 export const SORT_OPTIONS: SortOption[] = [
-  TITLE_ASC,
-  { id: "title-desc", label: "Title — Z to A", sort: "name", direction: "desc" },
-  { id: "update", label: "Latest Update", sort: "update", direction: "desc" },
+  LATEST_UPDATE,
   { id: "popular", label: "Popularity", sort: "popular", direction: "desc" },
   { id: "rating-desc", label: "Rating — High to Low", sort: "rating", direction: "desc" },
   { id: "rating-asc", label: "Rating — Low to High", sort: "rating", direction: "asc" },
   { id: "newest", label: "Newest", sort: "newest", direction: "desc" },
   { id: "oldest", label: "Oldest", sort: "newest", direction: "asc" },
+  { id: "title-asc", label: "Title — A to Z", sort: "name", direction: "asc" },
+  { id: "title-desc", label: "Title — Z to A", sort: "name", direction: "desc" },
 ];
 
-// The default when the user has not chosen a sort
-export const DEFAULT_SORT = TITLE_ASC;
+// Asura has no relevance sort; update/desc is what its own /browse defaults to, search included.
+export const DEFAULT_SORT = LATEST_UPDATE;
 
 // The novel search API's sort keywords differ from comics' own SORT_OPTIONS[].sort values —
 // confirmed via Asura's own BrowseFilters.js; order/direction is shared as-is

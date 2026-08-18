@@ -21,6 +21,7 @@ export class MainInterceptor extends PaperbackInterceptor {
     return request;
   }
 
+  // Required: interceptResponse is abstract on PaperbackInterceptor, so this cannot be dropped.
   override async interceptResponse(
     request: Request,
     response: Response,
@@ -42,7 +43,11 @@ function headerValue(headers: Record<string, string>, name: string): string | un
 
 function resolveLocation(location: string, base: string): string {
   if (location.startsWith("http://") || location.startsWith("https://")) return location;
-  if (location.startsWith("/")) return `${ASURA_DOMAIN}${location}`;
+  if (location.startsWith("/")) {
+    // The redirecting host, which after an absolute redirect off-site is no longer ours.
+    const origin = /^https?:\/\/[^/]+/.exec(base)?.[0] ?? ASURA_DOMAIN;
+    return `${origin}${location}`;
+  }
   return `${base.slice(0, base.lastIndexOf("/") + 1)}${location}`;
 }
 
