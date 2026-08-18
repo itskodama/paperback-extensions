@@ -41,11 +41,11 @@ import type MangaBakaConfig from "./pbconfig";
 import { collapseReadActions, progressChapter, today } from "./progress";
 import {
   autoCompleteEnabled,
-  MangaBakaSettingsForm,
   recordCryptoSupport,
   recordSyncStatus,
   titlePreference,
-} from "./settingsForm";
+} from "./settings";
+import { MangaBakaSettingsForm } from "./settingsForm";
 import { MangaBakaTrackingForm } from "./trackingForm";
 import { BROWSE_SORT, DEFAULT_SORT, LIBRARY_STATES, SEARCH_PAGE_SIZE, SORT_OPTIONS } from "./types";
 import { searchPath } from "./urls";
@@ -79,20 +79,12 @@ export class MangaBakaExtension implements ExtensionImpl<typeof MangaBakaConfig>
     recordCryptoSupport(cryptoSupport());
   }
 
-  // -------------------------------------------------------------------------
-  // MangaProviding
-  // -------------------------------------------------------------------------
-
   async getMangaDetails(mangaId: string): Promise<SourceManga> {
     const { series, id } = await fetchSeries(mangaId);
 
     // `id` may differ from the one asked for; returning it heals a stale tracker link.
     return { ...toSourceManga(series, titlePreference()), mangaId: id };
   }
-
-  // -------------------------------------------------------------------------
-  // SearchResultsProviding
-  // -------------------------------------------------------------------------
 
   async getSearchResults(
     query: SearchQuery<MangaBakaSearchMetadata>,
@@ -135,17 +127,9 @@ export class MangaBakaExtension implements ExtensionImpl<typeof MangaBakaConfig>
     return new MangaBakaSearchForm(query);
   }
 
-  // -------------------------------------------------------------------------
-  // SettingsFormProviding
-  // -------------------------------------------------------------------------
-
   async getSettingsForm(): Promise<Form> {
     return new MangaBakaSettingsForm();
   }
-
-  // -------------------------------------------------------------------------
-  // DiscoverSectionProviding
-  // -------------------------------------------------------------------------
 
   async getDiscoverSections(): Promise<DiscoverSection[]> {
     return [
@@ -192,10 +176,6 @@ export class MangaBakaExtension implements ExtensionImpl<typeof MangaBakaConfig>
 
     return pagination?.next ? { items, metadata: page + 1 } : { items };
   }
-
-  // -------------------------------------------------------------------------
-  // MangaProgressProviding
-  // -------------------------------------------------------------------------
 
   async getMangaProgress(sourceManga: SourceManga): Promise<MangaProgress | undefined> {
     const entry = await fetchLibraryEntry(sourceManga.mangaId);
@@ -313,10 +293,6 @@ export class MangaBakaExtension implements ExtensionImpl<typeof MangaBakaConfig>
       return false; // A convenience; failing to check it must never fail the sync.
     }
   }
-
-  // -------------------------------------------------------------------------
-  // ManagedCollectionProviding
-  // -------------------------------------------------------------------------
 
   async getManagedLibraryCollections(): Promise<ManagedCollection[]> {
     return LIBRARY_STATES.map((state) => ({ id: state.id, title: state.title }));

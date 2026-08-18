@@ -239,6 +239,39 @@ export function mangaBakaCookieJar(cookies: Cookie[]): Map<string, string> {
   return jar;
 }
 
+/** One hop of the walk: request, absorb cookies, and find where it points next. */
+async function followOnce(
+  url: string,
+  jar: Map<string, string>,
+  hop: number,
+  trace: FlowTrace,
+): Promise<{ status: number; target: string | undefined }> {
+  const [response, data] = await Application.scheduleRequest({
+    url,
+    method: "GET",
+    headers: {
+      cookie: [...jar.entries()].map(([name, value]) => `${name}=${value}`).join("; "),
+      accept: "application/json, text/html",
+    },
+  });
+
+  absorbCookies(jar, response);
+
+  let target = headerValue(response.headers, "location");
+  if (target === undefined) {
+    const text = Application.arrayBufferToUTF8String(data);
+    target = redirectTargetFromBody(text);
+    if (target === undefined) trace.push(`   body[${text.length}]: ${text.slice(0, 120)}`);
+  }
+
+  trace.push(
+    `${hop + 1}. GET ${pathOf(url)} -> ${response.status}` +
+      (target === undefined ? "" : ` -> ${pathOf(target)}`),
+  );
+
+  return { status: response.status, target };
+}
+
 /** `prompt=none` answers on the redirect URI in one hop. See auth.md#the-flow. */
 export async function authorizationCode(
   cookies: Cookie[],
@@ -256,31 +289,10 @@ export async function authorizationCode(
   let url = authorizeUrl({ ...params, prompt: "none" });
 
   for (let hop = 0; hop < MAX_HOPS; hop++) {
-    const [response, data] = await Application.scheduleRequest({
-      url,
-      method: "GET",
-      headers: {
-        cookie: [...jar.entries()].map(([name, value]) => `${name}=${value}`).join("; "),
-        accept: "application/json, text/html",
-      },
-    });
-
-    absorbCookies(jar, response);
-
-    let target = headerValue(response.headers, "location");
-    if (target === undefined) {
-      const text = Application.arrayBufferToUTF8String(data);
-      target = redirectTargetFromBody(text);
-      if (target === undefined) trace.push(`   body[${text.length}]: ${text.slice(0, 120)}`);
-    }
-
-    trace.push(
-      `${hop + 1}. GET ${pathOf(url)} -> ${response.status}` +
-        (target === undefined ? "" : ` -> ${pathOf(target)}`),
-    );
+    const { status, target } = await followOnce(url, jar, hop, trace);
 
     if (target === undefined) {
-      throw new Error(`Login stopped at HTTP ${response.status}. See Login diagnostics.`);
+      throw new Error(`Login stopped at HTTP ${status}. See Login diagnostics.`);
     }
 
     if (target.startsWith(REDIRECT_URI)) {

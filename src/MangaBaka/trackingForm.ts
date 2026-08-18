@@ -20,7 +20,7 @@ import { getProfile } from "./auth";
 import { count } from "./decode";
 import { humanizeSlug, snapRating } from "./mapping";
 import { today } from "./progress";
-import { titlePreference } from "./settingsForm";
+import { titlePreference } from "./settings";
 import { primaryTitle } from "./titles";
 import {
   DEFAULT_LIBRARY_STATE,
@@ -289,9 +289,7 @@ export class MangaBakaTrackingForm extends Form {
     ]);
   }
 
-  // -------------------------------------------------------------------------
   // Handlers — named methods, since Application.Selector resolves by name
-  // -------------------------------------------------------------------------
 
   // No reloadForm(): rebuilding a SelectRow from its own onValueChange drops the pick.
   async handleStateChange(value: string[]): Promise<void> {
