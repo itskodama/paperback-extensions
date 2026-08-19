@@ -1,6 +1,6 @@
 # Icon provenance
 
-`src/Comix/static/icon.png` is generated from [`icon.svg`](icon.svg) in this directory. Recorded
+`src/Comix/static/icon-v2.png` is generated from [`icon.svg`](icon.svg) in this directory. Recorded
 here because the colours are **sampled approximations, not brand values**, and nothing else in the
 repository would say so.
 
@@ -44,5 +44,5 @@ If the real brand values ever surface, they belong here and in `icon.svg`.
 512x512 to match the other sources:
 
 ```sh
-rsvg-convert -w 512 -h 512 -o src/Comix/static/icon.png docs/Comix/icon.svg
+rsvg-convert -w 512 -h 512 -o src/Comix/static/icon-v2.png docs/Comix/icon.svg
 ```

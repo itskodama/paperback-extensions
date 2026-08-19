@@ -7,8 +7,8 @@ export default {
   name: "Comix",
   description:
     "Read comics from comix.to. Requires solving a Cloudflare check on first use; the app will prompt.",
-  version: "1.0.0-alpha.3",
-  icon: "icon.png",
+  version: "1.0.0-alpha.4",
+  icon: "icon-v2.png",
   language: "en",
   contentRating: ContentRating.MATURE,
   capabilities: [
