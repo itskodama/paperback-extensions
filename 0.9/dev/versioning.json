@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-08-18T04:00:49.545Z",
+  "buildTime": "2026-08-19T21:20:08.062Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -41,6 +41,34 @@
         }
       ],
       "id": "AsuraScans"
+    },
+    {
+      "name": "Comix",
+      "description": "Read comics from comix.to. Requires solving a Cloudflare check on first use; the app will prompt.",
+      "version": "1.0.0-alpha.1",
+      "icon": "icon.png",
+      "language": "en",
+      "contentRating": "MATURE",
+      "capabilities": [
+        4,
+        64,
+        1,
+        16
+      ],
+      "badges": [
+        {
+          "label": "Comic",
+          "textColor": "#ffffff",
+          "backgroundColor": "#1E40AF"
+        }
+      ],
+      "developers": [
+        {
+          "name": "Kodama",
+          "github": "https://github.com/itskodama"
+        }
+      ],
+      "id": "Comix"
     },
     {
       "name": "LNORI",
