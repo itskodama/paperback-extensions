@@ -14,6 +14,10 @@ import { cookieStorage, fetchText, origin } from "./network.ts";
  */
 const CAPTURE_TIMEOUT_MS = 20_000;
 
+// Chapters are walked 20 at a time, so a long series legitimately needs many
+// round trips. The budget is idle time between captured pages, not total time.
+const CHAPTER_IDLE_TIMEOUT_MS = 25_000;
+
 function injectBootstrap(html: string, bootstrap: string): string {
   const script = `<script>${bootstrap}</script>`;
   const headIndex = html.search(/<head[^>]*>/i);
@@ -55,13 +59,27 @@ async function capture<T>(pageUrl: string, bootstrap: string): Promise<T> {
  * expression awaits. `accept` returns the value to resolve with, or undefined to
  * keep waiting.
  */
-function bootstrapFor(acceptBody: string, afterAccept = "", onTimeout = "null"): string {
+function bootstrapFor(
+  acceptBody: string,
+  afterAccept = "",
+  onTimeout = "null",
+  timeoutMs: number = CAPTURE_TIMEOUT_MS,
+): string {
   return `(function () {
     var settle;
     window.__comixCapture__ = new Promise(function (resolve) { settle = resolve; });
     var done = false;
     function finish(value) { if (!done) { done = true; settle(value); } }
-    setTimeout(function () { finish(${onTimeout}); }, ${CAPTURE_TIMEOUT_MS});
+
+    // Rearmed whenever progress is made, so the budget is idle time rather than
+    // total time — a long series needs many round trips and must not be cut off
+    // mid-walk just because it is large.
+    var idle;
+    window.__comixIdle__ = function () {
+      if (idle) clearTimeout(idle);
+      idle = setTimeout(function () { finish(${onTimeout}); }, ${timeoutMs});
+    };
+    window.__comixIdle__();
     var accept = function (parsed, raw) { ${acceptBody} };
     var original = JSON.parse;
     JSON.parse = new Proxy(original, {
@@ -91,6 +109,7 @@ export async function captureChapterList(hid: string): Promise<ChapterPayload[]>
       if (window.__comixPages__[page]) return;
       window.__comixPages__[page] = raw;
 
+      window.__comixIdle__();
       if (meta.hasNext || page < (meta.lastPage || page)) { window.__comixAdvance__(page); }
       else { finish(window.__comixCollect__()); }
     `,
@@ -102,35 +121,52 @@ export async function captureChapterList(hid: string): Promise<ChapterPayload[]>
           .map(function (key) { return window.__comixPages__[key]; });
       };
 
-      // The chapter list shares the page with a comment thread that has its own
-      // pagination, so controls are located relative to the chapter links rather
-      // than by scanning every button on the page.
-      function chapterPager() {
+      // The chapter module's own footer. Scoping to it matters because the
+      // comment thread on the same page carries a second, unrelated pager.
+      function pagerButtons() {
+        var scoped = document.querySelectorAll(".mchap-foot button:not([disabled])");
+        if (scoped.length) return Array.prototype.slice.call(scoped);
+
         var link = document.querySelector('a[href*="/title/"][href*="chapter"]');
         for (var node = link; node; node = node.parentElement) {
-          var buttons = node.querySelectorAll("button:not([disabled])");
-          if (buttons.length > 1) return buttons;
+          var found = node.querySelectorAll("button:not([disabled])");
+          if (found.length > 1) return Array.prototype.slice.call(found);
         }
         return [];
+      }
+
+      // Preference order: the button naming the next page, then one labelled
+      // "next", then the trailing control — which is what a chevron-only pager
+      // with no text or aria-label leaves to go on.
+      function nextControl(buttons, page) {
+        var numbered = buttons.filter(function (button) {
+          return Number((button.textContent || "").trim()) === page + 1;
+        })[0];
+        if (numbered) return numbered;
+
+        var labelled = buttons.filter(function (button) {
+          var label = [button.getAttribute("aria-label"), button.getAttribute("title"),
+            button.textContent].filter(Boolean).join(" ");
+          return /\\bnext\\b/i.test(label);
+        })[0];
+        if (labelled) return labelled;
+
+        var last = buttons[buttons.length - 1];
+        var lastLabel = (last && last.textContent || "").trim();
+        return lastLabel === "" || isNaN(Number(lastLabel)) ? last : undefined;
       }
 
       window.__comixAdvance__ = function (page) {
         var tries = 0;
         var timer = setInterval(function () {
-          var buttons = Array.prototype.slice.call(chapterPager());
-          var next = buttons.filter(function (button) {
-            var label = [button.getAttribute("aria-label"), button.getAttribute("title"),
-              button.textContent].filter(Boolean).join(" ");
-            return /\\bnext\\b/i.test(label)
-              || Number((button.textContent || "").trim()) === page + 1;
-          })[0];
-
+          var next = nextControl(pagerButtons(), page);
           if (next) { clearInterval(timer); next.click(); }
           else if (++tries > 60) { clearInterval(timer); finish(window.__comixCollect__()); }
         }, 100);
       };
     `,
     "window.__comixCollect__()",
+    CHAPTER_IDLE_TIMEOUT_MS,
   );
 
   const raw = await capture<string[]>(`${DOMAIN}/title/${hid}`, bootstrap);
