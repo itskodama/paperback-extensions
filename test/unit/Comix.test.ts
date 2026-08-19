@@ -15,6 +15,7 @@ import {
 } from "../../src/Comix/descramble.ts";
 import type { ChapterItem, MangaDetail } from "../../src/Comix/models.ts";
 import {
+  ageToDate,
   chapterPagesRemain,
   contentRatingOf,
   extractInitialData,
@@ -373,4 +374,45 @@ void test("image signatures identify jpeg, png and webp payloads", () => {
   assert.equal(hasImageSignature(Uint8Array.from([0x89, 0x50, 0x4e, 0x47])), true);
   assert.equal(hasImageSignature(Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0])), true);
   assert.equal(hasImageSignature(Uint8Array.from([1, 2, 3, 4])), false);
+});
+
+// --- relative chapter ages ---
+
+const NOW = Date.UTC(2026, 7, 19, 12, 0, 0);
+const agedAt = (formatted: string) => ageToDate(formatted, NOW)?.toISOString();
+
+// The API never sends a timestamp, only a rendered age, so publishDate is always
+// an approximation — but the units have to be read correctly or the list sorts wrongly.
+void test("relative ages parse to approximate dates", () => {
+  assert.equal(agedAt("1h ago"), new Date(NOW - 3_600_000).toISOString());
+  assert.equal(agedAt("3d ago"), new Date(NOW - 3 * 86_400_000).toISOString());
+  assert.equal(agedAt("2w ago"), new Date(NOW - 2 * 604_800_000).toISOString());
+  assert.equal(agedAt("1y ago"), new Date(NOW - 31_557_600_000).toISOString());
+});
+
+// `m` is minutes and `mos` is months — five orders of magnitude apart, and the
+// obvious regex matches `m` first.
+void test("minutes and months are not confused", () => {
+  assert.equal(agedAt("8m ago"), new Date(NOW - 8 * 60_000).toISOString());
+  assert.equal(agedAt("6mos ago"), new Date(NOW - 6 * 2_629_800_000).toISOString());
+
+  const minutes = ageToDate("8m ago", NOW)?.getTime() ?? 0;
+  const months = ageToDate("8mos ago", NOW)?.getTime() ?? 0;
+  assert.ok(months < minutes, "8 months must be older than 8 minutes");
+});
+
+void test("an unparseable age yields no date rather than an invalid one", () => {
+  assert.equal(ageToDate(undefined), undefined);
+  assert.equal(ageToDate(""), undefined);
+  assert.equal(ageToDate("just now"), undefined);
+  assert.equal(ageToDate("ages ago"), undefined);
+});
+
+void test("a chapter carries its approximate publish date", () => {
+  const chapter = toChapter(chapterItem({ createdAtFormatted: "1h ago" }), sourceManga);
+  assert.ok(chapter.publishDate instanceof Date);
+  assert.equal(
+    "publishDate" in toChapter(chapterItem({ createdAtFormatted: "" }), sourceManga),
+    false,
+  );
 });

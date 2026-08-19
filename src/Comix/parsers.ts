@@ -168,6 +168,9 @@ export function toChapter(item: ChapterItem, sourceManga: SourceManga): Chapter 
   // the id alone.
   if (item.url) chapter.additionalInfo = { url: item.url };
 
+  const published = ageToDate(item.createdAtFormatted);
+  if (published) chapter.publishDate = published;
+
   return chapter;
 }
 
@@ -193,6 +196,38 @@ export function parsePagesPayload(payload: PagesPayload): string[] {
     .map((item) => item.url)
     .filter((url): url is string => typeof url === "string" && url.length > 0)
     .map((url) => (/^https?:\/\//.test(url) ? url : `${base}${url}`));
+}
+
+const RELATIVE_AGE = /^(\d+)\s*(s|m|h|d|w|mos|mo|y)\b/i;
+
+const AGE_UNIT_MS: Record<string, number> = {
+  s: 1000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+  w: 604_800_000,
+  mo: 2_629_800_000,
+  mos: 2_629_800_000,
+  y: 31_557_600_000,
+};
+
+/**
+ * The API only ever gives a rendered age ("1h ago", "6mos ago"), never a
+ * timestamp, so a publish date can only be approximate. Note `m` is minutes
+ * while `mos` is months — reading one as the other is off by five orders of
+ * magnitude and sorts the whole list wrongly.
+ */
+export function ageToDate(
+  formatted: string | undefined,
+  now: number = Date.now(),
+): Date | undefined {
+  const match = RELATIVE_AGE.exec(formatted?.trim() ?? "");
+  if (!match?.[1] || !match[2]) return undefined;
+
+  const unit = AGE_UNIT_MS[match[2].toLowerCase()];
+  if (unit === undefined) return undefined;
+
+  return new Date(now - Number.parseInt(match[1], 10) * unit);
 }
 
 export function seriesUrl(hid: Hid): string {

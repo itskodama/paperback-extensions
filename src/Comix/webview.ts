@@ -94,14 +94,20 @@ function bootstrapFor(
 }
 
 // Walking a long series costs one round trip per 20 chapters, so the result is
-// held briefly: re-opening a title, or the app re-reading chapters after a
-// refresh, then costs nothing instead of repeating the whole walk.
-const CHAPTER_CACHE_TTL = 300_000;
-const chapterCache = new Map<string, { fetchedAt: number; payloads: ChapterPayload[] }>();
+// reused — but only while the series page still reports the same newest chapter.
+// A plain time-based cache would swallow an upload mid-window and make a
+// pull-to-refresh appear to do nothing, which is when fresh data is most wanted.
+// Validating costs one already-cached HTML fetch and no WebView run.
+const chapterCache = new Map<string, { latestChapter: number; payloads: ChapterPayload[] }>();
 
-export async function captureChapterList(hid: string): Promise<ChapterPayload[]> {
+export async function captureChapterList(
+  hid: string,
+  latestChapter?: number,
+): Promise<ChapterPayload[]> {
   const cached = chapterCache.get(hid);
-  if (cached && Date.now() - cached.fetchedAt <= CHAPTER_CACHE_TTL) return cached.payloads;
+  if (cached && latestChapter !== undefined && cached.latestChapter === latestChapter) {
+    return cached.payloads;
+  }
 
   // The site serves 20 chapters per request and the URL carries a signature bound
   // to its exact query, so pages cannot be requested directly — the site's own
@@ -182,7 +188,7 @@ export async function captureChapterList(hid: string): Promise<ChapterPayload[]>
   if (raw.length === 0) throw new Error(`Comix: no chapters were returned for ${hid}`);
 
   const payloads = raw.map((payload) => JSON.parse(payload) as ChapterPayload);
-  chapterCache.set(hid, { fetchedAt: Date.now(), payloads });
+  if (latestChapter !== undefined) chapterCache.set(hid, { latestChapter, payloads });
   return payloads;
 }
 

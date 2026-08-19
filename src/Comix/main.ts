@@ -158,7 +158,14 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   }
 
   async getChapters(sourceManga: SourceManga): Promise<Chapter[]> {
-    const payloads = await captureChapterList(sourceManga.mangaId);
+    // The series page is cheap and already cached, and its `latestChapter` is
+    // what tells a reused chapter list from a stale one.
+    const queries = extractInitialData(await fetchText(seriesUrl(sourceManga.mangaId)));
+    const detail = findQuery(queries, (key) => key[0] === "manga" && key[1] === "detail") as
+      | MangaDetail
+      | undefined;
+
+    const payloads = await captureChapterList(sourceManga.mangaId, detail?.latestChapter);
     return payloads.flatMap((payload) => parseChapterPayload(payload, sourceManga));
   }
 
