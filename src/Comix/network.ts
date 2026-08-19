@@ -56,8 +56,16 @@ export class MainInterceptor extends PaperbackInterceptor {
     data: ArrayBuffer,
   ): Promise<ArrayBuffer> {
     if (isChallenge(response, data)) {
+      // The clearance the bypass WebView earns is bound to the User-Agent that
+      // solved the challenge. Without this header the WebView solves under a
+      // different UA than outbound requests use, the clearance never validates,
+      // and the banner reappears forever. Same trap as docs/LNORI/site-recon.md.
       throw new CloudflareError(
-        { url: DOMAIN, method: "GET" },
+        {
+          url: DOMAIN,
+          method: "GET",
+          headers: { "user-agent": await Application.getDefaultUserAgent() },
+        },
         "Comix requires a Cloudflare check",
       );
     }

@@ -45,9 +45,11 @@ const DISCOVER_SECTIONS = [
 
 export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   async initialise(): Promise<void> {
+    // Cookie storage registers before the main interceptor so the clearance is
+    // attached to a request before anything inspects the response it produces.
     rateLimiter.registerInterceptor();
-    mainInterceptor.registerInterceptor();
     cookieStorage.registerInterceptor();
+    mainInterceptor.registerInterceptor();
   }
 
   async getDiscoverSections(): Promise<DiscoverSection[]> {
@@ -151,7 +153,12 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   ): Promise<void> {
     void request;
     void localStorage;
-    cookies.forEach((cookie) => cookieStorage.setCookie(cookie));
+
+    // Only the clearance is kept: persisting the site's other cookies would
+    // outlive their session and be sent back stale.
+    cookies
+      .filter((cookie) => cookie.name === "cf_clearance")
+      .forEach((cookie) => cookieStorage.setCookie(cookie));
   }
 }
 
