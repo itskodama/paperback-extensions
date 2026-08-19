@@ -189,20 +189,27 @@ void test("decimal chapter numbers survive, including when sent as strings", () 
   assert.equal(toChapter(chapterItem({ number: "oops" }), sourceManga).chapNum, 0);
 });
 
-// An explicit `volume: undefined` is not the same as an absent key once the
-// value crosses the bridge — the app renders the former as "Volume TBA".
-void test("an unvolumed chapter omits the key entirely rather than setting undefined", () => {
+// Omitting `volume` is what makes the app render "Vol. TBA"; an unvolumed
+// chapter has to say so with an explicit 0. See src/AsuraScans/comics.ts.
+void test("an unvolumed chapter sets volume 0 rather than leaving it out", () => {
   const unvolumed = toChapter(chapterItem({ volume: 0 }), sourceManga);
-  assert.equal("volume" in unvolumed, false);
+  assert.equal(unvolumed.volume, 0);
+  assert.equal("volume" in unvolumed, true);
   assert.equal(toChapter(chapterItem({ volume: 4 }), sourceManga).volume, 4);
 });
 
-void test("absent optional fields are omitted, not set to undefined", () => {
+void test("optional fields other than volume are omitted when absent", () => {
   const bare = toChapter(
     chapterItem({ name: "", volume: 0, group: null, url: undefined }),
     sourceManga,
   );
-  assert.deepEqual(Object.keys(bare).sort(), ["chapNum", "chapterId", "langCode", "sourceManga"]);
+  assert.deepEqual(Object.keys(bare).sort(), [
+    "chapNum",
+    "chapterId",
+    "langCode",
+    "sourceManga",
+    "volume",
+  ]);
 });
 
 // The reader cannot rebuild `/title/<hid>-<slug>/<id>-chapter-<n>` from the ids,

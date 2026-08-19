@@ -155,13 +155,13 @@ export function toChapter(item: ChapterItem, sourceManga: SourceManga): Chapter 
     chapNum: Number.isFinite(chapNum) ? chapNum : 0,
   };
 
-  // Optional fields are assigned only when present. Setting them to `undefined`
-  // is not equivalent to omitting them once the value crosses the bridge: an
-  // explicit `volume: undefined` renders as "Volume TBA" rather than as no
-  // volume at all.
   if (name && name.length > 0) chapter.title = name;
-  if (item.volume && item.volume > 0) chapter.volume = item.volume;
   if (item.group?.name) chapter.version = item.group.name;
+
+  // An unvolumed chapter must say so with an explicit 0. Leaving the field out
+  // is what makes the app label the chapter "Vol. TBA" — the same trap
+  // src/AsuraScans/comics.ts records.
+  chapter.volume = item.volume && item.volume > 0 ? item.volume : 0;
 
   // The reader needs the chapter's canonical path, which carries the slug and
   // number (`/title/<hid>-<slug>/<id>-chapter-<n>`) and cannot be rebuilt from

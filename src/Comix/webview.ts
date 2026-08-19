@@ -93,7 +93,16 @@ function bootstrapFor(
   })();`;
 }
 
+// Walking a long series costs one round trip per 20 chapters, so the result is
+// held briefly: re-opening a title, or the app re-reading chapters after a
+// refresh, then costs nothing instead of repeating the whole walk.
+const CHAPTER_CACHE_TTL = 300_000;
+const chapterCache = new Map<string, { fetchedAt: number; payloads: ChapterPayload[] }>();
+
 export async function captureChapterList(hid: string): Promise<ChapterPayload[]> {
+  const cached = chapterCache.get(hid);
+  if (cached && Date.now() - cached.fetchedAt <= CHAPTER_CACHE_TTL) return cached.payloads;
+
   // The site serves 20 chapters per request and the URL carries a signature bound
   // to its exact query, so pages cannot be requested directly — the site's own
   // pagination control has to be driven. Whatever has been captured is always
@@ -171,7 +180,10 @@ export async function captureChapterList(hid: string): Promise<ChapterPayload[]>
 
   const raw = await capture<string[]>(`${DOMAIN}/title/${hid}`, bootstrap);
   if (raw.length === 0) throw new Error(`Comix: no chapters were returned for ${hid}`);
-  return raw.map((payload) => JSON.parse(payload) as ChapterPayload);
+
+  const payloads = raw.map((payload) => JSON.parse(payload) as ChapterPayload);
+  chapterCache.set(hid, { fetchedAt: Date.now(), payloads });
+  return payloads;
 }
 
 export async function capturePageList(chapterPath: string): Promise<PagesPayload> {

@@ -1,6 +1,6 @@
 # Icon provenance
 
-`src/Comix/static/icon.png` is generated from [`icon.svg`](icon.svg) in this directory. Recorded
+`src/Comix/static/icon-v3.png` is generated from [`icon.svg`](icon.svg) in this directory. Recorded
 here because the colours are **sampled approximations, not brand values**, and nothing else in the
 repository would say so.
 
@@ -53,10 +53,24 @@ margins rather than by eye:
 If the artwork is ever replaced, re-measure — the offset is specific to these paths, not a general
 correction.
 
+## The filename is a cache key
+
+The app caches icons **by URL**, and that cache survives removing and re-adding the repository. A
+version bump refetches the manifest and the bundle but not an asset whose URL is unchanged, so the
+only way to make a changed icon appear is to change its filename.
+
+That has a sharp edge: reverting to a previously-used name serves the **old cached bytes**, not the
+new file. `icon.png` was the AsuraScans placeholder in alpha.1, so renaming back to it in alpha.7
+resurrected that placeholder. Hence `icon-v3.png`.
+
+Pick the next unused suffix on every icon change during development. Before a release reaches
+`0.9/stable` the file can be renamed back to `icon.png`, since those installs have no cache entry
+for it.
+
 ## Regenerating
 
 512x512 to match the other sources:
 
 ```sh
-rsvg-convert -w 512 -h 512 -o src/Comix/static/icon.png docs/Comix/icon.svg
+rsvg-convert -w 512 -h 512 -o src/Comix/static/icon-v3.png docs/Comix/icon.svg
 ```
