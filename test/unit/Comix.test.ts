@@ -189,9 +189,30 @@ void test("decimal chapter numbers survive, including when sent as strings", () 
   assert.equal(toChapter(chapterItem({ number: "oops" }), sourceManga).chapNum, 0);
 });
 
-void test("volume 0 means unvolumed and is omitted", () => {
-  assert.equal(toChapter(chapterItem({ volume: 0 }), sourceManga).volume, undefined);
+// An explicit `volume: undefined` is not the same as an absent key once the
+// value crosses the bridge — the app renders the former as "Volume TBA".
+void test("an unvolumed chapter omits the key entirely rather than setting undefined", () => {
+  const unvolumed = toChapter(chapterItem({ volume: 0 }), sourceManga);
+  assert.equal("volume" in unvolumed, false);
   assert.equal(toChapter(chapterItem({ volume: 4 }), sourceManga).volume, 4);
+});
+
+void test("absent optional fields are omitted, not set to undefined", () => {
+  const bare = toChapter(
+    chapterItem({ name: "", volume: 0, group: null, url: undefined }),
+    sourceManga,
+  );
+  assert.deepEqual(Object.keys(bare).sort(), ["chapNum", "chapterId", "langCode", "sourceManga"]);
+});
+
+// The reader cannot rebuild `/title/<hid>-<slug>/<id>-chapter-<n>` from the ids,
+// so getChapters has to carry it forward.
+void test("the chapter's own path is recorded for the page fetch", () => {
+  const withUrl = toChapter(
+    chapterItem({ url: "/title/nkye-kono/11237384-chapter-43" }),
+    sourceManga,
+  );
+  assert.equal(withUrl.additionalInfo?.url, "/title/nkye-kono/11237384-chapter-43");
 });
 
 void test("pagination continues while meta says another page exists", () => {

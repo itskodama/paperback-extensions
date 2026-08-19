@@ -148,15 +148,27 @@ export function toChapter(item: ChapterItem, sourceManga: SourceManga): Chapter 
   const chapNum = typeof item.number === "string" ? Number.parseFloat(item.number) : item.number;
   const name = item.name?.trim();
 
-  return {
+  const chapter: Chapter = {
     chapterId: String(item.id),
     sourceManga,
     langCode: item.language ?? "en",
     chapNum: Number.isFinite(chapNum) ? chapNum : 0,
-    title: name && name.length > 0 ? name : undefined,
-    volume: item.volume && item.volume > 0 ? item.volume : undefined,
-    version: item.group?.name,
   };
+
+  // Optional fields are assigned only when present. Setting them to `undefined`
+  // is not equivalent to omitting them once the value crosses the bridge: an
+  // explicit `volume: undefined` renders as "Volume TBA" rather than as no
+  // volume at all.
+  if (name && name.length > 0) chapter.title = name;
+  if (item.volume && item.volume > 0) chapter.volume = item.volume;
+  if (item.group?.name) chapter.version = item.group.name;
+
+  // The reader needs the chapter's canonical path, which carries the slug and
+  // number (`/title/<hid>-<slug>/<id>-chapter-<n>`) and cannot be rebuilt from
+  // the id alone.
+  if (item.url) chapter.additionalInfo = { url: item.url };
+
+  return chapter;
 }
 
 export function parseChapterPayload(payload: ChapterPayload, sourceManga: SourceManga): Chapter[] {

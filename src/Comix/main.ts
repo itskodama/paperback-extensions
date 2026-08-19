@@ -36,12 +36,40 @@ import {
 import type ComixConfig from "./pbconfig.ts";
 import { captureBrowse, captureChapterList, capturePageList } from "./webview.ts";
 
-// Homepage sections come straight from the server-rendered payload, so none of
-// them need the WebView. Each id is matched against a decoded query key.
-const DISCOVER_SECTIONS = [
-  { id: "trending", title: "Trending", type: "trending" },
-  { id: "follows", title: "Most Followed", type: "follows" },
-] as const;
+type QueryParams = { type?: string; scope?: string; order?: Record<string, string> };
+
+/**
+ * Every section is served by the homepage's own embedded payload, so the whole
+ * discover screen costs one cached request and never touches the WebView.
+ * `matches` picks a section out of that payload by its decoded query key.
+ */
+const DISCOVER_SECTIONS: {
+  id: string;
+  title: string;
+  matches: (verb: string, params: QueryParams) => boolean;
+}[] = [
+  {
+    id: "popular",
+    title: "Most Popular",
+    matches: (verb, params) => verb === "top" && params.type === "trending",
+  },
+  {
+    id: "follows",
+    title: "Most Follows",
+    matches: (verb, params) => verb === "top" && params.type === "follows",
+  },
+  {
+    id: "latest",
+    title: "Latest Updates",
+    matches: (verb, params) =>
+      verb === "list" && params.scope === "hot" && params.order?.chapter_updated_at === "desc",
+  },
+  {
+    id: "recent",
+    title: "Recently Added",
+    matches: (verb, params) => verb === "list" && params.order?.created_at === "desc",
+  },
+];
 
 export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   async initialise(): Promise<void> {
@@ -65,11 +93,11 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   ): Promise<PagedResults<DiscoverSectionItem>> {
     const queries = extractInitialData(await fetchText(`${DOMAIN}/`));
     const wanted = DISCOVER_SECTIONS.find((candidate) => candidate.id === section.id);
+    if (!wanted) return { items: [] };
 
     const value = findQuery(queries, (key) => {
-      if (key[0] !== "manga" || key[1] !== "top") return false;
-      const params = key[2] as { type?: string } | undefined;
-      return params?.type === wanted?.type;
+      if (key[0] !== "manga" || typeof key[1] !== "string") return false;
+      return wanted.matches(key[1], (key[2] as QueryParams | undefined) ?? {});
     });
 
     return {
@@ -135,9 +163,14 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
-    const pages = parsePagesPayload(
-      await capturePageList(`/title/${chapter.sourceManga.mangaId}/${chapter.chapterId}`),
-    );
+    // The site's own path carries the slug and chapter number, neither of which
+    // is derivable from the ids, so getChapters records it on the chapter.
+    const path = chapter.additionalInfo?.url;
+    if (!path) {
+      throw new Error(`Comix: chapter ${chapter.chapterId} has no page url recorded`);
+    }
+
+    const pages = parsePagesPayload(await capturePageList(path));
 
     if (pages.length === 0) {
       throw new Error(`Comix: chapter ${chapter.chapterId} returned no pages`);
