@@ -23,6 +23,7 @@ device-only surface, [verifying on device](testing.md#device-verification) is no
 
 | Page                                          | What it covers                                                        |
 | --------------------------------------------- | --------------------------------------------------------------------- |
+| [API reference](api-reference.md)             | Complete map of `@paperback/types` — what exists, verified            |
 | [Runtime environment](runtime.md)             | The JavaScript environment: bundling, size budgets, missing globals   |
 | [Networking](networking.md)                   | `Application.scheduleRequest`, redirects, interceptors, rate limiting |
 | [Extension structure](extension-structure.md) | `pbconfig`, capabilities, the type-level contract, extension identity |
@@ -39,5 +40,7 @@ device-only surface, [verifying on device](testing.md#device-verification) is no
 
 For a first extension, read [Extension structure](extension-structure.md),
 [Networking](networking.md), and [Testing](testing.md), then the pages matching the capabilities
-you declare. Before shipping anything, read [The bridge and `Metadata`](bridge.md) — its failure
+you declare. Keep [API reference](api-reference.md) open alongside them — the conceptual pages
+explain _why_, it lists _what exists_, and checking it first avoids concluding the platform cannot
+do something it can. Before shipping anything, read [The bridge and `Metadata`](bridge.md) — its failure
 mode passes every local test.
