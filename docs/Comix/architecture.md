@@ -71,6 +71,28 @@ Three options, none yet verified on device:
 these notes asserted `PBCanvas` made this solvable, which was true of the drawing API and false of
 the ability to obtain one.
 
+## Chapter list cost is irreducible
+
+The site serves 20 chapters per request, so a long series needs one round trip per 20. That cannot
+be collapsed, and this was **measured, not assumed** — on 2026-08-19, replaying the site's own signed
+chapter URL with only `limit` altered:
+
+| `limit` | Result         |
+| ------- | -------------- |
+| 20      | `200`, payload |
+| 50      | `403`          |
+| 100     | `403`          |
+| 500     | `403`          |
+
+The `_` signature covers the whole query string, so any edit invalidates it, and only the site's own
+bundle can mint a valid one — which always asks for 20. Raising `limit` is therefore closed, not
+merely untried. Don't re-probe it without new evidence that the signing scheme has changed.
+
+What is left is avoiding repeat walks, which is what the chapter cache does: the walked list is
+reused while the series page still reports the same `latestChapter`. A time-based cache was tried
+first and rejected — it would swallow an upload made inside its window and make pull-to-refresh
+appear to do nothing.
+
 ## Fetch strategy
 
 Discover and `getMangaDetails` read server-rendered HTML and need no token, so they go through the
