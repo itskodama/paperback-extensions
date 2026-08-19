@@ -39,6 +39,20 @@ app's theming, which only helps when the mark has contrast to spare. A backing p
 
 If the real brand values ever surface, they belong here and in `icon.svg`.
 
+## Centring
+
+The mark is not symmetric within its own coordinate space, so a viewBox centred on the path bounds
+still renders visibly off. The viewBox is offset to compensate, verified by measuring the rendered
+margins rather than by eye:
+
+| Version                    | Left | Right | Imbalance |
+| -------------------------- | ---- | ----- | --------- |
+| `viewBox="-11 -25 …"`      | 36px | 76px  | 40px      |
+| `viewBox="-17.8 -24.66 …"` | 56px | 56px  | 0px       |
+
+If the artwork is ever replaced, re-measure — the offset is specific to these paths, not a general
+correction.
+
 ## Regenerating
 
 512x512 to match the other sources:

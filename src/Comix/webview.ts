@@ -2,7 +2,7 @@
 /* Copyright © 2026 Kodama */
 
 import { DOMAIN, type ChapterPayload, type PagesPayload } from "./models.ts";
-import { cookieStorage, fetchText } from "./network.ts";
+import { cookieStorage, fetchText, origin } from "./network.ts";
 
 /**
  * Search, chapter lists and page lists are signed with a per-request token and
@@ -26,10 +26,14 @@ function injectBootstrap(html: string, bootstrap: string): string {
 async function capture<T>(pageUrl: string, bootstrap: string): Promise<T> {
   const html = injectBootstrap(await fetchText(pageUrl), bootstrap);
 
+  // fetchText may have failed over to the mirror; the WebView has to resolve the
+  // page's own scripts and XHRs against whichever origin actually answered.
+  const resolved = pageUrl.replace(DOMAIN, origin());
+
   const { result } = await Application.executeInWebView({
     source: {
       html,
-      baseUrl: pageUrl,
+      baseUrl: resolved,
       loadCSS: false,
       loadImages: false,
       // Must match the UA the Cloudflare clearance was issued to, or the page's
@@ -37,11 +41,11 @@ async function capture<T>(pageUrl: string, bootstrap: string): Promise<T> {
       userAgent: await Application.getDefaultUserAgent(),
     },
     inject: "return window.__comixCapture__",
-    storage: { cookies: cookieStorage.cookiesForUrl(`${DOMAIN}/`) },
+    storage: { cookies: cookieStorage.cookiesForUrl(`${origin()}/`) },
   });
 
   if (result === undefined || result === null) {
-    throw new Error(`Comix: the page at ${pageUrl} produced no data`);
+    throw new Error(`Comix: the page at ${resolved} produced no data`);
   }
   return result as T;
 }
@@ -51,13 +55,13 @@ async function capture<T>(pageUrl: string, bootstrap: string): Promise<T> {
  * expression awaits. `accept` returns the value to resolve with, or undefined to
  * keep waiting.
  */
-function bootstrapFor(acceptBody: string, afterAccept = ""): string {
+function bootstrapFor(acceptBody: string, afterAccept = "", onTimeout = "null"): string {
   return `(function () {
     var settle;
     window.__comixCapture__ = new Promise(function (resolve) { settle = resolve; });
     var done = false;
     function finish(value) { if (!done) { done = true; settle(value); } }
-    setTimeout(function () { finish(null); }, ${CAPTURE_TIMEOUT_MS});
+    setTimeout(function () { finish(${onTimeout}); }, ${CAPTURE_TIMEOUT_MS});
     var accept = function (parsed, raw) { ${acceptBody} };
     var original = JSON.parse;
     JSON.parse = new Proxy(original, {
@@ -72,41 +76,65 @@ function bootstrapFor(acceptBody: string, afterAccept = ""): string {
 }
 
 export async function captureChapterList(hid: string): Promise<ChapterPayload[]> {
-  // Pagination clicks the site's own Next control: the request URL carries the
-  // per-request signature, so rewriting it to jump pages returns 403.
+  // The site serves 20 chapters per request and the URL carries a signature bound
+  // to its exact query, so pages cannot be requested directly — the site's own
+  // pagination control has to be driven. Whatever has been captured is always
+  // returned, even if advancing stalls: a partial chapter list beats none.
   const bootstrap = bootstrapFor(
     `
       var result = parsed && parsed.result;
       if (!result || !Array.isArray(result.items)) return;
       if (!result.items.length || result.items[0].mangaId === undefined) return;
+
       var meta = result.meta || {};
       var page = meta.page || 1;
       if (window.__comixPages__[page]) return;
       window.__comixPages__[page] = raw;
-      if (meta.hasNext || page < (meta.lastPage || page)) { window.__comixNext__(page); }
-      else { finish(Object.keys(window.__comixPages__).sort(function (a, b) { return a - b; })
-        .map(function (key) { return window.__comixPages__[key]; })); }
+
+      if (meta.hasNext || page < (meta.lastPage || page)) { window.__comixAdvance__(page); }
+      else { finish(window.__comixCollect__()); }
     `,
     `
       window.__comixPages__ = {};
-      window.__comixNext__ = function (page) {
+      window.__comixCollect__ = function () {
+        return Object.keys(window.__comixPages__)
+          .sort(function (a, b) { return a - b; })
+          .map(function (key) { return window.__comixPages__[key]; });
+      };
+
+      // The chapter list shares the page with a comment thread that has its own
+      // pagination, so controls are located relative to the chapter links rather
+      // than by scanning every button on the page.
+      function chapterPager() {
+        var link = document.querySelector('a[href*="/title/"][href*="chapter"]');
+        for (var node = link; node; node = node.parentElement) {
+          var buttons = node.querySelectorAll("button:not([disabled])");
+          if (buttons.length > 1) return buttons;
+        }
+        return [];
+      }
+
+      window.__comixAdvance__ = function (page) {
         var tries = 0;
         var timer = setInterval(function () {
-          var buttons = Array.prototype.slice.call(document.querySelectorAll("button"))
-            .filter(function (button) { return !button.disabled; });
+          var buttons = Array.prototype.slice.call(chapterPager());
           var next = buttons.filter(function (button) {
             var label = [button.getAttribute("aria-label"), button.getAttribute("title"),
               button.textContent].filter(Boolean).join(" ");
-            return /\\bnext\\b/i.test(label) || Number((button.textContent || "").trim()) === page + 1;
+            return /\\bnext\\b/i.test(label)
+              || Number((button.textContent || "").trim()) === page + 1;
           })[0];
+
           if (next) { clearInterval(timer); next.click(); }
-          else if (++tries > 50) { clearInterval(timer); finish(null); }
+          else if (++tries > 60) { clearInterval(timer); finish(window.__comixCollect__()); }
         }, 100);
       };
     `,
+    "window.__comixCollect__()",
   );
 
   const raw = await capture<string[]>(`${DOMAIN}/title/${hid}`, bootstrap);
+  if (raw.length === 0) throw new Error(`Comix: no chapters were returned for ${hid}`);
   return raw.map((payload) => JSON.parse(payload) as ChapterPayload);
 }
 

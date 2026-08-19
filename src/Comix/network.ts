@@ -6,13 +6,12 @@ import {
   CloudflareError,
   CookieStorageInterceptor,
   PaperbackInterceptor,
-  URL,
   type Request,
   type Response,
 } from "@paperback/types";
 
 import { applyKeystream, parseScrambleConfig } from "./descramble.ts";
-import { DOMAIN } from "./models.ts";
+import { DOMAIN, MIRROR_DOMAIN } from "./models.ts";
 
 export const rateLimiter = new BasicRateLimiter("comix", {
   numberOfRequests: 15,
@@ -128,42 +127,42 @@ export async function fetchText(url: string): Promise<string> {
   }
 }
 
-const MAX_REDIRECTS = 3;
+// Whichever origin last answered is tried first, so a single outage costs one
+// failed request rather than one per call for the rest of the session.
+let preferredOrigin = DOMAIN;
 
-function locationOf(response: Response): string | undefined {
-  const key = Object.keys(response.headers).find((name) => name.toLowerCase() === "location");
-  return key === undefined ? undefined : response.headers[key];
+/** The origin every request and WebView load should currently be built against. */
+export function origin(): string {
+  return preferredOrigin;
 }
 
-/**
- * The platform hands 3xx back rather than following it, and a series requested by
- * bare hid redirects to its `<hid>-<slug>` canonical form — so not following
- * these is the difference between a title loading and silently failing.
- * Location may be relative, and is resolved against the host that issued it.
- */
-async function requestText(url: string): Promise<string> {
-  let target = url;
+function onOrigin(url: string, target: string): string {
+  return url.replace(DOMAIN, target).replace(MIRROR_DOMAIN, target);
+}
 
-  for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
-    const [response, data] = await Application.scheduleRequest({ url: target, method: "GET" });
-
-    if (response.status >= 300 && response.status < 400) {
-      const location = locationOf(response);
-      if (!location) throw new Error(`Comix sent HTTP ${response.status} with no location`);
-
-      target = /^https?:\/\//.test(location)
-        ? location
-        : `${new URL(target).protocol}//${new URL(target).hostname}${
-            location.startsWith("/") ? "" : "/"
-          }${location}`;
-      continue;
-    }
-
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`Comix returned HTTP ${response.status} for ${target}`);
-    }
-    return Application.arrayBufferToUTF8String(data);
+async function attempt(url: string): Promise<string> {
+  const [response, data] = await Application.scheduleRequest({ url, method: "GET" });
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Comix returned HTTP ${response.status} for ${url}`);
   }
+  return Application.arrayBufferToUTF8String(data);
+}
 
-  throw new Error(`Comix redirected more than ${MAX_REDIRECTS} times from ${url}`);
+async function requestText(url: string): Promise<string> {
+  const origins = preferredOrigin === DOMAIN ? [DOMAIN, MIRROR_DOMAIN] : [MIRROR_DOMAIN, DOMAIN];
+  let lastError: unknown;
+
+  for (const candidate of origins) {
+    try {
+      const text = await attempt(onOrigin(url, candidate));
+      preferredOrigin = candidate;
+      return text;
+    } catch (error) {
+      // A challenge must surface to the app rather than being retried away on
+      // the mirror, which would only earn a second challenge.
+      if (error instanceof CloudflareError) throw error;
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(`Comix: ${String(lastError)}`);
 }
