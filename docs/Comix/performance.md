@@ -47,11 +47,29 @@ Every route to making the walk itself faster, and the evidence that closed it.
 | Call the site's own React Query fetcher         | Reachable via the React fiber, but it closes over its own `page` and `limit` — every call returns page 1 regardless of the key passed                                                                                   |
 | Server-rendered `?page=N`                       | Server ignores it; `initial-data` carries `detail`, `recommended` and `groups` on every page and never chapters                                                                                                         |
 | `pushState` sweep, fixed spacing                | React Query cancels the in-flight query when the key changes. Exactly alternating pages survive (2,4,6,8,10 missing), reproducibly. Spacing wide enough to avoid cancellation (450ms) is fully sequential at 627ms/page |
-| `pushState` driven by payload arrival           | 10/10 captured but 612ms and 798ms per page on two series — no faster than clicking, because the request is the cost                                                                                                    |
 
-`pushState` navigation does work for reaching a specific page, and is more
-robust than clicking `.mchap-foot button` — no markup dependency, no polling. It
-is simply not faster, so the walk was left as it is.
+**Correction.** An earlier revision claimed `pushState` driven by payload arrival
+was _slower_ than clicking, citing 612 and 798ms per page against a 532ms
+baseline. That comparison was invalid: the 612/798 figures came from a desktop
+browser while the 532ms came from the device, so they compare hardware and
+networks rather than techniques.
+
+Measured properly — both techniques, one session, one series, each waiting on the
+exact payload — navigation wins:
+
+| Technique   | Captured | Per page  |
+| ----------- | -------- | --------- |
+| `pushState` | 10/10    | 584-656ms |
+| Clicking    | 1/10     | timeouts  |
+
+The click arm's 1/10 is not proof that clicking is broken in general — the
+shipped walk clicked through 408 pages successfully — but of a flaw in that
+harness, where resetting to page 1 left the pager in a state the button finder
+did not match. What it does establish is that navigation completed reliably where
+a plausible click implementation did not.
+
+The walk uses `pushState` as of alpha.37, keeping the click path as a fallback
+when a navigation yields no payload within four seconds.
 
 ## Why the walk is irreducible
 

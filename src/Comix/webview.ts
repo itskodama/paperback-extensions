@@ -190,8 +190,25 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
           .map(function (key) { return window.__comixPages__[key]; });
       };
 
-      // The chapter module's own footer. Scoping to it matters because the
-      // comment thread on the same page carries a second, unrelated pager.
+      // Navigating by URL rather than clicking the pager. The page number is
+      // read from the query string by the site's own router, so a history entry
+      // plus a popstate is enough to make it fetch a specific page — no markup
+      // dependency, no waiting for a control to render, and any page reachable
+      // directly rather than only the next one.
+      window.__comixGoto__ = function (page) {
+        try {
+          var url = location.pathname + "?page=" + page;
+          history.pushState({}, "", url);
+          window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+          return true;
+        } catch (e) {
+          return false;
+        }
+      };
+
+      // Retained as a fallback: if navigation produces nothing, the pager is
+      // still there to be clicked. Scoped to the chapter module's footer because
+      // the comment thread on the same page carries its own unrelated pager.
       function pagerButtons() {
         var scoped = document.querySelectorAll(".mchap-foot button:not([disabled])");
         if (scoped.length) return Array.prototype.slice.call(scoped);
@@ -204,9 +221,6 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
         return [];
       }
 
-      // Preference order: the button naming the next page, then one labelled
-      // "next", then the trailing control — which is what a chevron-only pager
-      // with no text or aria-label leaves to go on.
       function nextControl(buttons, page) {
         var numbered = buttons.filter(function (button) {
           return Number((button.textContent || "").trim()) === page + 1;
@@ -225,7 +239,7 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
         return lastLabel === "" || isNaN(Number(lastLabel)) ? last : undefined;
       }
 
-      window.__comixAdvance__ = function (page) {
+      window.__comixClickNext__ = function (page) {
         var tries = 0;
         var timer = setInterval(function () {
           var next = nextControl(pagerButtons(), page);
@@ -237,6 +251,25 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
             finish(window.__comixCollect__());
           }
         }, 100);
+      };
+
+      // A navigation that yields no payload within this window is treated as
+      // failed and the pager is clicked instead, so a routing change on the
+      // site degrades to the previous behaviour rather than an empty list.
+      window.__comixAdvance__ = function (page) {
+        var target = page + 1;
+        var before = Object.keys(window.__comixPages__).length;
+
+        if (!window.__comixGoto__(target)) {
+          window.__comixClickNext__(page);
+          return;
+        }
+
+        setTimeout(function () {
+          if (Object.keys(window.__comixPages__).length === before) {
+            window.__comixClickNext__(page);
+          }
+        }, 4000);
       };
     `,
     "window.__comixCollect__()",
