@@ -4,7 +4,13 @@
 import { Form, LabelRow, Section, ToggleRow, type FormSectionElement } from "@paperback/types";
 
 import { KNOWN_OFFSETS, learnedOffsets } from "./descramble.ts";
-import { debugEnabled, lastScramble, setDebugEnabled } from "./settings.ts";
+import {
+  debugEnabled,
+  scrambleLog,
+  setDebugEnabled,
+  setThoroughDescramble,
+  thoroughDescrambleEnabled,
+} from "./settings.ts";
 
 /** Long row titles are truncated on screen, so they are split across rows. */
 function chunk(text: string, width: number): string[] {
@@ -15,7 +21,34 @@ function chunk(text: string, width: number): string[] {
 
 export class ComixSettingsForm extends Form {
   override getSections(): FormSectionElement<unknown>[] {
-    return [this.debugSection(), ...this.diagnosticsSections()];
+    return [this.descrambleSection(), this.debugSection(), ...this.diagnosticsSections()];
+  }
+
+  /**
+   * The site's scramble token rotates per response, so nearly every value is
+   * one-off and means "use the seed unmodified". Assuming that is right almost
+   * always and costs nothing; verifying it means decoding and scoring each page
+   * to confirm what was already assumed.
+   */
+  private descrambleSection(): FormSectionElement<unknown> {
+    return Section(
+      {
+        id: "descramble",
+        header: "Page unscrambling",
+        footer:
+          "Some pages arrive with their tiles shuffled and are reassembled automatically. " +
+          "Thorough mode verifies each one instead of assuming the usual arrangement, which " +
+          "is slower but catches a page the shipped values do not cover. Leave it off unless " +
+          "pages look jumbled.",
+      },
+      [
+        ToggleRow("thorough", {
+          title: "Thorough mode",
+          value: thoroughDescrambleEnabled(),
+          onValueChange: Application.Selector(this as ComixSettingsForm, "handleThoroughChange"),
+        }),
+      ],
+    );
   }
 
   private debugSection(): FormSectionElement<unknown> {
@@ -57,8 +90,8 @@ export class ComixSettingsForm extends Form {
           footer:
             learned.length > 0
               ? "Report these so they can be shipped as defaults."
-              : "Nothing yet. Values appear here only when a page uses a token the source " +
-                "does not already know.",
+              : "Nothing yet. Only values that differ from the usual arrangement are kept, " +
+                "and finding one requires Thorough mode.",
         },
         learned.length > 0
           ? learned.map(([hash, offset]) =>
@@ -68,21 +101,31 @@ export class ComixSettingsForm extends Form {
       ),
     );
 
-    const scramble = lastScramble();
-    if (scramble !== undefined) {
+    // One slot is not enough: with roughly one page in twelve scrambled, the
+    // interesting entry is overwritten before anyone reads it.
+    const recent = scrambleLog();
+    if (recent.length > 0) {
       sections.push(
         Section(
           {
-            id: "last-scramble",
-            header: "Last scrambled page",
-            footer: "The parameters of the most recent page that needed unscrambling.",
+            id: "recent-scrambles",
+            header: `Recent scrambled pages (${recent.length})`,
+            footer: "Newest first. Each line is one page that needed unscrambling.",
           },
-          chunk(scramble, 58).map((line, index) => LabelRow(`scramble-${index}`, { title: line })),
+          recent.flatMap((entry, index) =>
+            chunk(entry, 58).map((line, part) =>
+              LabelRow(`scramble-${index}-${part}`, { title: line }),
+            ),
+          ),
         ),
       );
     }
 
     return sections;
+  }
+
+  async handleThoroughChange(value: boolean): Promise<void> {
+    setThoroughDescramble(value);
   }
 
   async handleDebugChange(value: boolean): Promise<void> {

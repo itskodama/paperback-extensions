@@ -38,24 +38,33 @@ export const KNOWN_OFFSETS: Record<string, number> = {
 
 const DISCOVERED_STATE = "comix.scramble-offsets";
 
-function discoveredOffsets(): Record<string, number> {
-  const stored = Application.getState(DISCOVERED_STATE);
-  return stored && typeof stored === "object" ? (stored as Record<string, number>) : {};
-}
-
-/** Offsets worked out on this device, for reporting so they can be hardcoded. */
+/**
+ * Only non-zero offsets are kept. The token rotates per response, so recording
+ * every one that resolves to zero would grow without bound and say nothing —
+ * zero is the assumption anyway. Legacy entries are filtered on read: a numeric
+ * 0 written before this could come back as `false`, because 0 and false are
+ * indistinguishable once a value has crossed the bridge.
+ */
 export function learnedOffsets(): Record<string, number> {
-  return discoveredOffsets();
+  const stored = Application.getState(DISCOVERED_STATE);
+  if (!stored || typeof stored !== "object") return {};
+
+  const kept: Record<string, number> = {};
+  for (const [hash, offset] of Object.entries(stored as Record<string, unknown>)) {
+    if (typeof offset === "number" && offset !== 0) kept[hash] = offset;
+  }
+  return kept;
 }
 
 function rememberOffset(hash: string, offset: number): void {
-  Application.setState({ ...discoveredOffsets(), [hash]: offset }, DISCOVERED_STATE);
+  if (offset === 0 || !hash) return;
+  Application.setState({ ...learnedOffsets(), [hash]: offset }, DISCOVERED_STATE);
 }
 
 function knownOffset(hash: string | undefined): number | undefined {
   const token = hash?.trim();
   if (!token) return 0;
-  return KNOWN_OFFSETS[token] ?? discoveredOffsets()[token];
+  return KNOWN_OFFSETS[token] ?? learnedOffsets()[token];
 }
 
 // Header names are not case-normalised by the platform (docs/paperback/networking.md).
@@ -403,10 +412,7 @@ function resolveOffset(
   // A correct arrangement beat the scrambled one by 20x in every sample, so a
   // wide margin here is a confident accept rather than a lucky one.
   const plain = costOf(0);
-  if (plain * 4 < asDelivered) {
-    rememberOffset(config.scrambleHash ?? "", 0);
-    return 0;
-  }
+  if (plain * 4 < asDelivered) return 0;
 
   let best = 0;
   let bestCost = plain;
