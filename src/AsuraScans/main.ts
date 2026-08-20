@@ -18,14 +18,14 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-import { getSession } from "./auth";
+import { getSession } from "./auth.ts";
 import {
   chapterIsLocked,
   parseChapterApiPayload,
   parseChapterDetails,
   parseChapterList,
   parseSeriesDetails,
-} from "./comics";
+} from "./comics.ts";
 import {
   DISCOVER_COMIC_TYPE,
   DISCOVER_FEATURED,
@@ -36,22 +36,22 @@ import {
   comicTypeItems,
   parseDiscoverItems,
   statusItems,
-} from "./discover";
-import { AsuraScansAdvancedSearchForm } from "./forms";
+} from "./discover.ts";
+import { AsuraScansAdvancedSearchForm } from "./forms.ts";
 import {
   DEFAULT_SORT,
   NOVEL_SORT_MAP,
   SORT_OPTIONS,
   type AsuraScansSearchMetadata,
   type SortOption,
-} from "./models";
+} from "./models.ts";
 import {
   MainInterceptor,
   fetchChapterJson,
   fetchNovelChapterJson,
   fetchNovelSearch,
   fetchPage,
-} from "./network";
+} from "./network.ts";
 import {
   novelCatalogEntry,
   novelChapterIsLocked,
@@ -60,16 +60,16 @@ import {
   parseNovelChapterApiPayload,
   parseNovelChapterDetails,
   parseNovelChapterList,
-} from "./novels";
-import type AsuraScansConfig from "./pbconfig";
+} from "./novels.ts";
+import type AsuraScansConfig from "./pbconfig.ts";
 import {
   mergeRankedResults,
   parseNovelSearchResults,
   rankedNovelSearchResults,
   rankedSearchResults,
-} from "./search";
-import { hidesEarlyAccess } from "./settings";
-import { AsuraScansSettingsForm } from "./settingsForm";
+} from "./search.ts";
+import { hidesEarlyAccess } from "./settings.ts";
+import { AsuraScansSettingsForm } from "./settingsForm.ts";
 import {
   browseUrl,
   chapterUrl,
@@ -81,7 +81,7 @@ import {
   novelSlugFromMangaId,
   novelUrl,
   seriesUrl,
-} from "./urls";
+} from "./urls.ts";
 
 // Comfortably above the current ~7-title novel catalog: on a mixed search's first page this
 // fetches effectively everything; as a dedicated type=novel page size it's just a normal,

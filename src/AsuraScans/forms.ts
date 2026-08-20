@@ -10,8 +10,8 @@ import {
   type SearchQuery,
 } from "@paperback/types";
 
-import { GENRES, STATUS_OPTIONS, TYPE_OPTIONS, type AsuraScansSearchMetadata } from "./models";
-import { fetchCreators, type Creators } from "./network";
+import { GENRES, STATUS_OPTIONS, TYPE_OPTIONS, type AsuraScansSearchMetadata } from "./models.ts";
+import { fetchCreators, type Creators } from "./network.ts";
 
 const MAX_MIN_CHAPTERS = 500;
 
