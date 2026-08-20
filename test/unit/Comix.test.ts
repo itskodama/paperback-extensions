@@ -98,7 +98,7 @@ const detail: MangaDetail = {
   status: "releasing",
   contentRating: "safe",
   synopsis: "Bai Yi is betrayed by a comrade.",
-  ratedAvg: 7.6,
+  ratedAvg: 76,
   url: "/title/qqwrm-full-time-awakening",
   poster: {
     medium: "https://static.comix.to/9c57/i/8/6d/abc@280.jpg",
@@ -149,14 +149,20 @@ void test("detail maps into MangaInfo with tag groups and a share url", () => {
   assert.equal(manga.mangaInfo.primaryTitle, "Full-Time Awakening");
   assert.deepEqual(manga.mangaInfo.secondaryTitles, ["5(All) Elements", "全职觉醒"]);
   assert.equal(manga.mangaInfo.author, "TONY");
-  // ratedAvg is out of 10 while the app renders `rating` as a fraction; an
-  // unscaled value displays as 760%.
+  // ratedAvg is a percentage while the app renders `rating` as a 0-1 fraction.
+  // Dividing by 10 rather than 100 is what showed a 93% title as 930%.
   assert.equal(manga.mangaInfo.rating, 0.76);
   assert.equal(manga.mangaInfo.shareUrl, "https://comix.to/title/qqwrm-full-time-awakening");
   assert.deepEqual(
     manga.mangaInfo.tagGroups?.map((group) => group.id),
     ["genres", "tags"],
   );
+});
+
+void test("rating is a 0-1 fraction and clamps rather than exceeding 100%", () => {
+  assert.equal(toSourceManga({ ...detail, ratedAvg: 93 }).mangaInfo.rating, 0.93);
+  assert.equal(toSourceManga({ ...detail, ratedAvg: 0 }).mangaInfo.rating, 0);
+  assert.equal(toSourceManga({ ...detail, ratedAvg: 140 }).mangaInfo.rating, 1);
 });
 
 void test("empty taxonomies are omitted rather than emitted as blank groups", () => {

@@ -6,6 +6,9 @@ export const DOMAIN = "https://comix.to";
 // comix.ws is the same backend behind a second domain — verified by both serving
 // identical chapter ids and hids — so it is a drop-in origin when .to is
 // unreachable, not a separate catalogue. See docs/Comix/site-recon.md.
+/** ratedAvg is a percentage, not a score out of 10. */
+export const RATING_MAX = 100;
+
 export const MIRROR_DOMAIN = "https://comix.ws";
 
 // The site keys series by `hid` everywhere a URL is built, but a chapter payload's

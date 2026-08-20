@@ -11,6 +11,7 @@ import {
 import {
   DOMAIN,
   CONTENT_RATING_MAP,
+  RATING_MAX,
   type ChapterItem,
   type ChapterPayload,
   type MangaDetail,
@@ -138,9 +139,12 @@ export function toSourceManga(detail: MangaDetail): SourceManga {
       status: detail.status,
       author: titles(detail.authors).join(", ") || undefined,
       artist: titles(detail.artists).join(", ") || undefined,
-      // ratedAvg is out of 10 and the app renders `rating` as a fraction, so an
-      // unscaled 5.5 displays as 550%.
-      rating: typeof detail.ratedAvg === "number" ? detail.ratedAvg / 10 : undefined,
+      // ratedAvg is a percentage (0-100) and the app renders `rating` as a
+      // 0-1 fraction. Dividing by 10 instead showed a 93% title as 930%.
+      rating:
+        typeof detail.ratedAvg === "number"
+          ? Math.min(Math.max(detail.ratedAvg / RATING_MAX, 0), 1)
+          : undefined,
       tagGroups: tagGroups.length > 0 ? tagGroups : undefined,
       shareUrl: detail.url ? `${DOMAIN}${detail.url}` : undefined,
     },

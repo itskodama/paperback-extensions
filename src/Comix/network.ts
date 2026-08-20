@@ -52,6 +52,16 @@ function isChallenge(response: Response, data: ArrayBuffer): boolean {
   return body.includes("just a moment") || body.includes("challenge-platform");
 }
 
+/** cf_clearance is per-domain, so a challenge must be solved on the host that
+ * issued it. Falls back to the primary if the URL will not parse. */
+function challengedOrigin(url: string): string {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return DOMAIN;
+  }
+}
+
 export class MainInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
     request.headers = {
@@ -77,9 +87,14 @@ export class MainInterceptor extends PaperbackInterceptor {
       // solved the challenge. Without this header the WebView solves under a
       // different UA than outbound requests use, the clearance never validates,
       // and the banner reappears forever. Same trap as docs/LNORI/site-recon.md.
+      // The domain that was challenged, not the primary: cf_clearance is issued
+      // per-domain, so pointing the bypass at DOMAIN while requests are going to
+      // the mirror earns a clearance for the wrong host and the banner returns
+      // forever. preferredOrigin only resets when the app restarts, which is why
+      // that loop outlives repeated solves.
       throw new CloudflareError(
         {
-          url: DOMAIN,
+          url: challengedOrigin(request.url),
           method: "GET",
           headers: { "user-agent": await Application.getDefaultUserAgent() },
         },
