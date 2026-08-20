@@ -14,8 +14,19 @@ import { applyKeystream, descrambleImage, parseScrambleConfig } from "./descramb
 import { DOMAIN } from "./models.ts";
 import { recordScramble, thoroughDescrambleEnabled } from "./settings.ts";
 
+/**
+ * `ignoreImages` cannot help here: it matches on a file extension, and this
+ * site's page URLs are extensionless tokens (`.../i5/<token>`), so every page
+ * image counted against the budget and each one waited on the limiter's lock. A
+ * 20-page chapter throttled itself to well over ten seconds while a browser,
+ * with no such limit, loaded the same chapter instantly.
+ *
+ * The budget therefore has to accommodate reading, not just API calls. Pages are
+ * fetched from sharded CDN hosts rather than the origin, and a reader legitimately
+ * pulls a chapter's worth at once.
+ */
 export const rateLimiter = new BasicRateLimiter("comix", {
-  numberOfRequests: 15,
+  numberOfRequests: 60,
   bufferInterval: 10,
   ignoreImages: true,
 });

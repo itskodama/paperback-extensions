@@ -121,3 +121,16 @@ export function rememberLatestSeen(hid: string, latestChapter: number): void {
     // Losing this only costs an extra check next sweep.
   }
 }
+
+/** Wipes everything the Debug section shows, plus the offsets learned on this
+ * device. Leaves preferences alone. */
+export function clearDiagnostics(): void {
+  try {
+    Application.setState("", SCRAMBLE_LOG_STATE);
+    Application.setState("", TIMING_LOG_STATE);
+    Application.setState("", LATEST_SEEN_STATE);
+    Application.setState({}, "comix.scramble-offsets");
+  } catch {
+    // Nothing here is worth surfacing an error for.
+  }
+}

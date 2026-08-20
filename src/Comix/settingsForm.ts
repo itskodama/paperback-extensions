@@ -1,11 +1,19 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import { Form, LabelRow, Section, ToggleRow, type FormSectionElement } from "@paperback/types";
+import {
+  ButtonRow,
+  Form,
+  LabelRow,
+  Section,
+  ToggleRow,
+  type FormSectionElement,
+} from "@paperback/types";
 
 import { canEncode } from "./canvas.ts";
 import { KNOWN_OFFSETS, learnedOffsets } from "./descramble.ts";
 import {
+  clearDiagnostics,
   debugEnabled,
   scrambleLog,
   timingLog,
@@ -67,6 +75,10 @@ export class ComixSettingsForm extends Form {
           title: "Show diagnostics",
           value: debugEnabled(),
           onValueChange: Application.Selector(this as ComixSettingsForm, "handleDebugChange"),
+        }),
+        ButtonRow("clear", {
+          title: "Clear diagnostics",
+          onSelect: Application.Selector(this as ComixSettingsForm, "handleClear"),
         }),
       ],
     );
@@ -177,6 +189,11 @@ export class ComixSettingsForm extends Form {
     }
 
     return sections;
+  }
+
+  async handleClear(): Promise<void> {
+    clearDiagnostics();
+    this.reloadForm();
   }
 
   async handleThoroughChange(value: boolean): Promise<void> {
