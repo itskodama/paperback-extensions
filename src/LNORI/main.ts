@@ -20,7 +20,7 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-import { MainInterceptor, fetchPage } from "./network";
+import { MainInterceptor, fetchPage } from "./network.ts";
 import {
   DISCOVER_FEATURED,
   DISCOVER_GENRES,
@@ -47,8 +47,8 @@ import {
   type LibraryEntry,
   type LNORISearchMetadata,
   type TocEntry,
-} from "./parser";
-import type LNORIConfig from "./pbconfig";
+} from "./parser.ts";
+import type LNORIConfig from "./pbconfig.ts";
 
 const PAGE_SIZE = 50;
 

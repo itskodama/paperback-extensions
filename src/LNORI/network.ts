@@ -8,7 +8,7 @@ import {
   type Response,
 } from "@paperback/types";
 
-import { LNORI_DOMAIN } from "./parser";
+import { LNORI_DOMAIN } from "./parser.ts";
 
 // Throwing this is what raises the app's bypass banner; the app opens a WebView at
 // the request below, and cf_clearance is bound to the user-agent it solves with — so
