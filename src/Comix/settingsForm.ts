@@ -15,6 +15,8 @@ import { KNOWN_OFFSETS, learnedOffsets } from "./descramble.ts";
 import {
   clearDiagnostics,
   debugEnabled,
+  fullUpdateScanEnabled,
+  setFullUpdateScan,
   scrambleLog,
   timingLog,
   setDebugEnabled,
@@ -31,7 +33,38 @@ function chunk(text: string, width: number): string[] {
 
 export class ComixSettingsForm extends Form {
   override getSections(): FormSectionElement<unknown>[] {
-    return [this.descrambleSection(), this.debugSection(), ...this.diagnosticsSections()];
+    return [
+      this.updatesSection(),
+      this.descrambleSection(),
+      this.debugSection(),
+      ...this.diagnosticsSections(),
+    ];
+  }
+
+  /**
+   * Chapters are listed newest-number first, so an update check normally reads
+   * only that first page. A series translated by several groups can gain a
+   * chapter numbered below one already published, which that page cannot show.
+   */
+  private updatesSection(): FormSectionElement<unknown> {
+    return Section(
+      {
+        id: "updates",
+        header: "Library updates",
+        footer:
+          "Update checks normally read only the newest page of chapters, which is one " +
+          "request. A full scan reads every page instead, catching a chapter numbered " +
+          "below one already published — which happens when several groups translate the " +
+          "same series. It is far slower: a long series can take minutes per check.",
+      },
+      [
+        ToggleRow("fullScan", {
+          title: "Full chapter scan on update",
+          value: fullUpdateScanEnabled(),
+          onValueChange: Application.Selector(this as ComixSettingsForm, "handleFullScanChange"),
+        }),
+      ],
+    );
   }
 
   /**
@@ -189,6 +222,10 @@ export class ComixSettingsForm extends Form {
     }
 
     return sections;
+  }
+
+  async handleFullScanChange(value: boolean): Promise<void> {
+    setFullUpdateScan(value);
   }
 
   async handleClear(): Promise<void> {

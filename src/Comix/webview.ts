@@ -254,6 +254,31 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
   return payloads;
 }
 
+/**
+ * Only the newest page of chapters. Chapters arrive ordered by number descending,
+ * so this is the twenty highest-numbered ones — enough to spot an update without
+ * walking a series that may be four hundred pages long.
+ *
+ * It cannot see a chapter published with an older number than one already out,
+ * which happens when several groups translate the same series at different
+ * points. `fullUpdateScanEnabled` exists for that case.
+ */
+export async function captureNewestChapters(hid: string): Promise<ChapterPayload | undefined> {
+  const bootstrap = bootstrapFor(`
+    var result = parsed && parsed.result;
+    if (!result || !Array.isArray(result.items)) return;
+    if (!result.items.length || result.items[0].mangaId === undefined) return;
+    finish(raw);
+  `);
+
+  const raw = await capture<string>(`${DOMAIN}/title/${hid}`, bootstrap, "newest-chapters");
+  try {
+    return JSON.parse(raw) as ChapterPayload;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function capturePageList(chapterPath: string): Promise<PagesPayload> {
   const bootstrap = bootstrapFor(
     `if (parsed && parsed.result && parsed.result.pages) { finish(raw); }`,

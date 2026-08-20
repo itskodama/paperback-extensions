@@ -10,6 +10,7 @@ const THOROUGH_STATE = "comix.thoroughDescramble";
 const SCRAMBLE_LOG_STATE = "comix.scrambleLog";
 const TIMING_LOG_STATE = "comix.timingLog";
 const LATEST_SEEN_STATE = "comix.latestSeen";
+const FULL_SCAN_STATE = "comix.fullUpdateScan";
 
 /** How many scrambled pages to keep. One is not enough: with roughly one page in
  * twelve scrambled, a single slot is overwritten long before anyone reads it. */
@@ -48,6 +49,11 @@ export function setThoroughDescramble(enabled: boolean): void {
  */
 const LOG_SEPARATOR = "\n";
 
+/** Local wall clock, not UTC: these are read next to the device's own clock. */
+function localTime(): string {
+  return new Date().toTimeString().slice(0, 8);
+}
+
 function readLog(key: string): string[] {
   const stored = Application.getState(key);
   if (typeof stored !== "string" || stored.length === 0) return [];
@@ -67,10 +73,26 @@ function appendLog(key: string, line: string): void {
   }
 }
 
+/**
+ * Off by default. An update check normally reads only the newest page of
+ * chapters, which is one request instead of a walk of every page. That page is
+ * ordered by chapter number, so a group uploading a chapter with an older number
+ * than one already published will not appear on it — turning this on trades a
+ * much slower check for catching those.
+ */
+export function fullUpdateScanEnabled(): boolean {
+  const stored = Application.getState(FULL_SCAN_STATE);
+  return typeof stored === "boolean" ? stored : false;
+}
+
+export function setFullUpdateScan(enabled: boolean): void {
+  Application.setState(enabled, FULL_SCAN_STATE);
+}
+
 /** Newest first, capped. Descrambling runs inside an interceptor with nowhere to
  * report to, so without this a wrong result is invisible. */
 export function recordScramble(summary: string): void {
-  appendLog(SCRAMBLE_LOG_STATE, `${new Date().toISOString().slice(11, 19)} ${summary}`);
+  appendLog(SCRAMBLE_LOG_STATE, `${localTime()} ${summary}`);
 }
 
 export function scrambleLog(): string[] {
@@ -87,7 +109,7 @@ export function recordTiming(summary: string): void {
   } catch {
     return;
   }
-  appendLog(TIMING_LOG_STATE, `${new Date().toISOString().slice(11, 19)} ${summary}`);
+  appendLog(TIMING_LOG_STATE, `${localTime()} ${summary}`);
 }
 
 export function timingLog(): string[] {

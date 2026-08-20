@@ -35,10 +35,15 @@ import {
   toSourceManga,
 } from "./parsers.ts";
 import type ComixConfig from "./pbconfig.ts";
-import { latestSeen, rememberLatestSeen } from "./settings.ts";
+import { fullUpdateScanEnabled, latestSeen, rememberLatestSeen } from "./settings.ts";
 import { ComixSettingsForm } from "./settingsForm.ts";
 import { browseUrl, homeUrl, seriesUrl } from "./urls.ts";
-import { captureBrowse, captureChapterList, capturePageList } from "./webview.ts";
+import {
+  captureBrowse,
+  captureChapterList,
+  captureNewestChapters,
+  capturePageList,
+} from "./webview.ts";
 
 type QueryParams = { type?: string; scope?: string; order?: Record<string, string> };
 
@@ -226,8 +231,43 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
       }
 
       rememberLatestSeen(manga.mangaId, latest);
-      await updateManager.setUpdatePriority(manga.mangaId, "high");
+
+      // Falling through to `high` makes the app call getChapters, which walks
+      // every page — four hundred of them on a long series, to discover perhaps
+      // one new chapter. Reading the newest page and handing over just what is
+      // new avoids that entirely.
+      if (fullUpdateScanEnabled() || !(await this.reportNewChapters(updateManager, manga))) {
+        await updateManager.setUpdatePriority(manga.mangaId, "high");
+      }
     }
+  }
+
+  /**
+   * Hands the app the chapters it does not already have, without a full walk.
+   * Returns false if that could not be done, so the caller can fall back.
+   */
+  private async reportNewChapters(
+    updateManager: UpdateManager,
+    sourceManga: SourceManga,
+  ): Promise<boolean> {
+    let payload;
+    try {
+      payload = await captureNewestChapters(sourceManga.mangaId);
+    } catch {
+      return false;
+    }
+    if (!payload) return false;
+
+    const newest = parseChapterPayload(payload, sourceManga);
+    if (newest.length === 0) return false;
+
+    const known = new Set(
+      (await updateManager.getChapters(sourceManga.mangaId)).map((c) => c.chapterId),
+    );
+    const unseen = newest.filter((chapter) => !known.has(chapter.chapterId));
+
+    await updateManager.setNewChapters(sourceManga.mangaId, unseen);
+    return true;
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
