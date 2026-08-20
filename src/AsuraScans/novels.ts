@@ -124,8 +124,8 @@ export function parseNovelChapterList(html: string, sourceManga: SourceManga): C
 }
 
 // html chapters parse as XML: unclosed void elements and named entities beyond XML's five are
-// fatal (docs/paperback/html-chapters.md). AsuraScans' own copy, not imported from LightNovelWorld
-// (each extension bundles standalone)
+// fatal (docs/paperback/html-chapters.md). AsuraScans' own copy, not shared with the other
+// extensions (each extension bundles standalone)
 const VOID_TAG =
   /<(img|br|hr|source|wbr|area|col|embed|input|link|meta|track|param|base)(\b[^>]*?)\s*\/?>/gi;
 
