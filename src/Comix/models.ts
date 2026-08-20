@@ -105,9 +105,18 @@ export type PagesPayload = {
   };
 };
 
-// `safe` is the site's own lowest rating; everything above it is lumped together
-// rather than mapped one-to-one, because the app only has three levels.
-export const SAFE_CONTENT_RATING = "safe";
+/**
+ * The site's four ratings onto the app's three levels. Every item in every
+ * payload carries one, so the app's own content filter does the work and no
+ * setting is needed — but only if adult material is labelled ADULT rather than
+ * lumped in with MATURE, which would let it through a filter set to exclude it.
+ */
+export const CONTENT_RATING_MAP: Record<string, "EVERYONE" | "MATURE" | "ADULT"> = {
+  safe: "EVERYONE",
+  suggestive: "MATURE",
+  erotica: "ADULT",
+  pornographic: "ADULT",
+};
 
 // Every filter value below was taken from requests the site's own browse UI
 // issued — see docs/Comix/api-shapes.md. Sort ids are `<field>:<direction>` and

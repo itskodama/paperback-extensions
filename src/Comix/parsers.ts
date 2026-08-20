@@ -10,7 +10,7 @@ import {
 
 import {
   DOMAIN,
-  SAFE_CONTENT_RATING,
+  CONTENT_RATING_MAP,
   type ChapterItem,
   type ChapterPayload,
   type Hid,
@@ -87,10 +87,17 @@ export function posterUrl(manga: MangaSummary): string {
   return manga.poster?.large ?? manga.poster?.medium ?? "";
 }
 
+// An unrecognised value is treated as MATURE: visible to most readers, but not
+// silently promoted to EVERYONE.
 export function contentRatingOf(manga: MangaSummary): ContentRating {
-  return manga.contentRating === SAFE_CONTENT_RATING
-    ? ContentRating.EVERYONE
-    : ContentRating.MATURE;
+  switch (CONTENT_RATING_MAP[manga.contentRating ?? ""]) {
+    case "EVERYONE":
+      return ContentRating.EVERYONE;
+    case "ADULT":
+      return ContentRating.ADULT;
+    default:
+      return ContentRating.MATURE;
+  }
 }
 
 export function toSearchResultItem(manga: MangaSummary): SearchResultItem {

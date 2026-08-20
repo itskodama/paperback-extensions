@@ -121,15 +121,26 @@ void test("the large poster is preferred, falling back to medium then empty", ()
   assert.equal(posterUrl({ id: 1, hid: "x", title: "X" }), "");
 });
 
-// The site's own rating vocabulary is wider than the app's three levels, so
-// anything that is not explicitly `safe` is treated as mature.
-void test("only an explicit safe rating maps to EVERYONE", () => {
-  assert.equal(contentRatingOf(detail), ContentRating.EVERYONE);
+// Every item in every payload carries a rating, so the app's own content filter
+// does the work — but only if adult material is labelled ADULT. Collapsing it
+// into MATURE lets it past a filter set to exclude it.
+void test("all four site ratings map onto the app's three levels", () => {
+  const rated = (contentRating: string) =>
+    contentRatingOf({ id: 1, hid: "x", title: "X", contentRating });
+
+  assert.equal(rated("safe"), ContentRating.EVERYONE);
+  assert.equal(rated("suggestive"), ContentRating.MATURE);
+  assert.equal(rated("erotica"), ContentRating.ADULT);
+  assert.equal(rated("pornographic"), ContentRating.ADULT);
+});
+
+void test("an unknown or absent rating is mature, never promoted to everyone", () => {
   assert.equal(
-    contentRatingOf({ id: 1, hid: "x", title: "X", contentRating: "suggestive" }),
+    contentRatingOf({ id: 1, hid: "x", title: "X", contentRating: "brand-new" }),
     ContentRating.MATURE,
   );
   assert.equal(contentRatingOf({ id: 1, hid: "x", title: "X" }), ContentRating.MATURE);
+  assert.equal(contentRatingOf(detail), ContentRating.EVERYONE);
 });
 
 void test("hid is the mangaId, never the numeric id", () => {
