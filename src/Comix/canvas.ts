@@ -34,7 +34,7 @@ interface PolyfilledCanvas {
   width: number;
   height: number;
   getContext(contextId: "2d"): PolyfilledContext | null;
-  toDataURL(type?: string): string;
+  toDataURL(type?: string, quality?: number): string;
 }
 
 type Ctor<T, A extends unknown[] = []> = new (...args: A) => T;
@@ -93,16 +93,26 @@ export type PixelTransform = (
   height: number,
 ) => Uint8ClampedArray;
 
+// A canvas that cannot encode the requested type falls back to PNG (HTML spec),
+// and JavaScriptCore's canvas cannot encode WebP — so `toDataURL("image/webp")`
+// silently yields a multi-megabyte lossless PNG. JPEG is always encodable and,
+// on opaque manga art, visually lossless at this quality while staying close to
+// the original size. Native Comix clients re-encode to JPEG for the same reason.
+const OUTPUT_MIME = "image/jpeg";
+const OUTPUT_QUALITY = 0.92;
+
 /**
  * Decode, hand the caller ordinary top-down pixels, and re-encode. The Y-up flip
  * belongs here rather than in the caller: it is a property of the polyfill, not
  * of whatever the pixels are being used for.
  */
+export type TransformResult = { bytes: ArrayBuffer; inputBytes: number; outputBytes: number };
+
 export async function transformImage(
   data: ArrayBuffer,
   mimeType: string,
   transform: PixelTransform,
-): Promise<ArrayBuffer> {
+): Promise<TransformResult> {
   const image = await decodeImage(data, mimeType);
   const width = image.naturalWidth || image.width;
   const height = image.naturalHeight || image.height;
@@ -121,5 +131,6 @@ export async function transformImage(
   const ImageDataCtor =
     polyfill<Ctor<PolyfilledPixels, [Uint8ClampedArray, number, number]>>("ImageData");
   context.putImageData(new ImageDataCtor(flipRows(result, width, height), width, height), 0, 0);
-  return fromDataUrl(canvas.toDataURL(mimeType));
+  const bytes = fromDataUrl(canvas.toDataURL(OUTPUT_MIME, OUTPUT_QUALITY));
+  return { bytes, inputBytes: data.byteLength, outputBytes: bytes.byteLength };
 }

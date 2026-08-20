@@ -100,6 +100,7 @@ function bootstrapFor(
 // pull-to-refresh appear to do nothing, which is when fresh data is most wanted.
 // Validating costs one already-cached HTML fetch and no WebView run.
 const chapterCache = new Map<string, { latestChapter: number; payloads: ChapterPayload[] }>();
+const chapterInFlight = new Map<string, Promise<ChapterPayload[]>>();
 
 export async function captureChapterList(
   hid: string,
@@ -110,6 +111,22 @@ export async function captureChapterList(
     return cached.payloads;
   }
 
+  // A WebView chapter walk is the most expensive call the extension makes, so a
+  // second request for the same series while one is running joins it rather than
+  // starting a parallel walk.
+  const pending = chapterInFlight.get(hid);
+  if (pending) return pending;
+
+  const walk = captureChapters(hid, latestChapter);
+  chapterInFlight.set(hid, walk);
+  try {
+    return await walk;
+  } finally {
+    chapterInFlight.delete(hid);
+  }
+}
+
+async function captureChapters(hid: string, latestChapter?: number): Promise<ChapterPayload[]> {
   // The site serves 20 chapters per request and the URL carries a signature bound
   // to its exact query, so pages cannot be requested directly — the site's own
   // pagination control has to be driven. Whatever has been captured is always

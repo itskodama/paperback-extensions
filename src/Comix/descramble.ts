@@ -6,7 +6,7 @@
 // headers, so nothing here needs the site's JavaScript. See
 // docs/Comix/site-recon.md#images-solved-in-principle-if-it-ever-mattered.
 
-import { transformImage } from "./canvas.ts";
+import { transformImage, type TransformResult } from "./canvas.ts";
 
 const GRID_COLS = 5;
 const GRID_ROWS = 5;
@@ -317,7 +317,7 @@ export async function descrambleImage(
   config: ScrambleConfig,
   mimeType: string,
   verifyUnknown: boolean,
-): Promise<ArrayBuffer> {
+): Promise<TransformResult> {
   return transformImage(data, mimeType, (source, width, height) => {
     const tileWidth = Math.floor(width / config.cols);
     const tileHeight = Math.floor(height / config.rows);

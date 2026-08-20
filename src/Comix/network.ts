@@ -91,7 +91,7 @@ export class MainInterceptor extends PaperbackInterceptor {
     // A page that cannot be unscrambled is still worth showing scrambled: an
     // error here would leave the reader with a blank page instead.
     try {
-      const descrambled = await descrambleImage(
+      const result = await descrambleImage(
         bytes,
         scramble,
         response.mimeType ?? "image/webp",
@@ -99,9 +99,10 @@ export class MainInterceptor extends PaperbackInterceptor {
       );
       recordScramble(
         `${scramble.cols}x${scramble.rows} algo=${scramble.scrambleAlgo ?? "?"} ` +
-          `token=${scramble.scrambleHash ?? "none"} seed=${scramble.scrambleSeedRaw}`,
+          `token=${scramble.scrambleHash ?? "none"} ` +
+          `${Math.round(result.inputBytes / 1024)}KB->${Math.round(result.outputBytes / 1024)}KB`,
       );
-      return descrambled;
+      return result.bytes;
     } catch (error) {
       recordScramble(`FAILED token=${scramble.scrambleHash ?? "none"}: ${String(error)}`);
       console.log(`[Comix] descramble failed for ${request.url}: ${String(error)}`);
