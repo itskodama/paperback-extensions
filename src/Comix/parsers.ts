@@ -132,7 +132,9 @@ export function toSourceManga(detail: MangaDetail): SourceManga {
       status: detail.status,
       author: titles(detail.authors).join(", ") || undefined,
       artist: titles(detail.artists).join(", ") || undefined,
-      rating: detail.ratedAvg,
+      // ratedAvg is out of 10 and the app renders `rating` as a fraction, so an
+      // unscaled 5.5 displays as 550%.
+      rating: typeof detail.ratedAvg === "number" ? detail.ratedAvg / 10 : undefined,
       tagGroups: tagGroups.length > 0 ? tagGroups : undefined,
       shareUrl: detail.url ? `${DOMAIN}${detail.url}` : undefined,
     },

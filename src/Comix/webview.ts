@@ -185,8 +185,6 @@ export async function captureChapterList(
   );
 
   const raw = await capture<string[]>(`${DOMAIN}/title/${hid}`, bootstrap);
-  if (raw.length === 0) throw new Error(`Comix: no chapters were returned for ${hid}`);
-
   const payloads = raw.map((payload) => JSON.parse(payload) as ChapterPayload);
   if (latestChapter !== undefined) chapterCache.set(hid, { latestChapter, payloads });
   return payloads;

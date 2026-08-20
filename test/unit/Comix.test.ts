@@ -13,7 +13,17 @@ import {
   tileBlits,
   tileOrder,
 } from "../../src/Comix/descramble.ts";
-import type { ChapterItem, MangaDetail } from "../../src/Comix/models.ts";
+import {
+  CONTENT_RATINGS,
+  DEMOGRAPHICS,
+  FORMATS,
+  GENRES,
+  SORT_OPTIONS,
+  STATUSES,
+  TYPES,
+  type ChapterItem,
+  type MangaDetail,
+} from "../../src/Comix/models.ts";
 import {
   ageToDate,
   chapterPagesRemain,
@@ -133,7 +143,9 @@ void test("detail maps into MangaInfo with tag groups and a share url", () => {
   assert.equal(manga.mangaInfo.primaryTitle, "Full-Time Awakening");
   assert.deepEqual(manga.mangaInfo.secondaryTitles, ["5(All) Elements", "全职觉醒"]);
   assert.equal(manga.mangaInfo.author, "TONY");
-  assert.equal(manga.mangaInfo.rating, 7.6);
+  // ratedAvg is out of 10 while the app renders `rating` as a fraction; an
+  // unscaled value displays as 760%.
+  assert.equal(manga.mangaInfo.rating, 0.76);
   assert.equal(manga.mangaInfo.shareUrl, "https://comix.to/title/qqwrm-full-time-awakening");
   assert.deepEqual(
     manga.mangaInfo.tagGroups?.map((group) => group.id),
@@ -295,13 +307,15 @@ void test("scramble headers are read case-insensitively", () => {
   assert.equal(config?.encLength, 512);
 });
 
-void test("the scramble seed is xored with the offset the hash token stands for", () => {
+// The offset is no longer folded in at parse time: an unrecognised token is
+// resolved against the image later, so the raw seed and token both survive.
+void test("the raw seed and hash token are carried through for later resolution", () => {
   const known = parseScrambleConfig({
     "x-scramble-grid": "5x5",
     "x-scramble-seed": "1000",
     "x-scramble-hash": "03632",
   });
-  assert.equal(known?.scrambleSeed, 1000 ^ 58414);
+  assert.deepEqual([known?.scrambleSeedRaw, known?.scrambleHash], [1000, "03632"]);
   assert.equal(known?.gridded, true);
 
   const unknown = parseScrambleConfig({
@@ -309,7 +323,7 @@ void test("the scramble seed is xored with the offset the hash token stands for"
     "x-scramble-seed": "1000",
     "x-scramble-hash": "whatever",
   });
-  assert.equal(unknown?.scrambleSeed, 1000);
+  assert.deepEqual([unknown?.scrambleSeedRaw, unknown?.scrambleHash], [1000, "whatever"]);
 });
 
 // Only algo 3 is 5x5-bound; the LCG variants shuffle any grid, so the
@@ -442,4 +456,47 @@ void test("a chapter carries its approximate publish date", () => {
     "publishDate" in toChapter(chapterItem({ createdAtFormatted: "" }), sourceManga),
     false,
   );
+});
+
+// --- filter catalogue ---
+
+// Every value here was taken from requests the site's own browse UI issued; a
+// typo would fail silently as an ignored filter rather than an error.
+void test("filter ids match what the site's own browse requests send", () => {
+  assert.deepEqual(
+    CONTENT_RATINGS.map((option) => option.id),
+    ["safe", "suggestive", "erotica", "pornographic"],
+  );
+  assert.deepEqual(
+    TYPES.map((option) => option.id),
+    ["manga", "manhwa", "manhua", "other"],
+  );
+  assert.deepEqual(STATUSES.map((option) => option.id).sort(), [
+    "discontinued",
+    "finished",
+    "not_yet_released",
+    "on_hiatus",
+    "releasing",
+  ]);
+  assert.deepEqual(
+    DEMOGRAPHICS.map((option) => option.id),
+    ["1", "2", "3", "4"],
+  );
+});
+
+void test("genre and format ids are numeric and unique", () => {
+  const ids = [...GENRES, ...FORMATS].map((option) => option.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.ok(ids.every((id) => /^\d+$/.test(id)));
+  assert.equal(GENRES.find((option) => option.title === "Isekai")?.id, "16");
+  assert.equal(FORMATS.find((option) => option.title === "Long Strip")?.id, "93170");
+});
+
+// A sort id is `<field>:<direction>`; the site wants `order[<field>]=<direction>`.
+void test("every sort id splits into a field and a direction", () => {
+  SORT_OPTIONS.forEach((option) => {
+    const [field, direction] = option.id.split(":");
+    assert.ok(field && field.length > 0, `${option.id} has no field`);
+    assert.ok(direction === "asc" || direction === "desc", `${option.id} has no direction`);
+  });
 });

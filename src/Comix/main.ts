@@ -18,7 +18,7 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-import { ComixSearchForm, type ComixSearchMetadata } from "./forms.ts";
+import { ComixSearchForm, DEFAULT_SEARCH_METADATA, type ComixSearchMetadata } from "./forms.ts";
 import { DOMAIN, DEFAULT_SORT, SORT_OPTIONS, type MangaDetail } from "./models.ts";
 import { cookieStorage, fetchText, mainInterceptor, rateLimiter } from "./network.ts";
 import {
@@ -37,6 +37,35 @@ import type ComixConfig from "./pbconfig.ts";
 import { captureBrowse, captureChapterList, capturePageList } from "./webview.ts";
 
 type QueryParams = { type?: string; scope?: string; order?: Record<string, string> };
+
+function appendAll(params: string[], key: string, values: string[]): void {
+  values.forEach((value) => params.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`));
+}
+
+/**
+ * The browse page reads its filters straight from the query string, and its own
+ * JS signs whatever it finds there — so the extension only has to compose the
+ * URL the site would have composed. Repeated keys use the `name[]` form the site
+ * uses; a sort id is `<field>:<direction>` and expands to `order[<field>]`.
+ */
+function browseUrl(title: string, search: ComixSearchMetadata, page: number): string {
+  const [field, direction] = (search.sort || DEFAULT_SORT).split(":");
+  const params = [
+    `q=${encodeURIComponent(title)}`,
+    `order[${field ?? "relevance"}]=${direction ?? "desc"}`,
+    `page=${page}`,
+  ];
+
+  appendAll(params, "content_rating[]", search.contentRatings);
+  appendAll(params, "types[]", search.types);
+  appendAll(params, "statuses[]", search.statuses);
+  appendAll(params, "demographics[]", search.demographics);
+  appendAll(params, "genres_in[]", search.genres);
+  appendAll(params, "formats[]", search.formats);
+  if (search.genres.length > 1) params.push(`genres_mode=${search.genresMode}`);
+
+  return `${DOMAIN}/browse?${params.join("&")}`;
+}
 
 /**
  * Every section is served by the homepage's own embedded payload, so the whole
@@ -128,12 +157,12 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
     query: SearchQuery<Metadata>,
     metadata?: Metadata,
   ): Promise<PagedResults<SearchResultItem>> {
-    const search = (query.metadata as ComixSearchMetadata | undefined) ?? {};
+    const search: ComixSearchMetadata = {
+      ...DEFAULT_SEARCH_METADATA,
+      ...(query.metadata as Partial<ComixSearchMetadata> | undefined),
+    };
     const page = (metadata as { page?: number } | undefined)?.page ?? 1;
-
-    const url =
-      `${DOMAIN}/browse?q=${encodeURIComponent(query.title)}` +
-      `&sort=${encodeURIComponent(search.sort ?? DEFAULT_SORT)}&page=${page}`;
+    const url = browseUrl(query.title, search, page);
 
     const captured = (await captureBrowse(url)) as {
       items?: unknown;
@@ -164,6 +193,11 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
     const detail = findQuery(queries, (key) => key[0] === "manga" && key[1] === "detail") as
       | MangaDetail
       | undefined;
+
+    // A series with nothing uploaded yet is an empty list, not a failure — and
+    // the series page says so, which saves a WebView run that would only time
+    // out waiting for a request the site never makes.
+    if (detail?.hasChapters === false) return [];
 
     const payloads = await captureChapterList(sourceManga.mangaId, detail?.latestChapter);
     return payloads.flatMap((payload) => parseChapterPayload(payload, sourceManga));

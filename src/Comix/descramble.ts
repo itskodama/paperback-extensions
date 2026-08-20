@@ -19,24 +19,43 @@ export type ScrambleConfig = {
   encSeed: number;
   encLength: number;
   encAlgo: string | undefined;
-  scrambleSeed: number;
+  scrambleSeedRaw: number;
+  scrambleHash: string | undefined;
   scrambleAlgo: string | undefined;
   cols: number;
   rows: number;
   gridded: boolean;
 };
 
-// The site sends a short opaque token rather than the value itself; only these
-// two have ever been observed, and an unknown one contributes nothing.
-function scrambleHashOffset(hash: string | undefined): number {
-  switch (hash?.trim()) {
-    case "03632":
-      return 58414;
-    case "02900":
-      return 117532;
-    default:
-      return 0;
-  }
+// The site sends a short opaque token rather than the offset itself. These two
+// were derived by seam-scoring real scrambled pages; every other observed token
+// means "use the seed unmodified". A token outside both sets is resolved at
+// runtime — see resolveOffset.
+const KNOWN_OFFSETS: Record<string, number> = {
+  "03632": 58414,
+  "02900": 117532,
+};
+
+const DISCOVERED_STATE = "comix.scramble-offsets";
+
+function discoveredOffsets(): Record<string, number> {
+  const stored = Application.getState(DISCOVERED_STATE);
+  return stored && typeof stored === "object" ? (stored as Record<string, number>) : {};
+}
+
+/** Offsets worked out on this device, for reporting so they can be hardcoded. */
+export function learnedOffsets(): Record<string, number> {
+  return discoveredOffsets();
+}
+
+function rememberOffset(hash: string, offset: number): void {
+  Application.setState({ ...discoveredOffsets(), [hash]: offset }, DISCOVERED_STATE);
+}
+
+function knownOffset(hash: string | undefined): number | undefined {
+  const token = hash?.trim();
+  if (!token) return 0;
+  return KNOWN_OFFSETS[token] ?? discoveredOffsets()[token];
 }
 
 // Header names are not case-normalised by the platform (docs/paperback/networking.md).
@@ -71,7 +90,8 @@ export function parseScrambleConfig(headers: Record<string, string>): ScrambleCo
     encSeed,
     encLength,
     encAlgo: header(headers, "x-enc-algo"),
-    scrambleSeed: (scrambleSeedRaw ^ scrambleHashOffset(header(headers, "x-scramble-hash"))) | 0,
+    scrambleSeedRaw,
+    scrambleHash: header(headers, "x-scramble-hash")?.trim(),
     scrambleAlgo,
     cols,
     rows,
@@ -270,6 +290,138 @@ function flipRows(pixels: Uint8ClampedArray, width: number, height: number): Uin
   return flipped;
 }
 
+/**
+ * Edge discontinuity across internal tile seams, sampled sparsely. A correctly
+ * reassembled page scores an order of magnitude lower than a wrong one, which
+ * makes this a reliable oracle for choosing between candidate offsets without
+ * any knowledge of what the page depicts.
+ */
+function seamCost(
+  edges: { right: number[][]; left: number[][]; bottom: number[][]; top: number[][] },
+  order: number[],
+  cols: number,
+  rows: number,
+): number {
+  const gap = (a: number[], b: number[]): number => {
+    let sum = 0;
+    for (let i = 0; i < a.length; i += 1) sum += Math.abs((a[i] ?? 0) - (b[i] ?? 0));
+    return sum;
+  };
+
+  let total = 0;
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const here = order[row * cols + col] ?? 0;
+      if (col + 1 < cols)
+        total += gap(edges.right[here] ?? [], edges.left[order[row * cols + col + 1] ?? 0] ?? []);
+      if (row + 1 < rows)
+        total += gap(edges.bottom[here] ?? [], edges.top[order[(row + 1) * cols + col] ?? 0] ?? []);
+    }
+  }
+  return total;
+}
+
+function tileEdges(
+  pixels: Uint8ClampedArray,
+  width: number,
+  cols: number,
+  rows: number,
+  tileWidth: number,
+  tileHeight: number,
+): { right: number[][]; left: number[][]; bottom: number[][]; top: number[][] } {
+  const step = 16;
+  const right: number[][] = [];
+  const left: number[][] = [];
+  const bottom: number[][] = [];
+  const top: number[][] = [];
+
+  for (let tile = 0; tile < cols * rows; tile += 1) {
+    const ox = (tile % cols) * tileWidth;
+    const oy = Math.floor(tile / cols) * tileHeight;
+    const r: number[] = [];
+    const l: number[] = [];
+    const b: number[] = [];
+    const t: number[] = [];
+
+    for (let y = 0; y < tileHeight; y += step) {
+      const row = (oy + y) * width;
+      for (let c = 0; c < 3; c += 1) {
+        r.push(pixels[(row + ox + tileWidth - 1) * 4 + c] ?? 0);
+        l.push(pixels[(row + ox) * 4 + c] ?? 0);
+      }
+    }
+    for (let x = 0; x < tileWidth; x += step) {
+      for (let c = 0; c < 3; c += 1) {
+        b.push(pixels[((oy + tileHeight - 1) * width + ox + x) * 4 + c] ?? 0);
+        t.push(pixels[(oy * width + ox + x) * 4 + c] ?? 0);
+      }
+    }
+    right.push(r);
+    left.push(l);
+    bottom.push(b);
+    top.push(t);
+  }
+  return { right, left, bottom, top };
+}
+
+// Every offset observed so far is below 2^18; a token needing more than this is
+// better reported than hunted for while the reader waits.
+const OFFSET_SEARCH_LIMIT = 1 << 18;
+
+/**
+ * A token absent from both the hardcoded and learned tables is resolved against
+ * the image itself: score the seed unmodified first, since that is what most
+ * tokens mean, and only sweep the offset space when that plainly fails. The
+ * winner is remembered so the cost is paid once per token, not once per page.
+ */
+function resolveOffset(
+  config: ScrambleConfig,
+  pixels: Uint8ClampedArray,
+  width: number,
+  height: number,
+): number {
+  const settled = knownOffset(config.scrambleHash);
+  if (settled !== undefined) return settled;
+
+  const { cols, rows } = config;
+  const tileWidth = Math.floor(width / cols);
+  const tileHeight = Math.floor(height / rows);
+  const edges = tileEdges(pixels, width, cols, rows, tileWidth, tileHeight);
+  const count = cols * rows;
+
+  const identity = Array.from({ length: count }, (_, i) => i);
+  const asDelivered = seamCost(edges, identity, cols, rows);
+
+  const costOf = (offset: number): number =>
+    seamCost(
+      edges,
+      tileOrder((config.scrambleSeedRaw ^ offset) | 0, config.scrambleAlgo, count),
+      cols,
+      rows,
+    );
+
+  // A correct arrangement beat the scrambled one by 20x in every sample, so a
+  // wide margin here is a confident accept rather than a lucky one.
+  const plain = costOf(0);
+  if (plain * 4 < asDelivered) {
+    rememberOffset(config.scrambleHash ?? "", 0);
+    return 0;
+  }
+
+  let best = 0;
+  let bestCost = plain;
+  for (let offset = 1; offset < OFFSET_SEARCH_LIMIT; offset += 1) {
+    const cost = costOf(offset);
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = offset;
+    }
+  }
+
+  if (bestCost * 4 < asDelivered && config.scrambleHash) rememberOffset(config.scrambleHash, best);
+  return best;
+}
+
 export async function descrambleImage(
   data: ArrayBuffer,
   config: ScrambleConfig,
@@ -298,7 +450,12 @@ export async function descrambleImage(
   // unscrambled when the grid does not divide evenly, survives untouched.
   const destination = new Uint8ClampedArray(source);
 
-  const order = tileOrder(config.scrambleSeed, config.scrambleAlgo, config.cols * config.rows);
+  const offset = resolveOffset(config, source, width, height);
+  const order = tileOrder(
+    (config.scrambleSeedRaw ^ offset) | 0,
+    config.scrambleAlgo,
+    config.cols * config.rows,
+  );
   const rowBytes = tileWidth * 4;
 
   order.forEach((from, to) => {
