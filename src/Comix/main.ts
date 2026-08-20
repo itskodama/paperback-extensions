@@ -49,8 +49,8 @@ function appendAll(params: string[], key: string, values: string[]): void {
  * URL the site would have composed. Repeated keys use the `name[]` form the site
  * uses; a sort id is `<field>:<direction>` and expands to `order[<field>]`.
  */
-function browseUrl(title: string, search: ComixSearchMetadata, page: number): string {
-  const [field, direction] = (search.sort || DEFAULT_SORT).split(":");
+function browseUrl(title: string, search: ComixSearchMetadata, sort: string, page: number): string {
+  const [field, direction] = (sort || DEFAULT_SORT).split(":");
   const params = [
     `q=${encodeURIComponent(title)}`,
     `order[${field ?? "relevance"}]=${direction ?? "desc"}`,
@@ -160,14 +160,16 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
    */
   async getSearchResults(
     query: SearchQuery<Metadata>,
-    metadata?: Metadata,
+    metadata: Metadata | undefined,
+    sortingOption: SortingOption | undefined,
   ): Promise<PagedResults<SearchResultItem>> {
     const search: ComixSearchMetadata = {
       ...DEFAULT_SEARCH_METADATA,
       ...(query.metadata as Partial<ComixSearchMetadata> | undefined),
     };
     const page = (metadata as { page?: number } | undefined)?.page ?? 1;
-    const url = browseUrl(query.title, search, page);
+    // The sort comes from the app's own selector rather than the filter form.
+    const url = browseUrl(query.title, search, sortingOption?.id ?? DEFAULT_SORT, page);
 
     const captured = (await captureBrowse(url)) as {
       items?: unknown;

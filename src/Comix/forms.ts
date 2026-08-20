@@ -10,19 +10,9 @@ import {
   type SearchQuery,
 } from "@paperback/types";
 
-import {
-  CONTENT_RATINGS,
-  DEFAULT_SORT,
-  DEMOGRAPHICS,
-  FORMATS,
-  GENRES,
-  SORT_OPTIONS,
-  STATUSES,
-  TYPES,
-} from "./models.ts";
+import { CONTENT_RATINGS, DEMOGRAPHICS, FORMATS, GENRES, STATUSES, TYPES } from "./models.ts";
 
 export type ComixSearchMetadata = {
-  sort: string;
   contentRatings: string[];
   types: string[];
   statuses: string[];
@@ -38,7 +28,6 @@ const GENRE_MODES = [
 ];
 
 export const DEFAULT_SEARCH_METADATA: ComixSearchMetadata = {
-  sort: DEFAULT_SORT,
   contentRatings: ["safe", "suggestive"],
   types: [],
   statuses: [],
@@ -63,17 +52,10 @@ export class ComixSearchForm extends AdvancedSearchForm {
   }
 
   getSections(): FormSectionElement<unknown>[] {
+    // No sort row here: the app already offers one next to the search field,
+    // backed by getSortingOptions, and its choice arrives as getSearchResults'
+    // third argument. A second copy would be a second source of truth.
     return [
-      Section("ordering", [
-        SelectRow("sortOrder", {
-          title: "Sort by",
-          value: [this.state.sort],
-          minItemCount: 1,
-          maxItemCount: 1,
-          options: SORT_OPTIONS.map((option) => ({ id: option.id, title: option.title })),
-          onValueChange: Application.Selector(this as ComixSearchForm, "setSort"),
-        }),
-      ]),
       Section("audience", [
         this.multi(
           "contentRating",
@@ -130,10 +112,6 @@ export class ComixSearchForm extends AdvancedSearchForm {
       options: options.map((option) => ({ id: option.id, title: option.title })),
       onValueChange: Application.Selector(this as ComixSearchForm, handler),
     });
-  }
-
-  async setSort(value: string[]): Promise<void> {
-    this.state = { ...this.state, sort: value[0] ?? DEFAULT_SORT };
   }
 
   async setGenresMode(value: string[]): Promise<void> {
