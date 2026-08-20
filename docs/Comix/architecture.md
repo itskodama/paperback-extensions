@@ -47,6 +47,35 @@ type-stripping in `npm run test:unit` requires it, so the AsuraScans convention 
 
 ## Image descrambling
 
+**Measured 2026-08-19 across 439 page images in three HAR captures:**
+
+| Layer                       | Occurrences  | Notes                         |
+| --------------------------- | ------------ | ----------------------------- |
+| `x-scramble-*` tile shuffle | **37 (~8%)** | Always `5x5`, always algo `3` |
+| `x-enc-*` XOR keystream     | **0**        | Not observed at all           |
+
+So the shuffle is the layer that matters and the keystream is the one that does not — the opposite
+of what this extension currently implements. Roughly one page in twelve renders as a jumbled
+mosaic until the shuffle is undone.
+
+**The permutation maths is solved and verified.** Every observed hash was checked against a real
+scrambled image by scoring seam continuity across tile boundaries — a correct arrangement scores
+10-70x lower than a wrong one, so the oracle is unambiguous:
+
+| `x-scramble-hash`                                               | Offset |
+| --------------------------------------------------------------- | ------ |
+| `02900`                                                         | 117532 |
+| `03632`                                                         | 58414  |
+| `06a77` `13276` `42791` `44cbb` `4894c` `73c77` `c0f0d` `f40c0` | **0**  |
+
+An unlisted hash means "use the seed unmodified", not "unknown" — so `descramble.ts`'s two special
+cases plus a zero default are correct and complete as written. An earlier revision of this page
+claimed the unlisted values would be mis-descrambled; that was wrong.
+
+The seed is stable per image, but the hash **rotates per response** and the bytes change with it, so
+the server re-scrambles on each fetch. That is why the table has to be complete rather than
+covering the common cases.
+
 Page images arrive in two layers, and **only one of them is currently undoable**:
 
 | Layer            | Needs                        | Status                                     |
