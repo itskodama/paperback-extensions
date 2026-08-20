@@ -17,8 +17,8 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-import { LightNovelWorldSearchForm } from "./forms";
-import { MainInterceptor, fetchJson, fetchPage } from "./network";
+import { LightNovelWorldSearchForm } from "./forms.ts";
+import { MainInterceptor, fetchJson, fetchPage } from "./network.ts";
 import {
   CHAPTER_LIST_PAGE_SIZE,
   RANKING_PAGE_SIZE,
@@ -56,8 +56,8 @@ import {
   updatesUrl,
   type LightNovelWorldSearchMetadata,
   type SearchApiResponse,
-} from "./parser";
-import type LightNovelWorldConfig from "./pbconfig";
+} from "./parser.ts";
+import type LightNovelWorldConfig from "./pbconfig.ts";
 
 const DISCOVER_RECOMMENDED = "recommended";
 const DISCOVER_TRENDING = "trending";

@@ -11,7 +11,7 @@ import {
   type SearchQuery,
 } from "@paperback/types";
 
-import { CHAPTER_RANGES, GENRES, STATUSES, type LightNovelWorldSearchMetadata } from "./parser";
+import { CHAPTER_RANGES, GENRES, STATUSES, type LightNovelWorldSearchMetadata } from "./parser.ts";
 
 const LOGIC_ITEMS = [
   { id: "AND", title: "Match all selected genres" },
