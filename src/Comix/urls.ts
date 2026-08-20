@@ -1,13 +1,23 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import { DEFAULT_SORT, DOMAIN } from "./models.ts";
+import { DEFAULT_SORT, DOMAIN, MIRROR_DOMAIN } from "./models.ts";
 
 /**
  * Pure URL construction. Kept apart from `parsers.ts` (which reads pages) and
  * `main.ts` (which dispatches) so the shape of every request the extension makes
  * lives in one place.
  */
+
+/**
+ * True for the CDNs serving covers and pages, false for the site itself. Rate
+ * limiting applies only to the origin: page URLs are extensionless tokens, so
+ * BasicRateLimiter's extension-based exemption never matched them and every page
+ * was counted and serialised behind its lock.
+ */
+export function isOffOrigin(url: string): boolean {
+  return !url.startsWith(DOMAIN) && !url.startsWith(MIRROR_DOMAIN);
+}
 
 export function homeUrl(): string {
   return `${DOMAIN}/`;

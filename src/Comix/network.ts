@@ -13,20 +13,26 @@ import {
 import { applyKeystream, descrambleImage, parseScrambleConfig } from "./descramble.ts";
 import { DOMAIN } from "./models.ts";
 import { recordScramble, thoroughDescrambleEnabled } from "./settings.ts";
+import { isOffOrigin } from "./urls.ts";
 
 /**
- * `ignoreImages` cannot help here: it matches on a file extension, and this
- * site's page URLs are extensionless tokens (`.../i5/<token>`), so every page
- * image counted against the budget and each one waited on the limiter's lock. A
- * 20-page chapter throttled itself to well over ten seconds while a browser,
- * with no such limit, loaded the same chapter instantly.
+ * `ignoreImages` cannot help here: it matches on a file extension, and this site
+ * serves pages as extensionless tokens (`.../i5/<token>`), so every page image
+ * was counted against the budget and serialised through the limiter's lock. A
+ * 20-page chapter throttled itself to over ten seconds before any network cost.
  *
- * The budget therefore has to accommodate reading, not just API calls. Pages are
- * fetched from sharded CDN hosts rather than the origin, and a reader legitimately
- * pulls a chapter's worth at once.
+ * Pacing is meant for the site's own origin — the pages and API it serves — not
+ * for assets on its CDNs. Exempting by host rather than by extension keeps that
+ * distinction, and holds for any new CDN shard.
  */
-export const rateLimiter = new BasicRateLimiter("comix", {
-  numberOfRequests: 60,
+class OriginRateLimiter extends BasicRateLimiter {
+  override async interceptRequest(request: Request): Promise<Request> {
+    return isOffOrigin(request.url) ? request : super.interceptRequest(request);
+  }
+}
+
+export const rateLimiter = new OriginRateLimiter("comix", {
+  numberOfRequests: 20,
   bufferInterval: 10,
   ignoreImages: true,
 });

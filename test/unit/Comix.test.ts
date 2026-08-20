@@ -33,6 +33,7 @@ import {
   toSearchResultItem,
   toSourceManga,
 } from "../../src/Comix/parsers.ts";
+import { isOffOrigin } from "../../src/Comix/urls.ts";
 
 // --- initial-data extraction ---
 
@@ -483,4 +484,19 @@ void test("every sort id splits into a field and a direction", () => {
     assert.ok(field && field.length > 0, `${option.id} has no field`);
     assert.ok(direction === "asc" || direction === "desc", `${option.id} has no direction`);
   });
+});
+
+// --- rate limiting scope ---
+
+// Pacing exists for the site's own origin. Page images live on extensionless
+// CDN URLs, so BasicRateLimiter's extension-matching exemption never fired and
+// every page was counted and serialised — a chapter throttled itself to over ten
+// seconds. Exempting by host holds for any new CDN shard.
+void test("only the site's own origins are rate limited", () => {
+  assert.equal(isOffOrigin("https://comix.to/title/qqwrm"), false);
+  assert.equal(isOffOrigin("https://comix.ws/api/v1/manga"), false);
+
+  assert.equal(isOffOrigin("https://jloo.wowpic2.store/i5/token"), true);
+  assert.equal(isOffOrigin("https://ek10.wowpic1.store/i5/token"), true);
+  assert.equal(isOffOrigin("https://static.comix.to/9c57/i/8/6d/abc.jpg"), true);
 });
