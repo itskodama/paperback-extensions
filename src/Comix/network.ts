@@ -140,29 +140,57 @@ function onOrigin(url: string, target: string): string {
   return url.replace(DOMAIN, target).replace(MIRROR_DOMAIN, target);
 }
 
+/** An HTTP status the server actually returned, as opposed to a transport failure. */
+class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    url: string,
+  ) {
+    super(`Comix returned HTTP ${status} for ${url}`);
+  }
+}
+
+/**
+ * The platform rejects with native errors that are not JS `Error`s and stringify
+ * to "[object NSError]", so a message is dug out rather than interpolated.
+ */
+function describe(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  const message = (error as { message?: unknown; localizedDescription?: unknown } | null)?.message;
+  if (typeof message === "string" && message) return message;
+
+  const localized = (error as { localizedDescription?: unknown } | null)?.localizedDescription;
+  if (typeof localized === "string" && localized) return localized;
+  return "the network request failed";
+}
+
 async function attempt(url: string): Promise<string> {
   const [response, data] = await Application.scheduleRequest({ url, method: "GET" });
   if (response.status < 200 || response.status >= 300) {
-    throw new Error(`Comix returned HTTP ${response.status} for ${url}`);
+    throw new HttpError(response.status, url);
   }
   return Application.arrayBufferToUTF8String(data);
 }
 
 async function requestText(url: string): Promise<string> {
-  const origins = preferredOrigin === DOMAIN ? [DOMAIN, MIRROR_DOMAIN] : [MIRROR_DOMAIN, DOMAIN];
-  let lastError: unknown;
+  try {
+    const text = await attempt(onOrigin(url, preferredOrigin));
+    return text;
+  } catch (error) {
+    // Only an unreachable host is worth retrying elsewhere. A challenge belongs
+    // to the app, and a status the server chose to return says the same thing on
+    // either domain — retrying those would replace a real diagnosis with the
+    // mirror's unrelated failure.
+    if (error instanceof CloudflareError || error instanceof HttpError) throw error;
 
-  for (const candidate of origins) {
+    const fallback = preferredOrigin === DOMAIN ? MIRROR_DOMAIN : DOMAIN;
     try {
-      const text = await attempt(onOrigin(url, candidate));
-      preferredOrigin = candidate;
+      const text = await attempt(onOrigin(url, fallback));
+      preferredOrigin = fallback;
       return text;
-    } catch (error) {
-      // A challenge must surface to the app rather than being retried away on
-      // the mirror, which would only earn a second challenge.
-      if (error instanceof CloudflareError) throw error;
-      lastError = error;
+    } catch {
+      // Report the primary's failure; the mirror was only ever a long shot.
+      throw new Error(`Comix could not reach ${preferredOrigin}: ${describe(error)}`);
     }
   }
-  throw lastError instanceof Error ? lastError : new Error(`Comix: ${String(lastError)}`);
 }
