@@ -99,7 +99,9 @@ export type PixelTransform = (
 // on opaque manga art, visually lossless at this quality while staying close to
 // the original size. Native Comix clients re-encode to JPEG for the same reason.
 const OUTPUT_MIME = "image/jpeg";
-const OUTPUT_QUALITY = 0.92;
+// q92 was cautious; measured against a real page it costs ~45% over the source
+// WebP while q85 lands within ~8% and is indistinguishable on opaque page art.
+const OUTPUT_QUALITY = 0.85;
 
 /**
  * Decode, hand the caller ordinary top-down pixels, and re-encode. The Y-up flip
@@ -133,4 +135,21 @@ export async function transformImage(
   context.putImageData(new ImageDataCtor(flipRows(result, width, height), width, height), 0, 0);
   const bytes = fromDataUrl(canvas.toDataURL(OUTPUT_MIME, OUTPUT_QUALITY));
   return { bytes, inputBytes: data.byteLength, outputBytes: bytes.byteLength };
+}
+
+/**
+ * Whether the canvas can genuinely encode a format, rather than silently falling
+ * back to PNG. Asked of a 1x1 canvas, so it costs nothing. This is the check that
+ * decides whether re-encoding a page can keep its original format or has to
+ * settle for JPEG.
+ */
+export function canEncode(mimeType: string): boolean {
+  try {
+    const canvas = new (polyfill<Ctor<PolyfilledCanvas>>("HTMLCanvasElement"))();
+    canvas.width = 1;
+    canvas.height = 1;
+    return canvas.toDataURL(mimeType).startsWith(`data:${mimeType}`);
+  } catch {
+    return false;
+  }
 }

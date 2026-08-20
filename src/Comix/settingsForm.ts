@@ -3,6 +3,7 @@
 
 import { Form, LabelRow, Section, ToggleRow, type FormSectionElement } from "@paperback/types";
 
+import { canEncode } from "./canvas.ts";
 import { KNOWN_OFFSETS, learnedOffsets } from "./descramble.ts";
 import {
   debugEnabled,
@@ -70,10 +71,42 @@ export class ComixSettingsForm extends Form {
     );
   }
 
+  /**
+   * What this build of the app can actually do. Recorded because two decisions
+   * hinge on it: whether a re-encode can keep a page in its original format, and
+   * whether a compiled encoder could ever be shipped to make it.
+   */
+  private capabilityRows(): string[] {
+    const present = (name: string): string =>
+      (globalThis as Record<string, unknown>)[name] ? "yes" : "no";
+
+    return [
+      `canvas encodes webp: ${canEncode("image/webp") ? "yes" : "no"}`,
+      `canvas encodes jpeg: ${canEncode("image/jpeg") ? "yes" : "no"}`,
+      `WebAssembly: ${present("WebAssembly")}`,
+      `createImageBitmap: ${present("createImageBitmap")}`,
+      `OffscreenCanvas: ${present("OffscreenCanvas")}`,
+    ];
+  }
+
   private diagnosticsSections(): FormSectionElement<unknown>[] {
     if (!debugEnabled()) return [];
 
     const sections: FormSectionElement<unknown>[] = [];
+
+    sections.push(
+      Section(
+        {
+          id: "capabilities",
+          header: "Runtime capabilities",
+          footer:
+            "What this build of the app supports. Pages are re-encoded as JPEG only because " +
+            "the canvas cannot produce WebP; if that ever reads yes, they can keep their " +
+            "original format instead.",
+        },
+        this.capabilityRows().map((row, index) => LabelRow(`capability-${index}`, { title: row })),
+      ),
+    );
 
     /**
      * Offsets absent from the hardcoded table are worked out on device by
