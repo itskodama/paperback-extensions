@@ -10,7 +10,7 @@ import {
   type Response,
 } from "@paperback/types";
 
-import { applyKeystream, parseScrambleConfig } from "./descramble.ts";
+import { applyKeystream, descrambleImage, parseScrambleConfig } from "./descramble.ts";
 import { DOMAIN, MIRROR_DOMAIN } from "./models.ts";
 
 export const rateLimiter = new BasicRateLimiter("comix", {
@@ -71,18 +71,30 @@ export class MainInterceptor extends PaperbackInterceptor {
     }
 
     const scramble = parseScrambleConfig(response.headers);
-    if (!scramble || scramble.encLength <= 0) return data;
+    if (!scramble) return data;
 
-    // The XOR keystream is pure byte work and is undone here. The 5x5 tile shuffle
-    // is not: it needs an image decode/encode round-trip, and 0.9 exposes no way to
-    // construct a PBCanvas. See docs/Comix/architecture.md#image-descrambling.
-    const decoded = applyKeystream(
-      new Uint8Array(data),
-      scramble.encSeed,
-      scramble.encLength,
-      scramble.encAlgo,
-    );
-    return decoded.buffer as ArrayBuffer;
+    // Both layers are keyed off headers rather than sniffed, since a scrambled
+    // prefix defeats content detection. Either may be absent on a given image.
+    let bytes = data;
+    if (scramble.encLength > 0) {
+      bytes = applyKeystream(
+        new Uint8Array(bytes),
+        scramble.encSeed,
+        scramble.encLength,
+        scramble.encAlgo,
+      ).buffer as ArrayBuffer;
+    }
+
+    if (!scramble.gridded) return bytes;
+
+    // A page that cannot be unscrambled is still worth showing scrambled: an
+    // error here would leave the reader with a blank page instead.
+    try {
+      return await descrambleImage(bytes, scramble, response.mimeType ?? "image/webp");
+    } catch (error) {
+      console.log(`[Comix] descramble failed for ${request.url}: ${String(error)}`);
+      return bytes;
+    }
   }
 }
 

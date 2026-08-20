@@ -21,6 +21,8 @@ export type ScrambleConfig = {
   encAlgo: string | undefined;
   scrambleSeed: number;
   scrambleAlgo: string | undefined;
+  cols: number;
+  rows: number;
   gridded: boolean;
 };
 
@@ -56,8 +58,12 @@ export function parseScrambleConfig(headers: Record<string, string>): ScrambleCo
   const scrambleSeedRaw = intHeader(headers, "x-scramble-seed") ?? 0;
   const scrambleAlgo = header(headers, "x-scramble-algo");
 
+  const grid = /^\s*(\d+)\s*x\s*(\d+)\s*$/i.exec(header(headers, "x-scramble-grid") ?? "");
+  const cols = grid?.[1] ? Number.parseInt(grid[1], 10) : 0;
+  const rows = grid?.[2] ? Number.parseInt(grid[2], 10) : 0;
+
   const needsKeystream = encSeed !== 0 && encLength > 0;
-  const gridded = header(headers, "x-scramble-grid") === "5x5" && scrambleSeedRaw !== 0;
+  const gridded = cols > 0 && rows > 0 && scrambleSeedRaw !== 0;
 
   if (!needsKeystream && !gridded) return undefined;
 
@@ -67,6 +73,8 @@ export function parseScrambleConfig(headers: Record<string, string>): ScrambleCo
     encAlgo: header(headers, "x-enc-algo"),
     scrambleSeed: (scrambleSeedRaw ^ scrambleHashOffset(header(headers, "x-scramble-hash"))) | 0,
     scrambleAlgo,
+    cols,
+    rows,
     gridded,
   };
 }
@@ -173,4 +181,144 @@ export function hasImageSignature(bytes: Uint8Array): boolean {
   return IMAGE_SIGNATURES.some((signature) =>
     signature.every((byte, index) => bytes[index] === byte),
   );
+}
+
+/**
+ * Paperback 0.9 polyfills part of the DOM but does not type it — none of this is
+ * in `@paperback/types`. Probing for `App.createPBCanvas` or a `PBCanvas` global
+ * finds nothing and wrongly suggests the runtime has no drawing surface; the
+ * standard DOM names are what exist. They are reached through `globalThis` and
+ * feature-detected, so a runtime without them fails with a clear message.
+ */
+interface PolyfilledImage {
+  width: number;
+  height: number;
+  naturalWidth: number;
+  naturalHeight: number;
+  complete: boolean;
+  src: string;
+  onload: (() => void) | null;
+  onerror: ((event: unknown) => void) | null;
+}
+
+interface PolyfilledPixels {
+  data: Uint8ClampedArray;
+}
+
+interface PolyfilledContext {
+  drawImage(image: PolyfilledImage, dx: number, dy: number, dw: number, dh: number): void;
+  getImageData(sx: number, sy: number, sw: number, sh: number): PolyfilledPixels;
+  putImageData(pixels: PolyfilledPixels, dx: number, dy: number): void;
+}
+
+interface PolyfilledCanvas {
+  width: number;
+  height: number;
+  getContext(contextId: "2d"): PolyfilledContext | null;
+  toDataURL(type?: string): string;
+}
+
+type Ctor<T, A extends unknown[] = []> = new (...args: A) => T;
+
+function polyfill<T>(name: string): T {
+  const found = (globalThis as Record<string, unknown>)[name];
+  if (!found)
+    throw new Error(`Comix: this Paperback build has no ${name}, so pages cannot be unscrambled`);
+  return found as T;
+}
+
+function toDataUrl(data: ArrayBuffer, mimeType: string): string {
+  const encoded = Application.base64Encode(data);
+  const text =
+    typeof encoded === "string" ? encoded : Application.arrayBufferToASCIIString(encoded);
+  return `data:${mimeType};base64,${text}`;
+}
+
+function fromDataUrl(dataUrl: string): ArrayBuffer {
+  const decoded = Application.base64Decode(dataUrl.slice(dataUrl.indexOf(",") + 1));
+  if (typeof decoded !== "string") return decoded;
+
+  const bytes = new Uint8Array(decoded.length);
+  for (let i = 0; i < decoded.length; i += 1) bytes[i] = decoded.charCodeAt(i);
+  return bytes.buffer;
+}
+
+// Blob and URL are not polyfilled, so bytes cross into and out of the image
+// element as data: URLs rather than object URLs.
+async function decodeImage(data: ArrayBuffer, mimeType: string): Promise<PolyfilledImage> {
+  const image = new (polyfill<Ctor<PolyfilledImage>>("Image"))();
+
+  return new Promise<PolyfilledImage>((resolve, reject) => {
+    image.onload = (): void => resolve(image);
+    image.onerror = (): void => reject(new Error("Comix: a page image failed to decode"));
+    image.src = toDataUrl(data, mimeType);
+    if (image.complete && image.naturalWidth > 0) resolve(image);
+  });
+}
+
+/**
+ * The polyfilled getImageData/putImageData use a Y-up buffer (origin at the
+ * bottom-left), so rows arrive reversed. Flipping on the way in and out keeps
+ * the tile arithmetic in ordinary top-down coordinates.
+ */
+function flipRows(pixels: Uint8ClampedArray, width: number, height: number): Uint8ClampedArray {
+  const stride = width * 4;
+  const flipped = new Uint8ClampedArray(pixels.length);
+  for (let y = 0; y < height; y += 1) {
+    flipped.set(pixels.subarray(y * stride, (y + 1) * stride), (height - 1 - y) * stride);
+  }
+  return flipped;
+}
+
+export async function descrambleImage(
+  data: ArrayBuffer,
+  config: ScrambleConfig,
+  mimeType: string,
+): Promise<ArrayBuffer> {
+  const image = await decodeImage(data, mimeType);
+  const width = image.naturalWidth || image.width;
+  const height = image.naturalHeight || image.height;
+
+  const tileWidth = Math.floor(width / config.cols);
+  const tileHeight = Math.floor(height / config.rows);
+  if (tileWidth === 0 || tileHeight === 0) {
+    throw new Error(`Comix: ${width}x${height} is too small for ${config.cols}x${config.rows}`);
+  }
+
+  const canvas = new (polyfill<Ctor<PolyfilledCanvas>>("HTMLCanvasElement"))();
+  canvas.width = width;
+  canvas.height = height;
+
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Comix: no 2d context available for descrambling");
+  context.drawImage(image, 0, 0, width, height);
+
+  const source = flipRows(context.getImageData(0, 0, width, height).data, width, height);
+  // Seeded from a copy so the right/bottom remainder, which the server leaves
+  // unscrambled when the grid does not divide evenly, survives untouched.
+  const destination = new Uint8ClampedArray(source);
+
+  const order = tileOrder(config.scrambleSeed, config.scrambleAlgo, config.cols * config.rows);
+  const rowBytes = tileWidth * 4;
+
+  order.forEach((from, to) => {
+    const fromX = (from % config.cols) * tileWidth;
+    const fromY = Math.floor(from / config.cols) * tileHeight;
+    const toX = (to % config.cols) * tileWidth;
+    const toY = Math.floor(to / config.cols) * tileHeight;
+
+    for (let y = 0; y < tileHeight; y += 1) {
+      const start = ((fromY + y) * width + fromX) * 4;
+      destination.set(source.subarray(start, start + rowBytes), ((toY + y) * width + toX) * 4);
+    }
+  });
+
+  const ImageDataCtor =
+    polyfill<Ctor<PolyfilledPixels, [Uint8ClampedArray, number, number]>>("ImageData");
+  context.putImageData(
+    new ImageDataCtor(flipRows(destination, width, height), width, height),
+    0,
+    0,
+  );
+  return fromDataUrl(canvas.toDataURL(mimeType));
 }

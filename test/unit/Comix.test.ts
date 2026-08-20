@@ -312,9 +312,36 @@ void test("the scramble seed is xored with the offset the hash token stands for"
   assert.equal(unknown?.scrambleSeed, 1000);
 });
 
-void test("a grid that is not 5x5 is left alone rather than mangled", () => {
-  const config = parseScrambleConfig({ "x-scramble-grid": "4x4", "x-scramble-seed": "1000" });
-  assert.equal(config, undefined);
+// Only algo 3 is 5x5-bound; the LCG variants shuffle any grid, so the
+// dimensions are read from the header rather than assumed.
+void test("grid dimensions are read from the header, not assumed to be 5x5", () => {
+  const square = parseScrambleConfig({ "x-scramble-grid": "5x5", "x-scramble-seed": "1000" });
+  assert.deepEqual([square?.cols, square?.rows], [5, 5]);
+
+  const oblong = parseScrambleConfig({ "x-scramble-grid": "4x6", "x-scramble-seed": "1000" });
+  assert.deepEqual([oblong?.cols, oblong?.rows], [4, 6]);
+  assert.equal(oblong?.gridded, true);
+});
+
+void test("a malformed or seedless grid is not treated as scrambled", () => {
+  assert.equal(
+    parseScrambleConfig({ "x-scramble-grid": "wat", "x-scramble-seed": "1000" }),
+    undefined,
+  );
+  assert.equal(
+    parseScrambleConfig({ "x-scramble-grid": "5x5", "x-scramble-seed": "0" }),
+    undefined,
+  );
+});
+
+// The permutation is a pure function of the seed, so an arbitrary grid still
+// produces a complete permutation of its own tile count.
+void test("non-square grids still permute every tile exactly once", () => {
+  const order = tileOrder(4242, undefined, 24);
+  assert.deepEqual(
+    [...order].sort((a, b) => a - b),
+    Array.from({ length: 24 }, (_, i) => i),
+  );
 });
 
 // XOR against a deterministic keystream is its own inverse, which is what makes
