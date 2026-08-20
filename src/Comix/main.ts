@@ -36,9 +36,6 @@ import {
 import type ComixConfig from "./pbconfig.ts";
 import { captureBrowse, captureChapterList, capturePageList } from "./webview.ts";
 
-// TEMPORARY — see probeCanvas.
-const CANVAS_PROBE_QUERY = "comix:probe-canvas";
-
 type QueryParams = { type?: string; scope?: string; order?: Record<string, string> };
 
 /**
@@ -131,12 +128,6 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
     query: SearchQuery<Metadata>,
     metadata?: Metadata,
   ): Promise<PagedResults<SearchResultItem>> {
-    // TEMPORARY — searching this exact term reports the probe instead of results.
-    // Remove once the canvas question is settled.
-    if (query.title.trim() === CANVAS_PROBE_QUERY) {
-      throw new Error(`Comix canvas probe -> ${this.probeCanvas()}`);
-    }
-
     const search = (query.metadata as ComixSearchMetadata | undefined) ?? {};
     const page = (metadata as { page?: number } | undefined)?.page ?? 1;
 
@@ -176,27 +167,6 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
 
     const payloads = await captureChapterList(sourceManga.mangaId, detail?.latestChapter);
     return payloads.flatMap((payload) => parseChapterPayload(payload, sourceManga));
-  }
-
-  /**
-   * TEMPORARY — remove once answered. 0.9 exposes no way to construct a
-   * PBCanvas, which is the only thing blocking tile descrambling. The 0.8 compat
-   * layer declares App.createPBCanvas/createPBImage but is not re-exported from
-   * the package root, so whether it still exists at runtime can only be settled
-   * on device. Reported through an error because it is the one channel that
-   * reliably reaches the screen.
-   */
-  private probeCanvas(): string {
-    const globals = globalThis as Record<string, unknown>;
-    const app = globals["App"] as Record<string, unknown> | undefined;
-
-    return [
-      `App: ${app ? "present" : "absent"}`,
-      `createPBCanvas: ${typeof app?.["createPBCanvas"]}`,
-      `createPBImage: ${typeof app?.["createPBImage"]}`,
-      `PBCanvas global: ${typeof globals["PBCanvas"]}`,
-      `createCanvas: ${typeof globals["createCanvas"]}`,
-    ].join(" | ");
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
