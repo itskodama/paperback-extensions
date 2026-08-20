@@ -68,21 +68,31 @@ harness, where resetting to page 1 left the pager in a state the button finder
 did not match. What it does establish is that navigation completed reliably where
 a plausible click implementation did not.
 
-**Second correction, from device measurement.** Navigation shipped in alpha.37
-and was reverted in alpha.38. On device it is far slower than clicking:
+**Second measurement, on device — and why it settles nothing.** Navigation
+shipped in alpha.37 and was reverted in alpha.38. Its device numbers looked far
+worse than clicking:
 
-| Series         | Pages | Clicking  | `pushState` |
-| -------------- | ----- | --------- | ----------- |
-| 8,155 chapters | 408   | 217,026ms | 375,440ms   |
-| 242 chapters   | 67    | 29,293ms  | 51,908ms    |
+| Series         | Pages | Clicking (a.38/.39) | `pushState` (a.37) |
+| -------------- | ----- | ------------------- | ------------------ |
+| 8,155 chapters | 408   | 217,026ms           | 375,440ms          |
+| 242 chapters   | 67    | 28,844ms            | 51,908ms           |
 
-Roughly 920ms per page against 530ms — 73-77% worse. A route change re-renders
-the page and re-runs its other queries, which is cheap in a desktop browser and
-expensive in the app's WebView. The desktop test could not have shown this.
+**That comparison is confounded.** alpha.37 also carried the rate limiter bug
+that paced the site's own WebView requests; alpha.38 had the limiter disabled
+entirely and alpha.39 has it correctly scoped to the extension's own requests.
+So the table above varies two things at once, and the navigation column is
+carrying an unknown amount of limiter sleep.
 
-The lesson is the one this page keeps relearning: **measure on device.** Two
-successive conclusions about navigation, in opposite directions, were both drawn
-from desktop numbers and both wrong.
+What alpha.38 against alpha.39 does establish — both clicking, limiter off
+against limiter correctly scoped — is that the **corrected limiter costs
+nothing** (16,317ms against 16,341ms on the same series). Clicking's numbers are
+therefore effectively uncapped, while navigation's are not.
+
+alpha.40 ships navigation on top of the corrected limiter to measure the two
+techniques against each other with nothing else varying. Until those numbers
+exist, this page has no supported claim about which is faster on device — the
+desktop harness said navigation, the contaminated device run said clicking, and
+neither is evidence.
 
 ## Why the walk is irreducible
 
