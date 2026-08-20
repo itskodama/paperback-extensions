@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-08-20T00:51:46.673Z",
+  "buildTime": "2026-08-20T01:01:03.506Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -45,7 +45,7 @@
     {
       "name": "Comix",
       "description": "Read comics from comix.to. Requires solving a Cloudflare check on first use; the app will prompt.",
-      "version": "1.0.0-alpha.13",
+      "version": "1.0.0-alpha.14",
       "icon": "icon-v3.png",
       "language": "en",
       "contentRating": "MATURE",
