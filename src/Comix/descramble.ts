@@ -31,7 +31,7 @@ export type ScrambleConfig = {
 // were derived by seam-scoring real scrambled pages; every other observed token
 // means "use the seed unmodified". A token outside both sets is resolved at
 // runtime — see resolveOffset.
-const KNOWN_OFFSETS: Record<string, number> = {
+export const KNOWN_OFFSETS: Record<string, number> = {
   "03632": 58414,
   "02900": 117532,
 };

@@ -12,6 +12,7 @@ import {
 
 import { applyKeystream, descrambleImage, parseScrambleConfig } from "./descramble.ts";
 import { DOMAIN, MIRROR_DOMAIN } from "./models.ts";
+import { recordScramble } from "./settings.ts";
 
 export const rateLimiter = new BasicRateLimiter("comix", {
   numberOfRequests: 15,
@@ -90,8 +91,14 @@ export class MainInterceptor extends PaperbackInterceptor {
     // A page that cannot be unscrambled is still worth showing scrambled: an
     // error here would leave the reader with a blank page instead.
     try {
-      return await descrambleImage(bytes, scramble, response.mimeType ?? "image/webp");
+      const descrambled = await descrambleImage(bytes, scramble, response.mimeType ?? "image/webp");
+      recordScramble(
+        `${scramble.cols}x${scramble.rows} algo=${scramble.scrambleAlgo ?? "?"} ` +
+          `token=${scramble.scrambleHash ?? "none"} seed=${scramble.scrambleSeedRaw}`,
+      );
+      return descrambled;
     } catch (error) {
+      recordScramble(`FAILED token=${scramble.scrambleHash ?? "none"}: ${String(error)}`);
       console.log(`[Comix] descramble failed for ${request.url}: ${String(error)}`);
       return bytes;
     }

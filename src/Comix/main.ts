@@ -34,6 +34,7 @@ import {
   toSourceManga,
 } from "./parsers.ts";
 import type ComixConfig from "./pbconfig.ts";
+import { ComixSettingsForm } from "./settingsForm.ts";
 import { captureBrowse, captureChapterList, capturePageList } from "./webview.ts";
 
 type QueryParams = { type?: string; scope?: string; order?: Record<string, string> };
@@ -139,6 +140,10 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
         contentRating: contentRatingOf(manga),
       })),
     };
+  }
+
+  async getSettingsForm(): Promise<ComixSettingsForm> {
+    return new ComixSettingsForm();
   }
 
   async getSortingOptions(): Promise<SortingOption[]> {
