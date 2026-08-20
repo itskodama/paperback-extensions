@@ -37,40 +37,29 @@ Three of the four large wins were this extension getting in its own way.
 ## What was tried and does not work
 
 Every route to making the walk itself faster, and the evidence that closed it.
+Rows marked (console) were verified in a browser console against the live site on
+2026-08-20; the earlier rows they replace had drawn the wrong conclusion from a
+weaker test.
 
-| Attempt                                         | Result                                                                                                                                                                                                                  |
-| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Reuse a valid signature with a larger `limit`   | `403` at 50, 100 and 500                                                                                                                                                                                                |
-| Request without a signature                     | `403 {"message":"Missing token."}`                                                                                                                                                                                      |
-| Recover the keystream by XOR of two ciphertexts | Not a reused stream: two ciphertexts are byte-identical across a region where their plaintexts differ                                                                                                                   |
-| Forge a signature                               | Plaintext is compressed before encryption (a 108-byte query yields 105 bytes; an empty one yields 17), and the cipher lives in the obfuscated `secure.js` with a WASM module                                            |
-| Call the site's own React Query fetcher         | Reachable via the React fiber, but it closes over its own `page` and `limit` — every call returns page 1 regardless of the key passed                                                                                   |
-| Server-rendered `?page=N`                       | Server ignores it; `initial-data` carries `detail`, `recommended` and `groups` on every page and never chapters                                                                                                         |
-| `pushState` sweep, fixed spacing                | React Query cancels the in-flight query when the key changes. Exactly alternating pages survive (2,4,6,8,10 missing), reproducibly. Spacing wide enough to avoid cancellation (450ms) is fully sequential at 627ms/page |
+| Attempt                                 | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enlarge `limit` in the request          | The signature covers the whole query string. A captured URL replays `200` unmodified, but the same URL with `limit=500` returns `403 {"message":"Invalid token."}` and with the token stripped `403 {"message":"Missing token."}` — two different errors, so 403 means token mismatch, not an oversized page. The router itself ignores `?limit=` in the URL and always mints `limit=20`. The old "403 at 50/100/500" reading was measuring the reused signature, never a page-size cap. (console) |
+| Forge a signature                       | Plaintext is compressed before encryption (a 108-byte query yields 105 bytes, an empty one 17) and the cipher lives in the obfuscated `secure-*.js` with a WASM module. Not reimplementable.                                                                                                                                                                                                                                                                                                       |
+| Reach the site's own signer             | Signing is an axios request interceptor — the minting stack is `request` → `dispatchRequest` → the XHR adapter in `vendor-*.js`, so the instance would sign whatever params it is handed. But it is module-scoped in the Vite bundle and absent from the React fiber tree (walked it, 0 axios-like instances). Unreachable from injected code. (console)                                                                                                                                           |
+| Find a bulk chapter-list endpoint       | None exists. On reader load only `/api/v1/chapters/{id}` (one chapter's content) and `/api/v1/manga/{hid}` (a 7.7KB detail with no embedded chapter list) are fetched; navigating chapter-to-chapter refetches only content by id. So each chapter payload carries its neighbours' ids — a linked list, walkable only one request per chapter, worse than the paginated list. (console)                                                                                                            |
+| Call the site's own React Query fetcher | Reachable via the fiber, but it closes over its own `page`/`limit` and returns page 1 whatever key is passed.                                                                                                                                                                                                                                                                                                                                                                                      |
+| Server-rendered `?page=N`               | Server ignores it; `initial-data` carries `detail`, `recommended` and `groups` on every page, never chapters.                                                                                                                                                                                                                                                                                                                                                                                      |
 
-**Correction.** An earlier revision claimed `pushState` driven by payload arrival
-was _slower_ than clicking, citing 612 and 798ms per page against a 532ms
-baseline. That comparison was invalid: the 612/798 figures came from a desktop
-browser while the 532ms came from the device, so they compare hardware and
-networks rather than techniques.
+### Clicking versus navigation: settled on device, clicking wins
 
-Measured properly — both techniques, one session, one series, each waiting on the
-exact payload — navigation wins:
+An earlier revision claimed `pushState` driven by payload arrival was _slower_
+than clicking (612/798ms against 532ms), then that a proper browser A/B showed
+navigation _winning_ (584-656ms, 10/10, against clicking's timeouts). Both were
+desktop measurements and both were wrong. The device settles it.
 
-| Technique   | Captured | Per page  |
-| ----------- | -------- | --------- |
-| `pushState` | 10/10    | 584-656ms |
-| Clicking    | 1/10     | timeouts  |
-
-The click arm's 1/10 is not proof that clicking is broken in general — the
-shipped walk clicked through 408 pages successfully — but of a flaw in that
-harness, where resetting to page 1 left the pager in a state the button finder
-did not match. What it does establish is that navigation completed reliably where
-a plausible click implementation did not.
-
-**Settled on device: clicking wins.** Navigation shipped twice — alpha.37
-alongside the rate-limiter bug, and alpha.40 with the limiter corrected — so the
-confound that made the first run unreadable is gone from the second.
+Navigation shipped twice — alpha.37 alongside the rate-limiter bug, and alpha.40
+with the limiter corrected — so the confound that made the first run unreadable
+is gone from the second:
 
 | Series       | Pages | Click (a.39) | Nav (a.37, bad limiter) | Nav (a.40, fixed limiter) |
 | ------------ | ----- | ------------ | ----------------------- | ------------------------- |
@@ -78,34 +67,78 @@ confound that made the first run unreadable is gone from the second.
 | Dawn         | 32    | 16,341ms     | 24,578ms                | 23,398ms                  |
 
 Roughly **470ms per page clicking against 750ms navigating**. The two navigation
-runs were days apart on different builds and agree within 1.4%, which rules out
-session noise and also shows the limiter never contributed to navigation's cost.
-A route change re-renders the page and re-runs its other queries — cheap in a
-desktop browser, expensive in the app's WebView.
+runs are days apart on different builds and agree within 1.4%, ruling out session
+noise and showing the limiter never contributed to navigation's cost (isolated
+separately: alpha.38 limiter-off 16,317ms against alpha.39 scoped 16,341ms on the
+same series — the corrected limiter is free). A route change re-renders the page
+and re-runs its other queries: cheap in a desktop browser, expensive in the app's
+WebView.
 
-The limiter's own cost was isolated separately: alpha.38 (limiter off) against
-alpha.39 (correctly scoped) on the same series is 16,317ms against 16,341ms, so
-the corrected limiter is free.
+Desktop timing of this walk has now mispredicted the device three times out of
+three. Do not reopen it without device numbers.
 
-**The lesson is measure on device.** Two successive conclusions favouring
-navigation were drawn from a desktop harness and both were wrong; the harness
-also reported clicking as 1/10 captures, which the shipped extension disproved by
-clicking through 408 pages. Desktop timing of this walk has now mispredicted the
-device three times out of three. Do not reopen this without device numbers.
+### The harvest route: mint signatures fast, replay in parallel
+
+A different shape, explored 2026-08-20. The XHR hook captures the signed URL at
+`xhr.open` — _before_ React Query can cancel the query — so a walk does not need
+each in-page request to succeed, only to be _issued_. Drive `pushState` through
+the pages to mint signed URLs, ignore every response, then replay the harvested
+URLs with `fetch` in parallel.
+
+Parallel replay is genuinely fast and unthrottled: 11 pages' fetches in 545ms,
+all `200`, no rate-limiting on the burst.
+
+Minting is the catch. Fixed inter-navigation delays are unreliable — at 120ms
+only alternating pages mint (React Query supersedes each query before its XHR
+issues), reproducibly and on a cold page, so it is real cancellation, not a cache
+artifact. **Advancing on the mint event fixes reliability completely:** hook
+`xhr.open`, navigate, and advance the instant the current page's request is seen,
+with a timeout fallback. Measured **11/11 pages minted, every run.**
+
+But the same measurement exposes the floor. Per-navigation mint latency is
+**~400ms/page** (300-485ms across 11 navigations), sequential, because the SPA
+holds one active chapter query and cannot overlap. Harvest ~400ms/page plus a
+~50ms/page parallel burst totals ~450ms/page — a dead heat with clicking's
+~470ms.
+
+So the harvest route **matches clicking's reliability and ties its speed; it does
+not beat either.** The ~400ms is the router's own render-and-issue cycle, the
+same whatever triggers the query, not overhead the technique can remove.
+
+**Documented as a ready alternative, not shipped.** Its one real edge over the
+shipped clicking walk is that it drives the walk by URL routing rather than by
+finding a pager button in the DOM, so a pager restyle that broke the button
+finder would not break it. If clicking ever fails in production for that reason,
+this is the validated swap-in — event-driven advance on `xhr.open`, parallel
+`fetch` replay of the harvested URLs. Proven in a browser tab (11/11 mint,
+parallel 200s); never run on device.
 
 ## Why the walk is irreducible
 
-Three constraints compose:
+Four findings compose, each verified in a browser console against the live site:
 
-1. The API serves 20 chapters per request and `limit` is inside the signature.
-2. Every request needs a token only the site's own code path mints.
-3. The SPA holds one active chapter query and cancels the rest, so navigation
-   cannot overlap.
+1. **20 chapters per request, and `limit` is inside the signature.** The router
+   mints `limit=20` regardless of the URL, and altering any query param
+   invalidates the token.
+2. **Only the site's own code can mint the token.** The signer is an axios
+   interceptor backed by a WASM cipher, module-scoped and unreachable from
+   injected code; it cannot be forged or called directly.
+3. **No bulk endpoint.** Nothing returns more than one 20-chapter page; the reader
+   navigates a linked list, one request per chapter.
+4. **Minting is a ~400ms/page sequential floor.** One active chapter query at a
+   time, so navigations cannot overlap, and each costs the router's full
+   render-and-issue cycle — the same whether triggered by a click or a
+   `pushState`.
 
-Both independent implementations of this source — Mihon's at
-`keiyoushi/extensions-source` and Inkdex's — click through the same pager one
-page at a time. Neither requests a larger limit or calls the API directly. That
-is not an oversight in either; it is the only thing the site permits.
+Both independent implementations — Mihon's at `keiyoushi/extensions-source` and
+Inkdex's — click through the same pager one page at a time. Neither requests a
+larger limit or calls the API directly. That is not an oversight; it is the only
+thing the site permits.
 
-The recurring costs are fixed. The one-time cost of walking a very long series is
-not, and appears not to be fixable from outside the site.
+The recurring costs are fixed. The one-time cost of a very long series is bounded
+below by 20 chapters per ~400ms — about three minutes for 8,000 chapters — and is
+not fixable from outside the site. The only lever left is not the walk but
+avoiding repeating it: an incremental refresh (`getChapters`' `sinceDate`, or a
+locally cached high-water mark) that re-walks only what is newer than the app
+already holds. First open still pays the full walk once; every open after it
+becomes one or two pages.
