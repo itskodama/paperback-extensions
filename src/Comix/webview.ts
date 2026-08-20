@@ -58,14 +58,25 @@ async function capture<T>(pageUrl: string, bootstrap: string, label: string): Pr
       // own same-origin XHRs are challenged instead of served.
       userAgent: await Application.getDefaultUserAgent(),
     },
-    // The trace rides alongside the result rather than replacing it: a capture
-    // must still succeed if the trace is missing or malformed.
+    // The trace rides alongside the result rather than replacing it, so a capture
+    // still succeeds if the trace is missing. Both cross as a single JSON string:
+    // the bridge accepts strings and arrays but rejects a plain object with
+    // "unsupported type".
     inject:
-      "return window.__comixCapture__.then(function (r) { return { result: r, trace: window.__comixTrace__ || [] }; })",
+      "return window.__comixCapture__.then(function (r) {" +
+      " return JSON.stringify({ result: r === undefined ? null : r," +
+      " trace: window.__comixTrace__ || [] }); })",
     storage: { cookies: cookieStorage.cookiesForUrl(`${origin()}/`) },
   });
 
-  const wrapped = envelope as { result?: unknown; trace?: unknown } | null;
+  let wrapped: { result?: unknown; trace?: unknown } | null = null;
+  if (typeof envelope === "string") {
+    try {
+      wrapped = JSON.parse(envelope) as { result?: unknown; trace?: unknown };
+    } catch {
+      wrapped = null;
+    }
+  }
   const result = wrapped?.result;
 
   // The WebView run is the expensive half and the one a reader waits on, so it
@@ -114,12 +125,9 @@ function bootstrapFor(
     var done = false;
     function finish(value) { if (!done) { done = true; settle(value); } }
 
-    // Rearmed whenever progress is made, so the budget is idle time rather than
-    // total time — a long series needs many round trips and must not be cut off
-    // mid-walk just because it is large.
-    // A trace of what happened inside the page, returned alongside the result.
-    // Timing measured from outside can only show total elapsed; the cost of a
-    // slow walk is here, in the gaps between a click and the payload it causes.
+    // A trace of what happened inside the page. Timing measured from outside can
+    // only show total elapsed; the cost of a slow walk is here, in the gaps
+    // between a click and the payload it causes.
     window.__comixTrace__ = [];
     window.__comixT0__ = Date.now();
     window.__comixMark__ = function (what) {
@@ -130,6 +138,9 @@ function bootstrapFor(
       } catch (e) { /* a trace must never break the capture */ }
     };
 
+    // Rearmed whenever progress is made, so the budget is idle time rather than
+    // total time — a long series needs many round trips and must not be cut off
+    // mid-walk just because it is large.
     var idle;
     window.__comixIdle__ = function () {
       if (idle) clearTimeout(idle);
