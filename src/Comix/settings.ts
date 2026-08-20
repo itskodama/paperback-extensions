@@ -39,20 +39,41 @@ export function setThoroughDescramble(enabled: boolean): void {
   Application.setState(enabled, THOROUGH_STATE);
 }
 
+/**
+ * Logs are one delimited string rather than an array. An array written to state
+ * is not reliably preserved across the bridge, and a diagnostic write that threw
+ * would take the surrounding operation down with it — which is how a chapter
+ * list came back empty twice.
+ */
+const LOG_SEPARATOR = "\n";
+
+function readLog(key: string): string[] {
+  const stored = Application.getState(key);
+  if (typeof stored !== "string" || stored.length === 0) return [];
+  return stored.split(LOG_SEPARATOR).filter((line) => line.length > 0);
+}
+
+/**
+ * Never throws. Diagnostics run inside the response interceptor and the WebView
+ * capture, so a failure here must not be able to break the operation it measures.
+ */
+function appendLog(key: string, line: string): void {
+  try {
+    const kept = [line, ...readLog(key)].slice(0, SCRAMBLE_LOG_LIMIT);
+    Application.setState(kept.join(LOG_SEPARATOR), key);
+  } catch {
+    // A diagnostic is never worth failing a read for.
+  }
+}
+
 /** Newest first, capped. Descrambling runs inside an interceptor with nowhere to
  * report to, so without this a wrong result is invisible. */
 export function recordScramble(summary: string): void {
-  const stamped = `${new Date().toISOString().slice(0, 19).replace("T", " ")} ${summary}`;
-  Application.setState(
-    [stamped, ...scrambleLog()].slice(0, SCRAMBLE_LOG_LIMIT),
-    SCRAMBLE_LOG_STATE,
-  );
+  appendLog(SCRAMBLE_LOG_STATE, `${new Date().toISOString().slice(11, 19)} ${summary}`);
 }
 
 export function scrambleLog(): string[] {
-  const stored = Application.getState(SCRAMBLE_LOG_STATE);
-  if (!Array.isArray(stored)) return [];
-  return stored.filter((entry): entry is string => typeof entry === "string");
+  return readLog(SCRAMBLE_LOG_STATE);
 }
 
 /**
@@ -60,13 +81,14 @@ export function scrambleLog(): string[] {
  * measurement is free, but writing state per image is not.
  */
 export function recordTiming(summary: string): void {
-  if (!debugEnabled()) return;
-  const stamped = `${new Date().toISOString().slice(11, 19)} ${summary}`;
-  Application.setState([stamped, ...timingLog()].slice(0, SCRAMBLE_LOG_LIMIT), TIMING_LOG_STATE);
+  try {
+    if (!debugEnabled()) return;
+  } catch {
+    return;
+  }
+  appendLog(TIMING_LOG_STATE, `${new Date().toISOString().slice(11, 19)} ${summary}`);
 }
 
 export function timingLog(): string[] {
-  const stored = Application.getState(TIMING_LOG_STATE);
-  if (!Array.isArray(stored)) return [];
-  return stored.filter((entry): entry is string => typeof entry === "string");
+  return readLog(TIMING_LOG_STATE);
 }
