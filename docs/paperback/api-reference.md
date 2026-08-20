@@ -193,6 +193,25 @@ Test the `type` tag instead, which does survive:
 
 The same applies to identifying rejections generally — see below.
 
+### Measured runtime capabilities
+
+Probed on device 2026-08-20 from a shipped extension:
+
+| Global / capability              | Present | Consequence                                                  |
+| -------------------------------- | ------- | ------------------------------------------------------------ |
+| `canvas.toDataURL("image/jpeg")` | yes     | The one reliable re-encode target                            |
+| `canvas.toDataURL("image/webp")` | **no**  | Silently yields PNG — see below                              |
+| `WebAssembly`                    | yes     | Compiled modules can run; must be inlined in the bundle      |
+| `createImageBitmap`              | yes     |                                                              |
+| `OffscreenCanvas`                | **no**  | No `convertToBlob`, so encoded bytes come back as a data URL |
+| `Blob`, `URL`                    | **no**  | Image bytes cross as `data:` URLs in both directions         |
+
+`WebAssembly` being present does **not** mean an extension can be written in another language. The
+extension is a JavaScript bundle implementing `ExtensionImpl`, and WASM cannot reach `Application`,
+the canvas, or any host API — everything crosses through JS. WASM is useful only as a compute
+kernel over bytes (codecs, crypto, heavy parsing) called from JS, and its binary has to be embedded
+in the single-file bundle, inflating by about a third as base64.
+
 ### A canvas re-encode falls back to PNG
 
 `HTMLCanvasElement.toDataURL(type)` returns PNG whenever the runtime cannot encode `type` (HTML
