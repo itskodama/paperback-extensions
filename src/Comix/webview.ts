@@ -25,14 +25,15 @@ const CAPTURE_TIMEOUT_MS = 45_000;
 // round trips. The budget is idle time between captured pages, not total time.
 const CHAPTER_IDLE_TIMEOUT_MS = 25_000;
 
-// The opening marks establish the per-page rhythm, which is what the trace is
-// for; a full walk of fifty pages would not fit in the log and would not add
-// anything the first few do not already show.
-const TRACE_LIMIT = 8;
-
-// Marks a trace line inside the array of payloads. A NUL cannot begin a JSON
-// document, so it cannot collide with a real payload.
-const TRACE_PREFIX = "\u0000trace ";
+// TODO: observability inside the WebView. Knowing the rhythm of a chapter walk —
+// the gap between a click and the payload it causes — would show whether a slow
+// walk is the site's per-request cost or this extension's pagination loop. Five
+// attempts failed on the boundary: an object return, a JSON-wrapped envelope
+// (which re-escapes every payload and roughly doubles an already-large result),
+// and a NUL-prefixed sentinel that came back as U+FFFD and broke JSON.parse.
+// Whatever channel is used has to survive that crossing intact and must never be
+// able to fail the capture. The app's own debug log answered the questions this
+// was built for, so it is not currently worth another attempt.
 
 function injectBootstrap(html: string, bootstrap: string): string {
   const script = `<script>${bootstrap}</script>`;
@@ -102,19 +103,6 @@ function bootstrapFor(
     window.__comixCapture__ = new Promise(function (resolve) { settle = resolve; });
     var done = false;
     function finish(value) { if (!done) { done = true; settle(value); } }
-
-    // A trace of what happened inside the page. Timing measured from outside can
-    // only show total elapsed; the cost of a slow walk is here, in the gaps
-    // between a click and the payload it causes.
-    window.__comixTrace__ = [];
-    window.__comixT0__ = Date.now();
-    window.__comixMark__ = function (what) {
-      try {
-        if (window.__comixTrace__.length < 200) {
-          window.__comixTrace__.push(Date.now() - window.__comixT0__ + "ms " + what);
-        }
-      } catch (e) { /* a trace must never break the capture */ }
-    };
 
     // Rearmed whenever progress is made, so the budget is idle time rather than
     // total time — a long series needs many round trips and must not be cut off
@@ -189,7 +177,6 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
       var page = meta.page || 1;
       if (window.__comixPages__[page]) return;
       window.__comixPages__[page] = raw;
-      window.__comixMark__("payload page=" + page + " n=" + result.items.length);
 
       window.__comixIdle__();
       if (meta.hasNext || page < (meta.lastPage || page)) { window.__comixAdvance__(page); }
@@ -197,17 +184,10 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
     `,
     `
       window.__comixPages__ = {};
-      // The trace travels as extra entries in the array this already returns.
-      // Wrapping the payloads in an envelope instead would re-escape every quote
-      // inside them and roughly double an already-large result.
       window.__comixCollect__ = function () {
-        var pages = Object.keys(window.__comixPages__)
+        return Object.keys(window.__comixPages__)
           .sort(function (a, b) { return a - b; })
           .map(function (key) { return window.__comixPages__[key]; });
-
-        return pages.concat((window.__comixTrace__ || []).map(function (mark) {
-          return "\u0000trace " + mark;
-        }));
       };
 
       // The chapter module's own footer. Scoping to it matters because the
@@ -251,13 +231,9 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
           var next = nextControl(pagerButtons(), page);
           if (next) {
             clearInterval(timer);
-            // The poll count separates waiting for the site to re-render its
-            // pager from waiting for the request that the click causes.
-            window.__comixMark__("click page=" + (page + 1) + " afterPolls=" + tries);
             next.click();
           } else if (++tries > 60) {
             clearInterval(timer);
-            window.__comixMark__("gave up finding next after " + tries + " polls");
             finish(window.__comixCollect__());
           }
         }, 100);
@@ -269,15 +245,11 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
 
   const raw = await capture<string[]>(`${DOMAIN}/title/${hid}`, bootstrap, "chapter-list");
 
-  const marks = raw.filter((entry) => entry.startsWith(TRACE_PREFIX));
-  if (marks.length > 0) {
-    const trace = marks.slice(0, TRACE_LIMIT).map((mark) => mark.slice(TRACE_PREFIX.length));
-    recordTiming(`chapter-list trace: ${trace.join(" | ")}`);
-  }
+  const payloads = raw.map((payload) => JSON.parse(payload) as ChapterPayload);
 
-  const payloads = raw
-    .filter((entry) => !entry.startsWith(TRACE_PREFIX))
-    .map((payload) => JSON.parse(payload) as ChapterPayload);
+  // Page count is the one number worth keeping: it separates a walk that is
+  // long because the series is long from one that is slow per page.
+  recordTiming(`chapter-list walked ${payloads.length} pages`);
   if (latestChapter !== undefined) chapterCache.set(hid, { latestChapter, payloads });
   return payloads;
 }
