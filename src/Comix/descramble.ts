@@ -173,47 +173,6 @@ export function tileOrder(seed: number, algo?: string, count: number = TILE_COUN
   return inverse;
 }
 
-export type TileBlit = {
-  sourceX: number;
-  sourceY: number;
-  destinationX: number;
-  destinationY: number;
-  width: number;
-  height: number;
-};
-
-/**
- * Page payloads carry width and height, so the blit plan is computable without
- * decoding the image first. Integer tile sizes leave any remainder column/row
- * untouched, matching how the site slices it.
- */
-export function tileBlits(width: number, height: number, order: number[]): TileBlit[] {
-  const tileWidth = Math.floor(width / GRID_COLS);
-  const tileHeight = Math.floor(height / GRID_ROWS);
-
-  return order.map((source, destination) => ({
-    sourceX: (source % GRID_COLS) * tileWidth,
-    sourceY: Math.floor(source / GRID_COLS) * tileHeight,
-    destinationX: (destination % GRID_COLS) * tileWidth,
-    destinationY: Math.floor(destination / GRID_COLS) * tileHeight,
-    width: tileWidth,
-    height: tileHeight,
-  }));
-}
-
-const IMAGE_SIGNATURES: ReadonlyArray<readonly number[]> = [
-  [0xff, 0xd8],
-  [0x89, 0x50, 0x4e, 0x47],
-  [0x52, 0x49, 0x46, 0x46],
-];
-
-/** Used to pick between candidate keystreams when the algorithm is ambiguous. */
-export function hasImageSignature(bytes: Uint8Array): boolean {
-  return IMAGE_SIGNATURES.some((signature) =>
-    signature.every((byte, index) => bytes[index] === byte),
-  );
-}
-
 /**
  * Edge discontinuity across internal tile seams, sampled sparsely. A correctly
  * reassembled page scores an order of magnitude lower than a wrong one, which

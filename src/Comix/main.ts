@@ -19,8 +19,9 @@ import {
 } from "@paperback/types";
 
 import { ComixSearchForm, DEFAULT_SEARCH_METADATA, type ComixSearchMetadata } from "./forms.ts";
-import { DOMAIN, DEFAULT_SORT, SORT_OPTIONS, type MangaDetail } from "./models.ts";
-import { cookieStorage, fetchText, mainInterceptor, rateLimiter } from "./network.ts";
+import { fetchText } from "./http.ts";
+import { DEFAULT_SORT, SORT_OPTIONS, type MangaDetail } from "./models.ts";
+import { cookieStorage, mainInterceptor, rateLimiter } from "./network.ts";
 import {
   contentRatingOf,
   extractInitialData,
@@ -29,44 +30,15 @@ import {
   parseChapterPayload,
   parsePagesPayload,
   posterUrl,
-  seriesUrl,
   toSearchResultItem,
   toSourceManga,
 } from "./parsers.ts";
 import type ComixConfig from "./pbconfig.ts";
 import { ComixSettingsForm } from "./settingsForm.ts";
+import { browseUrl, homeUrl, seriesUrl } from "./urls.ts";
 import { captureBrowse, captureChapterList, capturePageList } from "./webview.ts";
 
 type QueryParams = { type?: string; scope?: string; order?: Record<string, string> };
-
-function appendAll(params: string[], key: string, values: string[]): void {
-  values.forEach((value) => params.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`));
-}
-
-/**
- * The browse page reads its filters straight from the query string, and its own
- * JS signs whatever it finds there — so the extension only has to compose the
- * URL the site would have composed. Repeated keys use the `name[]` form the site
- * uses; a sort id is `<field>:<direction>` and expands to `order[<field>]`.
- */
-function browseUrl(title: string, search: ComixSearchMetadata, sort: string, page: number): string {
-  const [field, direction] = (sort || DEFAULT_SORT).split(":");
-  const params = [
-    `q=${encodeURIComponent(title)}`,
-    `order[${field ?? "relevance"}]=${direction ?? "desc"}`,
-    `page=${page}`,
-  ];
-
-  appendAll(params, "content_rating[]", search.contentRatings);
-  appendAll(params, "types[]", search.types);
-  appendAll(params, "statuses[]", search.statuses);
-  appendAll(params, "demographics[]", search.demographics);
-  appendAll(params, "genres_in[]", search.genres);
-  appendAll(params, "formats[]", search.formats);
-  if (search.genres.length > 1) params.push(`genres_mode=${search.genresMode}`);
-
-  return `${DOMAIN}/browse?${params.join("&")}`;
-}
 
 /**
  * Every section is served by the homepage's own embedded payload, so the whole
@@ -121,7 +93,7 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   async getDiscoverSectionItems(
     section: DiscoverSection,
   ): Promise<PagedResults<DiscoverSectionItem>> {
-    const queries = extractInitialData(await fetchText(`${DOMAIN}/`));
+    const queries = extractInitialData(await fetchText(homeUrl()));
     const wanted = DISCOVER_SECTIONS.find((candidate) => candidate.id === section.id);
     if (!wanted) return { items: [] };
 
@@ -183,27 +155,29 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
     };
   }
 
-  async getMangaDetails(mangaId: string): Promise<SourceManga> {
-    const queries = extractInitialData(await fetchText(seriesUrl(mangaId)));
-    const detail = findQuery(queries, (key) => key[0] === "manga" && key[1] === "detail") as
+  // Both the details screen and the chapter list start from the same
+  // server-rendered payload, so the fetch-and-extract lives in one place.
+  private async seriesDetail(hid: string): Promise<MangaDetail | undefined> {
+    const queries = extractInitialData(await fetchText(seriesUrl(hid)));
+    return findQuery(queries, (key) => key[0] === "manga" && key[1] === "detail") as
       | MangaDetail
       | undefined;
+  }
 
+  async getMangaDetails(mangaId: string): Promise<SourceManga> {
+    const detail = await this.seriesDetail(mangaId);
     if (!detail?.hid) throw new Error(`Comix: no details found for ${mangaId}`);
     return toSourceManga(detail);
   }
 
   async getChapters(sourceManga: SourceManga): Promise<Chapter[]> {
-    // The series page is cheap and already cached, and its `latestChapter` is
-    // what tells a reused chapter list from a stale one.
-    const queries = extractInitialData(await fetchText(seriesUrl(sourceManga.mangaId)));
-    const detail = findQuery(queries, (key) => key[0] === "manga" && key[1] === "detail") as
-      | MangaDetail
-      | undefined;
+    // The series page is cheap and already cached, and its `latestChapter` tells
+    // a reused chapter list from a stale one.
+    const detail = await this.seriesDetail(sourceManga.mangaId);
 
-    // A series with nothing uploaded yet is an empty list, not a failure — and
-    // the series page says so, which saves a WebView run that would only time
-    // out waiting for a request the site never makes.
+    // A series with nothing uploaded is an empty list, not a failure — and the
+    // series page says so, sparing a WebView run that would only time out waiting
+    // for a request the site never makes.
     if (detail?.hasChapters === false) return [];
 
     const payloads = await captureChapterList(sourceManga.mangaId, detail?.latestChapter);

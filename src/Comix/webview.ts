@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
+import { fetchText, origin } from "./http.ts";
 import { DOMAIN, type ChapterPayload, type PagesPayload } from "./models.ts";
-import { cookieStorage, fetchText, origin } from "./network.ts";
+import { cookieStorage } from "./network.ts";
 
 /**
  * Search, chapter lists and page lists are signed with a per-request token and

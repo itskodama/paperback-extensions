@@ -13,7 +13,6 @@ import {
   CONTENT_RATING_MAP,
   type ChapterItem,
   type ChapterPayload,
-  type Hid,
   type MangaDetail,
   type MangaSummary,
   type PagesPayload,
@@ -237,8 +236,4 @@ export function ageToDate(
   if (unit === undefined) return undefined;
 
   return new Date(now - Number.parseInt(match[1], 10) * unit);
-}
-
-export function seriesUrl(hid: Hid): string {
-  return `${DOMAIN}/title/${hid}`;
 }

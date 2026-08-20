@@ -6,13 +6,7 @@ import test from "node:test";
 
 import { ContentRating, type SourceManga } from "@paperback/types";
 
-import {
-  applyKeystream,
-  hasImageSignature,
-  parseScrambleConfig,
-  tileBlits,
-  tileOrder,
-} from "../../src/Comix/descramble.ts";
+import { applyKeystream, parseScrambleConfig, tileOrder } from "../../src/Comix/descramble.ts";
 import {
   CONTENT_RATINGS,
   DEMOGRAPHICS,
@@ -405,27 +399,6 @@ void test("tile order is deterministic per seed and differs between seeds", () =
   assert.deepEqual(tileOrder(555), tileOrder(555));
   assert.notDeepEqual(tileOrder(555), tileOrder(556));
   assert.notDeepEqual(tileOrder(555), tileOrder(555, "3"));
-});
-
-void test("blits reassemble the grid without overlap, leaving the remainder edge alone", () => {
-  const blits = tileBlits(1439, 2045, tileOrder(999));
-  assert.equal(blits.length, 25);
-
-  // 1439/5 floors to 287, so 4px of width is remainder and never blitted.
-  assert.equal(blits[0]?.width, 287);
-  assert.equal(blits[0]?.height, 409);
-
-  const destinations = blits.map((blit) => `${blit.destinationX},${blit.destinationY}`);
-  assert.equal(new Set(destinations).size, 25);
-  const sources = blits.map((blit) => `${blit.sourceX},${blit.sourceY}`);
-  assert.equal(new Set(sources).size, 25);
-});
-
-void test("image signatures identify jpeg, png and webp payloads", () => {
-  assert.equal(hasImageSignature(Uint8Array.from([0xff, 0xd8, 0xff])), true);
-  assert.equal(hasImageSignature(Uint8Array.from([0x89, 0x50, 0x4e, 0x47])), true);
-  assert.equal(hasImageSignature(Uint8Array.from([0x52, 0x49, 0x46, 0x46, 0, 0])), true);
-  assert.equal(hasImageSignature(Uint8Array.from([1, 2, 3, 4])), false);
 });
 
 // --- relative chapter ages ---
