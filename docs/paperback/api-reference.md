@@ -193,6 +193,22 @@ Test the `type` tag instead, which does survive:
 
 The same applies to identifying rejections generally — see below.
 
+### A canvas re-encode falls back to PNG
+
+`HTMLCanvasElement.toDataURL(type)` returns PNG whenever the runtime cannot encode `type` (HTML
+spec), and JavaScriptCore's canvas cannot encode WebP. So `toDataURL("image/webp")` silently yields
+a multi-megabyte lossless PNG where the source was a small WebP — in Comix this roughly doubled
+downloaded chapter size before it was found. Re-encode to `image/jpeg` at a high quality (~0.92):
+it is the one format the canvas reliably produces, and on opaque page art it is visually lossless
+at a fraction of the PNG size.
+
+### `0` and `false` are the same value across the bridge
+
+A numeric `0` written with `Application.setState` can read back as `false`. Once a value crosses to
+Swift and back, `0` and `false` are indistinguishable, so any state holding a count, offset, or
+other meaningful zero must coerce or filter on read rather than trust its type. Same family as the
+`undefined`-in-`Metadata` crash.
+
 ### Native rejections are not `Error`s
 
 `scheduleRequest` rejects transport failures with native error objects. They are not JS `Error`s,
