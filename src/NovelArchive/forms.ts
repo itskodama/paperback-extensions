@@ -11,8 +11,8 @@ import {
   type SearchQuery,
 } from "@paperback/types";
 
-import { apiRequest } from "./network";
-import { toGenreOptions, type GenreOption, type GenresResponse } from "./parser";
+import { apiRequest } from "./network.ts";
+import { toGenreOptions, type GenreOption, type GenresResponse } from "./parser.ts";
 
 export type NovelArchiveSearchMetadata = {
   genresInclude?: string[];

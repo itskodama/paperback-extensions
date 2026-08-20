@@ -17,8 +17,8 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-import { NovelArchiveSearchForm, type NovelArchiveSearchMetadata } from "./forms";
-import { ApiError, MainInterceptor, apiRequest, buildQuery } from "./network";
+import { NovelArchiveSearchForm, type NovelArchiveSearchMetadata } from "./forms.ts";
+import { ApiError, MainInterceptor, apiRequest, buildQuery } from "./network.ts";
 import {
   chaptersFromDetail,
   chaptersFromSource,
@@ -36,8 +36,8 @@ import {
   type SourceChapterDetailResponse,
   type SourceChapterListResponse,
   type SourceListResponse,
-} from "./parser";
-import type NovelArchiveConfig from "./pbconfig";
+} from "./parser.ts";
+import type NovelArchiveConfig from "./pbconfig.ts";
 
 const DISCOVER_TRENDING = "trending";
 const DISCOVER_EDITORS_CHOICE = "editors-choice";
