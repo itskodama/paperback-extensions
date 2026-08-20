@@ -8,6 +8,7 @@
 const DEBUG_STATE = "comix.debug";
 const THOROUGH_STATE = "comix.thoroughDescramble";
 const SCRAMBLE_LOG_STATE = "comix.scrambleLog";
+const TIMING_LOG_STATE = "comix.timingLog";
 
 /** How many scrambled pages to keep. One is not enough: with roughly one page in
  * twelve scrambled, a single slot is overwritten long before anyone reads it. */
@@ -50,6 +51,22 @@ export function recordScramble(summary: string): void {
 
 export function scrambleLog(): string[] {
   const stored = Application.getState(SCRAMBLE_LOG_STATE);
+  if (!Array.isArray(stored)) return [];
+  return stored.filter((entry): entry is string => typeof entry === "string");
+}
+
+/**
+ * Stage timings, newest first. Recorded only while diagnostics are on: the
+ * measurement is free, but writing state per image is not.
+ */
+export function recordTiming(summary: string): void {
+  if (!debugEnabled()) return;
+  const stamped = `${new Date().toISOString().slice(11, 19)} ${summary}`;
+  Application.setState([stamped, ...timingLog()].slice(0, SCRAMBLE_LOG_LIMIT), TIMING_LOG_STATE);
+}
+
+export function timingLog(): string[] {
+  const stored = Application.getState(TIMING_LOG_STATE);
   if (!Array.isArray(stored)) return [];
   return stored.filter((entry): entry is string => typeof entry === "string");
 }

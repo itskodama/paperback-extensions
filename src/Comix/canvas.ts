@@ -108,13 +108,23 @@ const OUTPUT_QUALITY = 0.85;
  * belongs here rather than in the caller: it is a property of the polyfill, not
  * of whatever the pixels are being used for.
  */
-export type TransformResult = { bytes: ArrayBuffer; inputBytes: number; outputBytes: number };
+export type TransformResult = {
+  bytes: ArrayBuffer;
+  inputBytes: number;
+  outputBytes: number;
+  /** Stage costs in ms. Measuring is three clock reads; the caller decides
+   * whether they are worth recording. */
+  decodeMs: number;
+  transformMs: number;
+  encodeMs: number;
+};
 
 export async function transformImage(
   data: ArrayBuffer,
   mimeType: string,
   transform: PixelTransform,
 ): Promise<TransformResult> {
+  const startedAt = Date.now();
   const image = await decodeImage(data, mimeType);
   const width = image.naturalWidth || image.width;
   const height = image.naturalHeight || image.height;
@@ -128,13 +138,24 @@ export async function transformImage(
   context.drawImage(image, 0, 0, width, height);
 
   const upright = flipRows(context.getImageData(0, 0, width, height).data, width, height);
+  const decodedAt = Date.now();
+
   const result = transform(upright, width, height);
+  const transformedAt = Date.now();
 
   const ImageDataCtor =
     polyfill<Ctor<PolyfilledPixels, [Uint8ClampedArray, number, number]>>("ImageData");
   context.putImageData(new ImageDataCtor(flipRows(result, width, height), width, height), 0, 0);
   const bytes = fromDataUrl(canvas.toDataURL(OUTPUT_MIME, OUTPUT_QUALITY));
-  return { bytes, inputBytes: data.byteLength, outputBytes: bytes.byteLength };
+
+  return {
+    bytes,
+    inputBytes: data.byteLength,
+    outputBytes: bytes.byteLength,
+    decodeMs: decodedAt - startedAt,
+    transformMs: transformedAt - decodedAt,
+    encodeMs: Date.now() - transformedAt,
+  };
 }
 
 /**

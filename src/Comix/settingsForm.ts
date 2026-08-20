@@ -8,6 +8,7 @@ import { KNOWN_OFFSETS, learnedOffsets } from "./descramble.ts";
 import {
   debugEnabled,
   scrambleLog,
+  timingLog,
   setDebugEnabled,
   setThoroughDescramble,
   thoroughDescrambleEnabled,
@@ -133,6 +134,27 @@ export class ComixSettingsForm extends Form {
           : [LabelRow("offset-none", { title: "None" })],
       ),
     );
+
+    const timings = timingLog();
+    if (timings.length > 0) {
+      sections.push(
+        Section(
+          {
+            id: "timings",
+            header: `Recent operations (${timings.length})`,
+            footer:
+              "How long each step took. These cover the extension's own work only — an " +
+              "image's download time is not included, so if pages feel slow while these " +
+              "read fast, the wait is the network rather than the source.",
+          },
+          timings.flatMap((entry, index) =>
+            chunk(entry, 58).map((line, part) =>
+              LabelRow(`timing-${index}-${part}`, { title: line }),
+            ),
+          ),
+        ),
+      );
+    }
 
     // One slot is not enough: with roughly one page in twelve scrambled, the
     // interesting entry is overwritten before anyone reads it.

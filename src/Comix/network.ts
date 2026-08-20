@@ -97,10 +97,12 @@ export class MainInterceptor extends PaperbackInterceptor {
         response.mimeType ?? "image/webp",
         thoroughDescrambleEnabled(),
       );
+      const total = result.decodeMs + result.transformMs + result.encodeMs;
       recordScramble(
-        `${scramble.cols}x${scramble.rows} algo=${scramble.scrambleAlgo ?? "?"} ` +
-          `token=${scramble.scrambleHash ?? "none"} ` +
-          `${Math.round(result.inputBytes / 1024)}KB->${Math.round(result.outputBytes / 1024)}KB`,
+        `${Math.round(result.inputBytes / 1024)}KB->${Math.round(result.outputBytes / 1024)}KB ` +
+          `${total}ms (decode ${result.decodeMs} blit ${result.transformMs} ` +
+          `encode ${result.encodeMs}) ${scramble.cols}x${scramble.rows} ` +
+          `algo=${scramble.scrambleAlgo ?? "?"}`,
       );
       return result.bytes;
     } catch (error) {

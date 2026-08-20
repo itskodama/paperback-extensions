@@ -4,6 +4,7 @@
 import { fetchText, origin } from "./http.ts";
 import { DOMAIN, type ChapterPayload, type PagesPayload } from "./models.ts";
 import { cookieStorage } from "./network.ts";
+import { recordTiming } from "./settings.ts";
 
 /**
  * Search, chapter lists and page lists are signed with a per-request token and
@@ -28,8 +29,10 @@ function injectBootstrap(html: string, bootstrap: string): string {
   return html.slice(0, insertAt) + script + html.slice(insertAt);
 }
 
-async function capture<T>(pageUrl: string, bootstrap: string): Promise<T> {
+async function capture<T>(pageUrl: string, bootstrap: string, label: string): Promise<T> {
+  const startedAt = Date.now();
   const html = injectBootstrap(await fetchText(pageUrl), bootstrap);
+  const fetchedAt = Date.now();
 
   // fetchText may have failed over to the mirror; the WebView has to resolve the
   // page's own scripts and XHRs against whichever origin actually answered.
@@ -48,6 +51,13 @@ async function capture<T>(pageUrl: string, bootstrap: string): Promise<T> {
     inject: "return window.__comixCapture__",
     storage: { cookies: cookieStorage.cookiesForUrl(`${origin()}/`) },
   });
+
+  // The WebView run is the expensive half and the one a reader waits on, so it
+  // is reported apart from the page fetch that precedes it.
+  recordTiming(
+    `${label} ${Date.now() - startedAt}ms (fetch ${fetchedAt - startedAt}, ` +
+      `webview ${Date.now() - fetchedAt})`,
+  );
 
   if (result === undefined || result === null) {
     throw new Error(`Comix: the page at ${resolved} produced no data`);
@@ -202,7 +212,7 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
     CHAPTER_IDLE_TIMEOUT_MS,
   );
 
-  const raw = await capture<string[]>(`${DOMAIN}/title/${hid}`, bootstrap);
+  const raw = await capture<string[]>(`${DOMAIN}/title/${hid}`, bootstrap, "chapter-list");
   const payloads = raw.map((payload) => JSON.parse(payload) as ChapterPayload);
   if (latestChapter !== undefined) chapterCache.set(hid, { latestChapter, payloads });
   return payloads;
@@ -212,7 +222,7 @@ export async function capturePageList(chapterPath: string): Promise<PagesPayload
   const bootstrap = bootstrapFor(
     `if (parsed && parsed.result && parsed.result.pages) { finish(raw); }`,
   );
-  const raw = await capture<string>(`${DOMAIN}${chapterPath}`, bootstrap);
+  const raw = await capture<string>(`${DOMAIN}${chapterPath}`, bootstrap, "page-list");
   return JSON.parse(raw) as PagesPayload;
 }
 
@@ -224,5 +234,5 @@ export async function captureBrowse(browseUrl: string): Promise<unknown> {
       finish({ items: result.items, meta: result.meta || null });
     }
   `);
-  return capture<unknown>(browseUrl, bootstrap);
+  return capture<unknown>(browseUrl, bootstrap, "browse");
 }
