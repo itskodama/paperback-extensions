@@ -1,39 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import { DEFAULT_SORT, DOMAIN, MIRROR_DOMAIN } from "./models.ts";
+import { DEFAULT_SORT, DOMAIN } from "./models.ts";
 
 /**
  * Pure URL construction. Kept apart from `parsers.ts` (which reads pages) and
  * `main.ts` (which dispatches) so the shape of every request the extension makes
  * lives in one place.
  */
-
-function isOffOrigin(url: string): boolean {
-  return !url.startsWith(DOMAIN) && !url.startsWith(MIRROR_DOMAIN);
-}
-
-// Everything the site's own page pulls while it runs in the WebView. Confirmed
-// from the app's debug log: these do reach the extension's interceptors.
-const PAGE_RESOURCE_PATHS = ["/assets/", "/api/", "/images/"];
-
-/**
- * Whether a request is one this extension made, as opposed to one the site's own
- * page made while running inside the WebView.
- *
- * Only ours should be paced. A WebView page load pulls a dozen bundles, its API
- * calls and its avatars from the origin, and throttling those throttles the site
- * behaving normally — a browser does not do it, and doing it here cost roughly
- * 9 seconds per request once the budget was spent. Page images additionally live
- * on extensionless CDN URLs, which BasicRateLimiter's extension-matching
- * exemption never recognised.
- */
-export function isOwnRequest(url: string): boolean {
-  if (isOffOrigin(url)) return false;
-
-  const path = url.slice(url.indexOf("/", "https://".length));
-  return !PAGE_RESOURCE_PATHS.some((prefix) => path.startsWith(prefix));
-}
 
 export function homeUrl(): string {
   return `${DOMAIN}/`;

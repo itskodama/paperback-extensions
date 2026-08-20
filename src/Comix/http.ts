@@ -37,11 +37,13 @@ function onOrigin(url: string, target: string): string {
 
 /** An HTTP status the server actually returned, as opposed to a transport failure. */
 class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    url: string,
-  ) {
+  // Declared and assigned separately: a constructor parameter property is not
+  // supported by Node's strip-only TypeScript mode, which runs the unit tests.
+  readonly status: number;
+
+  constructor(status: number, url: string) {
     super(`Comix returned HTTP ${status} for ${url}`);
+    this.status = status;
   }
 }
 
@@ -71,7 +73,45 @@ function describe(error: unknown): string {
   return "the network request failed";
 }
 
+/**
+ * URLs this extension is currently requesting, counted so concurrent fetches of
+ * the same one do not release it early.
+ *
+ * Rate limiting keys off this rather than off the shape of the URL. The site's
+ * page runs in the WebView and its requests reach the same interceptors, so any
+ * attempt to recognise ours by path is a guess at everything the page might
+ * fetch — a guess that missed Cloudflare's own /cdn-cgi/ scripts and cost about
+ * a third of the chapter walk. Marking the request at the point it is issued
+ * cannot miss anything.
+ */
+const ourRequests = new Map<string, number>();
+
+/** Marks a URL as ours for the duration of the request. Returns the release. */
+export function trackOwnRequest(url: string): () => void {
+  ourRequests.set(url, (ourRequests.get(url) ?? 0) + 1);
+
+  return () => {
+    const remaining = (ourRequests.get(url) ?? 0) - 1;
+    if (remaining > 0) ourRequests.set(url, remaining);
+    else ourRequests.delete(url);
+  };
+}
+
+/** True only while this extension has a request in flight for that exact URL. */
+export function isOurRequest(url: string): boolean {
+  return ourRequests.has(url);
+}
+
 async function attempt(url: string): Promise<string> {
+  const release = trackOwnRequest(url);
+  try {
+    return await send(url);
+  } finally {
+    release();
+  }
+}
+
+async function send(url: string): Promise<string> {
   const [response, data] = await Application.scheduleRequest({ url, method: "GET" });
   if (response.status < 200 || response.status >= 300) {
     throw new HttpError(response.status, url);

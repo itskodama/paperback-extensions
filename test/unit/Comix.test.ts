@@ -7,6 +7,7 @@ import test from "node:test";
 import { ContentRating, type SourceManga } from "@paperback/types";
 
 import { applyKeystream, parseScrambleConfig, tileOrder } from "../../src/Comix/descramble.ts";
+import { isOurRequest, trackOwnRequest } from "../../src/Comix/http.ts";
 import {
   CONTENT_RATINGS,
   DEMOGRAPHICS,
@@ -33,7 +34,6 @@ import {
   toSearchResultItem,
   toSourceManga,
 } from "../../src/Comix/parsers.ts";
-import { isOwnRequest } from "../../src/Comix/urls.ts";
 
 // --- initial-data extraction ---
 
@@ -488,23 +488,41 @@ void test("every sort id splits into a field and a direction", () => {
 
 // --- rate limiting scope ---
 
-// Only this extension's own requests are paced. The site's page runs inside the
-// WebView and its fetches reach the same interceptors; pacing those cost about
-// 43 seconds of sleeping per chapter open.
-void test("only this extension's own document fetches are rate limited", () => {
-  assert.equal(isOwnRequest("https://comix.to/"), true);
-  assert.equal(isOwnRequest("https://comix.to/title/qqwrm"), true);
-  assert.equal(isOwnRequest("https://comix.ws/browse?q=solo"), true);
+// Pacing keys off a registry of requests this extension issued, not off the URL.
+// The site's page runs in the same WebView and its requests reach the same
+// interceptors, so recognising ours by path meant guessing at everything the page
+// might fetch — a guess that missed Cloudflare's /cdn-cgi/ scripts and cost about
+// a third of every chapter walk.
+void test("a request is ours only while it is in flight", () => {
+  const url = "https://comix.to/title/qqwrm";
+  assert.equal(isOurRequest(url), false);
+
+  const release = trackOwnRequest(url);
+  assert.equal(isOurRequest(url), true);
+  release();
+  assert.equal(isOurRequest(url), false);
 });
 
-void test("the page's own bundle, api and avatar fetches are left alone", () => {
-  assert.equal(isOwnRequest("https://comix.to/assets/build/abc/dist/main.js"), false);
-  assert.equal(isOwnRequest("https://comix.to/api/v1/manga/qqwrm/chapters?page=2"), false);
-  assert.equal(isOwnRequest("https://comix.to/images/avatars/84/84894.webp"), false);
+void test("concurrent fetches of one url do not release it early", () => {
+  const url = "https://comix.to/";
+  const first = trackOwnRequest(url);
+  const second = trackOwnRequest(url);
+
+  first();
+  assert.equal(isOurRequest(url), true, "still held by the second fetch");
+  second();
+  assert.equal(isOurRequest(url), false);
 });
 
-void test("the image CDNs are never paced, whatever the shard", () => {
-  assert.equal(isOwnRequest("https://jloo.wowpic2.store/i5/token"), false);
-  assert.equal(isOwnRequest("https://ek10.wowpic1.store/i5/token"), false);
-  assert.equal(isOwnRequest("https://static.comix.to/9c57/i/8/6d/abc.jpg"), false);
+// Bundles, the API, avatars, Cloudflare's own scripts and page images on their
+// CDNs are never paced, because this extension never issued them.
+void test("nothing the page fetches for itself is ever paced", () => {
+  [
+    "https://comix.to/assets/build/abc/dist/main.js",
+    "https://comix.to/api/v1/manga/qqwrm/chapters?page=2",
+    "https://comix.to/images/avatars/84/84894.webp",
+    "https://comix.to/cdn-cgi/challenge-platform/scripts/jsd/main.js",
+    "https://jloo.wowpic2.store/i5/token",
+    "https://static.comix.to/9c57/i/8/6d/abc.jpg",
+  ].forEach((url) => assert.equal(isOurRequest(url), false, url));
 });

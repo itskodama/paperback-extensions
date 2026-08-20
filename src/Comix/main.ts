@@ -22,9 +22,7 @@ import {
 import { ComixSearchForm, DEFAULT_SEARCH_METADATA, type ComixSearchMetadata } from "./forms.ts";
 import { fetchText } from "./http.ts";
 import { DEFAULT_SORT, SORT_OPTIONS, type MangaDetail } from "./models.ts";
-import { cookieStorage, mainInterceptor } from "./network.ts";
-// TEMPORARY (alpha.38): rateLimiter is not imported while it is disabled below,
-// since an unused import fails the lint gate.
+import { cookieStorage, mainInterceptor, rateLimiter } from "./network.ts";
 import {
   contentRatingOf,
   extractInitialData,
@@ -86,11 +84,7 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   async initialise(): Promise<void> {
     // Cookie storage registers before the main interceptor so the clearance is
     // attached to a request before anything inspects the response it produces.
-    // TEMPORARY (alpha.38): rate limiting disabled to test whether it is still
-    // throttling the walk. It should only pace this extension's own document
-    // fetches now, but that is an assumption worth measuring rather than
-    // trusting. Restore this line once the comparison is done.
-    // rateLimiter.registerInterceptor();
+    rateLimiter.registerInterceptor();
     cookieStorage.registerInterceptor();
     mainInterceptor.registerInterceptor();
   }

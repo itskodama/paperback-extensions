@@ -11,19 +11,22 @@ import {
 } from "@paperback/types";
 
 import { applyKeystream, descrambleImage, parseScrambleConfig } from "./descramble.ts";
+import { isOurRequest } from "./http.ts";
 import { DOMAIN } from "./models.ts";
 import { recordScramble, thoroughDescrambleEnabled } from "./settings.ts";
-import { isOwnRequest } from "./urls.ts";
 
 /**
- * Paces only the requests this extension makes. The site's own page, running in
- * the WebView, reaches these interceptors too — confirmed from the app's debug
- * log — and pacing its bundle, API and avatar fetches meant a single chapter
- * open spent about 43 seconds asleep across five separate stalls.
+ * Paces only the requests this extension itself issues, identified by the
+ * registry in http.ts rather than by the shape of the URL.
+ *
+ * The site's page runs in the WebView and its requests reach these interceptors
+ * too. Pacing those meant a chapter open spent about 43 seconds asleep across
+ * five stalls, and a later attempt to exempt them by path still missed
+ * Cloudflare's /cdn-cgi/ scripts, costing a third of every chapter walk.
  */
 class OriginRateLimiter extends BasicRateLimiter {
   override async interceptRequest(request: Request): Promise<Request> {
-    return isOwnRequest(request.url) ? super.interceptRequest(request) : request;
+    return isOurRequest(request.url) ? super.interceptRequest(request) : request;
   }
 }
 
