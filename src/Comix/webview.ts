@@ -14,7 +14,12 @@ import { recordTiming } from "./settings.ts";
  *
  * See docs/Comix/site-recon.md#chapters-and-pages-solved-with-applicationexecuteinwebview.
  */
-const CAPTURE_TIMEOUT_MS = 20_000;
+// Budgets are idle time, not wall clock: the WebView needs to boot, load the
+// site's bundle and clear Cloudflare before it fetches anything, which was
+// measured at over 20s on device. Any JSON the page parses counts as progress
+// and rearms the timer, so a slow-but-working page is waited on and only a truly
+// stalled one gives up.
+const CAPTURE_TIMEOUT_MS = 45_000;
 
 // Chapters are walked 20 at a time, so a long series legitimately needs many
 // round trips. The budget is idle time between captured pages, not total time.
@@ -60,7 +65,12 @@ async function capture<T>(pageUrl: string, bootstrap: string, label: string): Pr
   );
 
   if (result === undefined || result === null) {
-    throw new Error(`Comix: the page at ${resolved} produced no data`);
+    // Distinguishes a stalled page from a wrong one: a capture that ran the full
+    // idle budget was waiting on the site, not misreading it.
+    const elapsed = Date.now() - startedAt;
+    throw new Error(
+      `Comix: ${label} found nothing after ${Math.round(elapsed / 1000)}s at ${resolved}`,
+    );
   }
   return result as T;
 }
@@ -96,7 +106,11 @@ function bootstrapFor(
     JSON.parse = new Proxy(original, {
       apply: function (target, thisArg, args) {
         var parsed = Reflect.apply(target, thisArg, args);
-        try { accept(parsed, args[0]); } catch (e) { /* never break the page */ }
+        try {
+          // Any parsed object means the page is still working; keep waiting.
+          if (parsed && typeof parsed === "object") window.__comixIdle__();
+          accept(parsed, args[0]);
+        } catch (e) { /* never break the page */ }
         return parsed;
       }
     });
