@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import { mergedTargetId, toGenreOptions } from "./mapping";
+import { mergedTargetId, toGenreOptions } from "./mapping.ts";
 import {
   apiRequest,
   authedRequest,
@@ -12,9 +12,9 @@ import {
   DISCOVER_CACHE_TTL,
   type Envelope,
   type Pagination,
-} from "./network";
-import type { GenreOption, GenresResponse, LibraryEntry, Series } from "./types";
-import { buildQuery } from "./urls";
+} from "./network.ts";
+import type { GenreOption, GenresResponse, LibraryEntry, Series } from "./types.ts";
+import { buildQuery } from "./urls.ts";
 
 /** Guards against a merge chain pointing back at itself. */
 const MAX_MERGE_HOPS = 3;

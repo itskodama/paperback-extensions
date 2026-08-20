@@ -15,13 +15,13 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
-import { deleteLibraryEntry, fetchLibraryEntry, fetchSeries, saveLibraryEntry } from "./api";
-import { getProfile } from "./auth";
-import { count } from "./decode";
-import { humanizeSlug, snapRating } from "./mapping";
-import { today } from "./progress";
-import { titlePreference } from "./settings";
-import { primaryTitle } from "./titles";
+import { deleteLibraryEntry, fetchLibraryEntry, fetchSeries, saveLibraryEntry } from "./api.ts";
+import { getProfile } from "./auth.ts";
+import { count } from "./decode.ts";
+import { humanizeSlug, snapRating } from "./mapping.ts";
+import { today } from "./progress.ts";
+import { titlePreference } from "./settings.ts";
+import { primaryTitle } from "./titles.ts";
 import {
   DEFAULT_LIBRARY_STATE,
   DEFAULT_PRIORITY,
@@ -34,7 +34,7 @@ import {
   SERIES_TYPE_LABELS,
   type LibraryEntry,
   type Series,
-} from "./types";
+} from "./types.ts";
 
 type Draft = {
   state: string;
