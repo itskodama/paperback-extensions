@@ -13,21 +13,17 @@ import {
 import { applyKeystream, descrambleImage, parseScrambleConfig } from "./descramble.ts";
 import { DOMAIN } from "./models.ts";
 import { recordScramble, thoroughDescrambleEnabled } from "./settings.ts";
-import { isOffOrigin } from "./urls.ts";
+import { isOwnRequest } from "./urls.ts";
 
 /**
- * `ignoreImages` cannot help here: it matches on a file extension, and this site
- * serves pages as extensionless tokens (`.../i5/<token>`), so every page image
- * was counted against the budget and serialised through the limiter's lock. A
- * 20-page chapter throttled itself to over ten seconds before any network cost.
- *
- * Pacing is meant for the site's own origin — the pages and API it serves — not
- * for assets on its CDNs. Exempting by host rather than by extension keeps that
- * distinction, and holds for any new CDN shard.
+ * Paces only the requests this extension makes. The site's own page, running in
+ * the WebView, reaches these interceptors too — confirmed from the app's debug
+ * log — and pacing its bundle, API and avatar fetches meant a single chapter
+ * open spent about 43 seconds asleep across five separate stalls.
  */
 class OriginRateLimiter extends BasicRateLimiter {
   override async interceptRequest(request: Request): Promise<Request> {
-    return isOffOrigin(request.url) ? request : super.interceptRequest(request);
+    return isOwnRequest(request.url) ? super.interceptRequest(request) : request;
   }
 }
 

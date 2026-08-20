@@ -171,6 +171,33 @@ Two members are worth knowing about specifically:
 `CloudflareError(resolutionRequest, message?)` is what actually raises the app's bypass banner. The
 capability alone does nothing; see [`LNORI`'s notes](../LNORI/site-recon.md) for the failure mode.
 
+### WebView traffic passes through your interceptors
+
+A page running under `Application.executeInWebView` fetches its own scripts, API
+calls and images, and **those requests reach the extension's registered
+interceptors**. Confirmed from the app's debug log, where a single chapter open
+produced five `[BasicRateLimiter] rate limit hit` entries totalling about 43
+seconds of sleeping.
+
+This is easy to get backwards. `executeInWebView` takes an explicit
+`storage: { cookies }`, which suggests the WebView has its own networking stack
+outside the interceptor chain. It does not follow: cookies must be handed over,
+and the requests are still intercepted.
+
+The consequence is that a rate limiter sized for an extension's own API calls
+will also throttle a page load that legitimately pulls dozens of resources, and
+the page stalls for the whole buffer interval each time the budget is spent.
+Pace only the requests the extension itself issues.
+
+### `BasicRateLimiter` recognises images by file extension
+
+`ignoreImages` tests the URL against
+`/\.(avif|gif|jpeg|jpg|jxl|png|webp)(\?|$)/i`. A site serving images from
+extensionless URLs — opaque CDN tokens, for instance — defeats it entirely: every
+image is counted, and because the limiter takes a lock per request they are also
+serialised. Subclass and override `interceptRequest` to exempt by host or path
+when a source's assets have no extension.
+
 ### Errors do not survive the bridge as their own class
 
 An error thrown inside an interceptor travels back out through `Application.scheduleRequest` by

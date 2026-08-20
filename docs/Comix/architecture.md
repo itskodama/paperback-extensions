@@ -109,6 +109,37 @@ let it be reported and hardcoded.
 
 Not built. Recorded because the failure mode is silent, which is the kind that goes unnoticed.
 
+## Where reading time actually goes
+
+Measured on device 2026-08-20, after instrumenting each stage. Recorded because
+nearly every guess about this was wrong, including several confident ones.
+
+| Stage                         | Cost                                     |
+| ----------------------------- | ---------------------------------------- |
+| Descrambling a scrambled page | 30-102ms                                 |
+| Page list, uncontended        | ~1.5-2.3s (one WebView boot per chapter) |
+| Chapter list walk             | ~34s typical, 210s on a long series      |
+
+**The image pipeline was never the bottleneck.** Several releases went into
+tuning a stage costing under a tenth of a second while the real costs were three
+orders of magnitude larger.
+
+Two causes were self-inflicted, and both were found from the app's debug log
+rather than by reasoning:
+
+- **`processTitlesForUpdates` was unimplemented**, so a library check called
+  `getChapters` on every followed title — each a WebView walk — and those queued
+  behind whatever the reader was opening. The same chapter measured 1.5s idle and
+  45s while a sweep ran.
+- **The rate limiter was throttling the site's own page.** WebView requests do
+  reach the extension's interceptors, so a chapter open spent about 43 seconds
+  asleep across five stalls. See
+  [`api-reference.md`](../paperback/api-reference.md#webview-traffic-passes-through-your-interceptors).
+
+What remains is genuine: the site serves 20 chapters per signed request and the
+signature covers the query, so a long series needs one round trip per 20
+chapters. Raising `limit` returns 403.
+
 ## Fetch strategy
 
 Discover and `getMangaDetails` read server-rendered HTML and need no token, so they go through the

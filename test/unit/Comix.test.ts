@@ -33,7 +33,7 @@ import {
   toSearchResultItem,
   toSourceManga,
 } from "../../src/Comix/parsers.ts";
-import { isOffOrigin } from "../../src/Comix/urls.ts";
+import { isOwnRequest } from "../../src/Comix/urls.ts";
 
 // --- initial-data extraction ---
 
@@ -488,15 +488,23 @@ void test("every sort id splits into a field and a direction", () => {
 
 // --- rate limiting scope ---
 
-// Pacing exists for the site's own origin. Page images live on extensionless
-// CDN URLs, so BasicRateLimiter's extension-matching exemption never fired and
-// every page was counted and serialised — a chapter throttled itself to over ten
-// seconds. Exempting by host holds for any new CDN shard.
-void test("only the site's own origins are rate limited", () => {
-  assert.equal(isOffOrigin("https://comix.to/title/qqwrm"), false);
-  assert.equal(isOffOrigin("https://comix.ws/api/v1/manga"), false);
+// Only this extension's own requests are paced. The site's page runs inside the
+// WebView and its fetches reach the same interceptors; pacing those cost about
+// 43 seconds of sleeping per chapter open.
+void test("only this extension's own document fetches are rate limited", () => {
+  assert.equal(isOwnRequest("https://comix.to/"), true);
+  assert.equal(isOwnRequest("https://comix.to/title/qqwrm"), true);
+  assert.equal(isOwnRequest("https://comix.ws/browse?q=solo"), true);
+});
 
-  assert.equal(isOffOrigin("https://jloo.wowpic2.store/i5/token"), true);
-  assert.equal(isOffOrigin("https://ek10.wowpic1.store/i5/token"), true);
-  assert.equal(isOffOrigin("https://static.comix.to/9c57/i/8/6d/abc.jpg"), true);
+void test("the page's own bundle, api and avatar fetches are left alone", () => {
+  assert.equal(isOwnRequest("https://comix.to/assets/build/abc/dist/main.js"), false);
+  assert.equal(isOwnRequest("https://comix.to/api/v1/manga/qqwrm/chapters?page=2"), false);
+  assert.equal(isOwnRequest("https://comix.to/images/avatars/84/84894.webp"), false);
+});
+
+void test("the image CDNs are never paced, whatever the shard", () => {
+  assert.equal(isOwnRequest("https://jloo.wowpic2.store/i5/token"), false);
+  assert.equal(isOwnRequest("https://ek10.wowpic1.store/i5/token"), false);
+  assert.equal(isOwnRequest("https://static.comix.to/9c57/i/8/6d/abc.jpg"), false);
 });
