@@ -25,6 +25,11 @@ const CAPTURE_TIMEOUT_MS = 45_000;
 // round trips. The budget is idle time between captured pages, not total time.
 const CHAPTER_IDLE_TIMEOUT_MS = 25_000;
 
+// The opening marks establish the per-page rhythm, which is what the trace is
+// for; a full walk of fifty pages would not fit in the log and would not add
+// anything the first few do not already show.
+const TRACE_LIMIT = 8;
+
 function injectBootstrap(html: string, bootstrap: string): string {
   const script = `<script>${bootstrap}</script>`;
   const headIndex = html.search(/<head[^>]*>/i);
@@ -43,7 +48,7 @@ async function capture<T>(pageUrl: string, bootstrap: string, label: string): Pr
   // page's own scripts and XHRs against whichever origin actually answered.
   const resolved = pageUrl.replace(DOMAIN, origin());
 
-  const { result } = await Application.executeInWebView({
+  const { result: envelope } = await Application.executeInWebView({
     source: {
       html,
       baseUrl: resolved,
@@ -53,9 +58,15 @@ async function capture<T>(pageUrl: string, bootstrap: string, label: string): Pr
       // own same-origin XHRs are challenged instead of served.
       userAgent: await Application.getDefaultUserAgent(),
     },
-    inject: "return window.__comixCapture__",
+    // The trace rides alongside the result rather than replacing it: a capture
+    // must still succeed if the trace is missing or malformed.
+    inject:
+      "return window.__comixCapture__.then(function (r) { return { result: r, trace: window.__comixTrace__ || [] }; })",
     storage: { cookies: cookieStorage.cookiesForUrl(`${origin()}/`) },
   });
+
+  const wrapped = envelope as { result?: unknown; trace?: unknown } | null;
+  const result = wrapped?.result;
 
   // The WebView run is the expensive half and the one a reader waits on, so it
   // is reported apart from the page fetch that precedes it.
@@ -63,6 +74,17 @@ async function capture<T>(pageUrl: string, bootstrap: string, label: string): Pr
     `${label} ${Date.now() - startedAt}ms (fetch ${fetchedAt - startedAt}, ` +
       `webview ${Date.now() - fetchedAt})`,
   );
+
+  // Recorded as one entry rather than one per mark: the log prepends, so separate
+  // writes would read backwards and crowd out everything else. Each mark is when
+  // something happened inside the page, relative to its load — the gaps between
+  // them are where a slow walk actually spends its time.
+  if (Array.isArray(wrapped?.trace) && wrapped.trace.length > 0) {
+    const marks = wrapped.trace
+      .filter((mark): mark is string => typeof mark === "string")
+      .slice(0, TRACE_LIMIT);
+    if (marks.length > 0) recordTiming(`${label} trace: ${marks.join(" | ")}`);
+  }
 
   if (result === undefined || result === null) {
     // Distinguishes a stalled page from a wrong one: a capture that ran the full
@@ -95,6 +117,19 @@ function bootstrapFor(
     // Rearmed whenever progress is made, so the budget is idle time rather than
     // total time — a long series needs many round trips and must not be cut off
     // mid-walk just because it is large.
+    // A trace of what happened inside the page, returned alongside the result.
+    // Timing measured from outside can only show total elapsed; the cost of a
+    // slow walk is here, in the gaps between a click and the payload it causes.
+    window.__comixTrace__ = [];
+    window.__comixT0__ = Date.now();
+    window.__comixMark__ = function (what) {
+      try {
+        if (window.__comixTrace__.length < 200) {
+          window.__comixTrace__.push(Date.now() - window.__comixT0__ + "ms " + what);
+        }
+      } catch (e) { /* a trace must never break the capture */ }
+    };
+
     var idle;
     window.__comixIdle__ = function () {
       if (idle) clearTimeout(idle);
@@ -165,6 +200,7 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
       var page = meta.page || 1;
       if (window.__comixPages__[page]) return;
       window.__comixPages__[page] = raw;
+      window.__comixMark__("payload page=" + page + " n=" + result.items.length);
 
       window.__comixIdle__();
       if (meta.hasNext || page < (meta.lastPage || page)) { window.__comixAdvance__(page); }
@@ -217,8 +253,17 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
         var tries = 0;
         var timer = setInterval(function () {
           var next = nextControl(pagerButtons(), page);
-          if (next) { clearInterval(timer); next.click(); }
-          else if (++tries > 60) { clearInterval(timer); finish(window.__comixCollect__()); }
+          if (next) {
+            clearInterval(timer);
+            // The poll count separates waiting for the site to re-render its
+            // pager from waiting for the request that the click causes.
+            window.__comixMark__("click page=" + (page + 1) + " afterPolls=" + tries);
+            next.click();
+          } else if (++tries > 60) {
+            clearInterval(timer);
+            window.__comixMark__("gave up finding next after " + tries + " polls");
+            finish(window.__comixCollect__());
+          }
         }, 100);
       };
     `,
