@@ -30,6 +30,10 @@ const CHAPTER_IDLE_TIMEOUT_MS = 25_000;
 // anything the first few do not already show.
 const TRACE_LIMIT = 8;
 
+// Marks a trace line inside the array of payloads. A NUL cannot begin a JSON
+// document, so it cannot collide with a real payload.
+const TRACE_PREFIX = "\u0000trace ";
+
 function injectBootstrap(html: string, bootstrap: string): string {
   const script = `<script>${bootstrap}</script>`;
   const headIndex = html.search(/<head[^>]*>/i);
@@ -58,26 +62,11 @@ async function capture<T>(pageUrl: string, bootstrap: string, label: string): Pr
       // own same-origin XHRs are challenged instead of served.
       userAgent: await Application.getDefaultUserAgent(),
     },
-    // The trace rides alongside the result rather than replacing it, so a capture
-    // still succeeds if the trace is missing. Both cross as a single JSON string:
-    // the bridge accepts strings and arrays but rejects a plain object with
-    // "unsupported type".
-    inject:
-      "return window.__comixCapture__.then(function (r) {" +
-      " return JSON.stringify({ result: r === undefined ? null : r," +
-      " trace: window.__comixTrace__ || [] }); })",
+    inject: "return window.__comixCapture__",
     storage: { cookies: cookieStorage.cookiesForUrl(`${origin()}/`) },
   });
 
-  let wrapped: { result?: unknown; trace?: unknown } | null = null;
-  if (typeof envelope === "string") {
-    try {
-      wrapped = JSON.parse(envelope) as { result?: unknown; trace?: unknown };
-    } catch {
-      wrapped = null;
-    }
-  }
-  const result = wrapped?.result;
+  const result = envelope;
 
   // The WebView run is the expensive half and the one a reader waits on, so it
   // is reported apart from the page fetch that precedes it.
@@ -85,17 +74,6 @@ async function capture<T>(pageUrl: string, bootstrap: string, label: string): Pr
     `${label} ${Date.now() - startedAt}ms (fetch ${fetchedAt - startedAt}, ` +
       `webview ${Date.now() - fetchedAt})`,
   );
-
-  // Recorded as one entry rather than one per mark: the log prepends, so separate
-  // writes would read backwards and crowd out everything else. Each mark is when
-  // something happened inside the page, relative to its load — the gaps between
-  // them are where a slow walk actually spends its time.
-  if (Array.isArray(wrapped?.trace) && wrapped.trace.length > 0) {
-    const marks = wrapped.trace
-      .filter((mark): mark is string => typeof mark === "string")
-      .slice(0, TRACE_LIMIT);
-    if (marks.length > 0) recordTiming(`${label} trace: ${marks.join(" | ")}`);
-  }
 
   if (result === undefined || result === null) {
     // Distinguishes a stalled page from a wrong one: a capture that ran the full
@@ -219,10 +197,17 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
     `,
     `
       window.__comixPages__ = {};
+      // The trace travels as extra entries in the array this already returns.
+      // Wrapping the payloads in an envelope instead would re-escape every quote
+      // inside them and roughly double an already-large result.
       window.__comixCollect__ = function () {
-        return Object.keys(window.__comixPages__)
+        var pages = Object.keys(window.__comixPages__)
           .sort(function (a, b) { return a - b; })
           .map(function (key) { return window.__comixPages__[key]; });
+
+        return pages.concat((window.__comixTrace__ || []).map(function (mark) {
+          return "\u0000trace " + mark;
+        }));
       };
 
       // The chapter module's own footer. Scoping to it matters because the
@@ -283,7 +268,16 @@ async function captureChapters(hid: string, latestChapter?: number): Promise<Cha
   );
 
   const raw = await capture<string[]>(`${DOMAIN}/title/${hid}`, bootstrap, "chapter-list");
-  const payloads = raw.map((payload) => JSON.parse(payload) as ChapterPayload);
+
+  const marks = raw.filter((entry) => entry.startsWith(TRACE_PREFIX));
+  if (marks.length > 0) {
+    const trace = marks.slice(0, TRACE_LIMIT).map((mark) => mark.slice(TRACE_PREFIX.length));
+    recordTiming(`chapter-list trace: ${trace.join(" | ")}`);
+  }
+
+  const payloads = raw
+    .filter((entry) => !entry.startsWith(TRACE_PREFIX))
+    .map((payload) => JSON.parse(payload) as ChapterPayload);
   if (latestChapter !== undefined) chapterCache.set(hid, { latestChapter, payloads });
   return payloads;
 }
