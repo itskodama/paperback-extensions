@@ -171,6 +171,35 @@ Two members are worth knowing about specifically:
 `CloudflareError(resolutionRequest, message?)` is what actually raises the app's bypass banner. The
 capability alone does nothing; see [`LNORI`'s notes](../LNORI/site-recon.md) for the failure mode.
 
+### Errors do not survive the bridge as their own class
+
+An error thrown inside an interceptor travels back out through `Application.scheduleRequest` by
+crossing to Swift and back, and **does not arrive as the class it was thrown as**. So this looks
+correct and silently fails:
+
+```ts
+catch (error) {
+  if (error instanceof CloudflareError) throw error;   // never true for an interceptor throw
+}
+```
+
+The consequence is worse than a bad log line: swallowing it means the app never receives the error
+it needs in order to raise the bypass banner, so the source looks broken with no way to recover.
+Test the `type` tag instead, which does survive:
+
+```ts
+(error as { type?: unknown })?.type === "cloudflareError";
+```
+
+The same applies to identifying rejections generally — see below.
+
+### Native rejections are not `Error`s
+
+`scheduleRequest` rejects transport failures with native error objects. They are not JS `Error`s,
+so `error.message` may be absent and `String(error)` yields `"[object NSError]"`. Read `message`,
+then `localizedDescription`, then fall back to fixed wording — interpolating the value directly
+produces an error text that tells the user nothing.
+
 ## Content model
 
 ```ts

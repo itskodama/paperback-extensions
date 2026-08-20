@@ -151,6 +151,19 @@ class HttpError extends Error {
 }
 
 /**
+ * A CloudflareError thrown from an interceptor crosses the bridge on its way back
+ * out of scheduleRequest and does not arrive as the same class, so `instanceof`
+ * silently fails. The `type` tag it carries does survive. Getting this wrong
+ * swallows the error the app needs in order to raise its bypass banner.
+ */
+function isCloudflareError(error: unknown): boolean {
+  if (error instanceof CloudflareError) return true;
+  const tagged = error as { type?: unknown; message?: unknown } | null;
+  if (tagged?.type === "cloudflareError") return true;
+  return typeof tagged?.message === "string" && tagged.message.includes("Cloudflare check");
+}
+
+/**
  * The platform rejects with native errors that are not JS `Error`s and stringify
  * to "[object NSError]", so a message is dug out rather than interpolated.
  */
@@ -181,7 +194,7 @@ async function requestText(url: string): Promise<string> {
     // to the app, and a status the server chose to return says the same thing on
     // either domain — retrying those would replace a real diagnosis with the
     // mirror's unrelated failure.
-    if (error instanceof CloudflareError || error instanceof HttpError) throw error;
+    if (isCloudflareError(error) || error instanceof HttpError) throw error;
 
     const fallback = preferredOrigin === DOMAIN ? MIRROR_DOMAIN : DOMAIN;
     try {
