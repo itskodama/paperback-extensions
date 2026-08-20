@@ -249,6 +249,40 @@ Paired with `interceptResponse` returning transformed bytes, that is enough to *
 tile-shuffled page images** — decode, blit tiles into their correct positions, re-encode. Sites that
 scramble pages are therefore supportable, contrary to an earlier claim in this repository's notes.
 
+## The polyfilled DOM
+
+**The runtime provides browser globals that `@paperback/types` does not declare.** Confirmed on
+device 2026-08-19 while implementing image descrambling:
+
+| Global               | Present | Notes                                                  |
+| -------------------- | ------- | ------------------------------------------------------ |
+| `Image`              | yes     | Constructible; `onload`/`onerror`/`src`/`naturalWidth` |
+| `HTMLCanvasElement`  | yes     | `getContext("2d")`, `toDataURL(type)`                  |
+| `ImageData`          | yes     | `new ImageData(data, width, height)`                   |
+| 2D context           | yes     | `drawImage`, `getImageData`, `putImageData`            |
+| `Blob`, `URL`        | **no**  | Bytes must cross as `data:` URLs                       |
+| `App.createPBCanvas` | **no**  | 0.8 compat only; absent at runtime                     |
+
+Together these are enough to decode an image, manipulate pixels, and re-encode it — which is how a
+source undoes server-side page scrambling. `PBCanvas` in the typings is a _different_, unrelated
+surface with no constructor; do not go looking for a factory for it.
+
+Two traps:
+
+- **`getImageData`/`putImageData` use a Y-up buffer** (origin bottom-left), so rows arrive reversed
+  relative to the image. Flip on the way in and out, or every pixel operation silently works on an
+  upside-down image.
+- None of this is typed, so reach it through `globalThis` and feature-detect, exactly as with
+  [WebCrypto](runtime.md#present-globals-worth-knowing-about). A missing global then fails with a
+  clear message instead of a `TypeError`.
+
+### Check the standard name before concluding something is missing
+
+Three capabilities in this repository were declared impossible and later found to exist:
+`Application.executeInWebView`, the DOM canvas above, and `PBCanvas` itself. Each time the search
+looked for an invented or legacy name — `createCanvas`, `App.createPBCanvas` — rather than the
+ordinary web one. A probe that finds nothing proves only that the searched name is absent.
+
 ## Forms
 
 `Form`, `FormSection` and the row constructors live under `impl/SettingsUI/`. Rows include

@@ -76,51 +76,38 @@ The seed is stable per image, but the hash **rotates per response** and the byte
 the server re-scrambles on each fetch. That is why the table has to be complete rather than
 covering the common cases.
 
-Page images arrive in two layers, and **only one of them is currently undoable**:
+Both layers are undone in `interceptResponse`:
 
-| Layer            | Needs                        | Status                                     |
-| ---------------- | ---------------------------- | ------------------------------------------ |
-| XOR keystream    | byte arithmetic only         | Done, in `interceptResponse`               |
-| 5x5 tile shuffle | image decode/encode + canvas | **Blocked** — no way to construct a canvas |
+| Layer         | Mechanism                                                   |
+| ------------- | ----------------------------------------------------------- |
+| XOR keystream | Byte arithmetic; no image decoding needed                   |
+| Tile shuffle  | Decode, blit tiles, re-encode via the polyfilled DOM canvas |
 
-The maths for both is implemented and unit-tested in `descramble.ts`; the blocker is purely
-applying the second one. `PBCanvas` in 0.9 exposes drawing methods but **no constructor or
-factory** — the only ones (`App.createPBCanvas()`, `App.createPBImage()`) live in the 0.8 compat
-layer at `compat/0.8/types.d.ts`, which is not re-exported from the package root.
+The canvas comes from the runtime's **undeclared DOM polyfills** — `Image`, `HTMLCanvasElement`,
+`ImageData` — not from `PBCanvas`, which has no constructor, and not from the 0.8 compat layer,
+which a device probe showed is absent entirely (`App` undefined). See
+[`api-reference.md`](../paperback/api-reference.md#the-polyfilled-dom) for the two traps that
+matter: `Blob`/`URL` are missing so bytes cross as `data:` URLs, and the pixel buffer is Y-up so
+rows must be flipped both ways.
 
-Three options, none yet verified on device:
+The grid is read from `x-scramble-grid` rather than assumed: only algo 3 is bound to 5x5, while the
+LCG variants shuffle any grid. A page that fails to descramble is returned as delivered — a
+scrambled page still beats a blank one.
 
-1. Deep-import the 0.8 compat layer and hope `App` still exists at runtime. Most likely to work,
-   least likely to survive a platform release.
-2. Check how often the grid layer is actually applied. If `x-scramble-grid` is rare, shipping
-   without it degrades a minority of chapters rather than all of them.
-3. Ask upstream for a 0.9 canvas factory.
+## Known gap: an unrecognised scramble hash
 
-**Do not claim tile descrambling works until it has been checked on device.** An earlier revision of
-these notes asserted `PBCanvas` made this solvable, which was true of the drawing API and false of
-the ability to obtain one.
+An `x-scramble-hash` outside the derived table falls back to an offset of 0. That is correct for
+every value observed so far, but a genuinely new one carrying a non-zero offset would render its
+page scrambled **silently** — there is no error, just a visibly wrong image.
 
-## Chapter list cost is irreducible
+Now that a canvas is available the extension could detect this itself: score seam continuity across
+tile boundaries on its own output, and if the result is poor, brute-force the offset and cache it
+against the hash. The scoring oracle is reliable — a correct arrangement scores 10-70x lower — and
+a bounded search over ~2^18 candidates resolves in well under a minute offline. Surfacing any
+discovered value in a debug settings section, in the style of `src/MangaBaka/settingsForm.ts`, would
+let it be reported and hardcoded.
 
-The site serves 20 chapters per request, so a long series needs one round trip per 20. That cannot
-be collapsed, and this was **measured, not assumed** — on 2026-08-19, replaying the site's own signed
-chapter URL with only `limit` altered:
-
-| `limit` | Result         |
-| ------- | -------------- |
-| 20      | `200`, payload |
-| 50      | `403`          |
-| 100     | `403`          |
-| 500     | `403`          |
-
-The `_` signature covers the whole query string, so any edit invalidates it, and only the site's own
-bundle can mint a valid one — which always asks for 20. Raising `limit` is therefore closed, not
-merely untried. Don't re-probe it without new evidence that the signing scheme has changed.
-
-What is left is avoiding repeat walks, which is what the chapter cache does: the walked list is
-reused while the series page still reports the same `latestChapter`. A time-based cache was tried
-first and rejected — it would swallow an upload made inside its window and make pull-to-refresh
-appear to do nothing.
+Not built. Recorded because the failure mode is silent, which is the kind that goes unnoticed.
 
 ## Fetch strategy
 
