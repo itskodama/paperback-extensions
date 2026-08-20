@@ -16,6 +16,7 @@ import {
   type SearchResultItem,
   type SortingOption,
   type SourceManga,
+  type UpdateManager,
 } from "@paperback/types";
 
 import { ComixSearchForm, DEFAULT_SEARCH_METADATA, type ComixSearchMetadata } from "./forms.ts";
@@ -34,6 +35,7 @@ import {
   toSourceManga,
 } from "./parsers.ts";
 import type ComixConfig from "./pbconfig.ts";
+import { latestSeen, rememberLatestSeen } from "./settings.ts";
 import { ComixSettingsForm } from "./settingsForm.ts";
 import { browseUrl, homeUrl, seriesUrl } from "./urls.ts";
 import { captureBrowse, captureChapterList, capturePageList } from "./webview.ts";
@@ -181,7 +183,51 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
     if (detail?.hasChapters === false) return [];
 
     const payloads = await captureChapterList(sourceManga.mangaId, detail?.latestChapter);
+    // Seeds the update tracker, so the next library sweep can skip this title
+    // without a WebView walk.
+    if (detail?.latestChapter !== undefined) {
+      rememberLatestSeen(sourceManga.mangaId, detail.latestChapter);
+    }
     return payloads.flatMap((payload) => parseChapterPayload(payload, sourceManga));
+  }
+
+  /**
+   * Without this the app checks a library by calling getChapters on every
+   * followed title, and each of those is a WebView walk of 20-35s. They queue
+   * behind one another and behind whatever the reader is trying to open, which
+   * is what made opening a chapter intermittently stall for tens of seconds.
+   *
+   * The series page reports its newest chapter cheaply and without a WebView, so
+   * a title whose newest chapter has not moved is skipped outright.
+   */
+  async processTitlesForUpdates(updateManager: UpdateManager): Promise<void> {
+    const seen = latestSeen();
+
+    for (const manga of updateManager.getQueuedItems()) {
+      let detail: MangaDetail | undefined;
+      try {
+        detail = await this.seriesDetail(manga.mangaId);
+      } catch (error) {
+        // A challenge has to reach the app; anything else is one title's problem
+        // and must not abandon the rest of the sweep.
+        if ((error as { type?: unknown })?.type === "cloudflareError") throw error;
+        continue;
+      }
+
+      const latest = detail?.latestChapter;
+      if (latest === undefined || detail?.hasChapters === false) {
+        await updateManager.setUpdatePriority(manga.mangaId, "skip");
+        continue;
+      }
+
+      if (seen.get(manga.mangaId) === latest) {
+        await updateManager.setUpdatePriority(manga.mangaId, "skip");
+        continue;
+      }
+
+      rememberLatestSeen(manga.mangaId, latest);
+      await updateManager.setUpdatePriority(manga.mangaId, "high");
+    }
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {

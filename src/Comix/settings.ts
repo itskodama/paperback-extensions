@@ -9,6 +9,7 @@ const DEBUG_STATE = "comix.debug";
 const THOROUGH_STATE = "comix.thoroughDescramble";
 const SCRAMBLE_LOG_STATE = "comix.scrambleLog";
 const TIMING_LOG_STATE = "comix.timingLog";
+const LATEST_SEEN_STATE = "comix.latestSeen";
 
 /** How many scrambled pages to keep. One is not enough: with roughly one page in
  * twelve scrambled, a single slot is overwritten long before anyone reads it. */
@@ -91,4 +92,32 @@ export function recordTiming(summary: string): void {
 
 export function timingLog(): string[] {
   return readLog(TIMING_LOG_STATE);
+}
+
+/**
+ * The newest chapter number last seen per series, as `hid:number` pairs in one
+ * delimited string. Kept small and flat deliberately: it is read on every update
+ * sweep, and structured values do not survive the bridge reliably.
+ */
+export function latestSeen(): Map<string, number> {
+  const seen = new Map<string, number>();
+  for (const entry of readLog(LATEST_SEEN_STATE)) {
+    const [hid, value] = entry.split(":");
+    const parsed = Number.parseFloat(value ?? "");
+    if (hid && Number.isFinite(parsed)) seen.set(hid, parsed);
+  }
+  return seen;
+}
+
+export function rememberLatestSeen(hid: string, latestChapter: number): void {
+  try {
+    const seen = latestSeen();
+    if (seen.get(hid) === latestChapter) return;
+
+    seen.set(hid, latestChapter);
+    const packed = [...seen].map(([id, value]) => `${id}:${value}`).join(LOG_SEPARATOR);
+    Application.setState(packed, LATEST_SEEN_STATE);
+  } catch {
+    // Losing this only costs an extra check next sweep.
+  }
 }
