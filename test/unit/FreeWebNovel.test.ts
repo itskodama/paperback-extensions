@@ -349,7 +349,7 @@ const NOVEL_HTML = `
 <div class="main" id="indexListPage" data-page-size="40" data-total-page="61" data-total-chapters="2429">
 <div class="txt"><div class="item"><span title="Alternative names"></span><div class="right"><span class="s1">Alt One, Alt Two</span></div></div></div>
 <div class="m-desc"><h1 class="tit">Apocalypse Gachapon</h1><div class="inner"><p>First line.</p><p>Second line.</p></div></div>
-<p class="vote">3.5 / 5 ( 73 votes )</p>
+<p class="vote">4.6 / 5 ( 5776 votes )</p>
 `;
 
 void test("the novel record is read from meta tags plus the three fields that have none", () => {
@@ -361,13 +361,32 @@ void test("the novel record is read from meta tags plus the three fields that ha
   assert.equal(detail.language, "Chinese");
   assert.deepEqual(detail.genres, ["Action", "Harem", "Mature", "Romance", "Sci-fi"]);
   assert.deepEqual(detail.alternativeTitles, ["Alt One", "Alt Two"]);
-  assert.equal(detail.rating, 3.5);
+  assert.equal(detail.rating, 4.6);
+  assert.equal(detail.ratingMax, 5);
   assert.equal(detail.synopsis, "First line.\n\nSecond line.");
 });
 
 // The count that makes the update sweep one request instead of thirty-seven.
 void test("the chapter total is read off the page root", () => {
   assert.equal(parseNovelDetail(NOVEL_HTML, "x").totalChapters, 2429);
+});
+
+// The app renders `rating` as a 0-1 fraction: Comix showed a 93% title as 930%
+// when handed an unscaled score. The denominator is read off the page rather than
+// assumed, so a page on a different scale still normalises.
+void test("the rating is normalised against the denominator the page prints", () => {
+  const rated = (vote: string) =>
+    toSourceManga(parseNovelDetail(NOVEL_HTML.replace("4.6 / 5 ( 5776 votes )", vote), "x"))
+      .mangaInfo.rating;
+
+  assert.equal(rated("4.6 / 5 ( 1 votes )"), 0.92);
+  assert.equal(rated("9.9 / 10 ( 1 votes )"), 0.99);
+  assert.equal(rated("5 / 5 ( 1 votes )"), 1);
+});
+
+void test("a novel page with no vote line reports no rating at all", () => {
+  const unrated = NOVEL_HTML.replace(/<p class="vote">[^<]*<\/p>/, "");
+  assert.equal(toSourceManga(parseNovelDetail(unrated, "x")).mangaInfo.rating, undefined);
 });
 
 void test("the site's OnGoing is normalised to the spelling every other source uses", () => {

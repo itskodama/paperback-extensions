@@ -226,7 +226,9 @@ const DETAIL_TITLE = /<h1 class="tit">([^<]*)<\/h1>/;
 const DETAIL_SYNOPSIS = /<div class="m-desc">[\s\S]*?<div class="inner">([\s\S]*?)<\/div>/i;
 const DETAIL_ALT_TITLES =
   /title="Alternative names"[\s\S]{0,200}?<span class="s1">([\s\S]*?)<\/span>/i;
-const DETAIL_RATING = /<p class="vote">\s*([\d.]+)\s*\//;
+// Both halves of "4.6 / 5": the denominator is read, never assumed, so a page on
+// a different scale normalises correctly instead of rendering ten times over.
+const DETAIL_RATING = /<p class="vote">\s*([\d.]+)\s*\/\s*([\d.]+)/;
 const DETAIL_TOTAL_CHAPTERS = /data-total-chapters="(\d+)"/;
 const DETAIL_COVER = /<div class="pic">/i;
 // The site states its own rating on the novel page, and nowhere else.
@@ -275,8 +277,13 @@ export function parseNovelDetail(html: string, slug: string): NovelDetail {
   const status = metaContent(html, "og:novel:status");
   if (status) detail.status = status;
 
-  const rating = Number.parseFloat(DETAIL_RATING.exec(html)?.[1] ?? "");
-  if (Number.isFinite(rating) && rating > 0) detail.rating = rating;
+  const vote = DETAIL_RATING.exec(html);
+  const rating = Number.parseFloat(vote?.[1] ?? "");
+  const ratingMax = Number.parseFloat(vote?.[2] ?? "");
+  if (Number.isFinite(rating) && rating > 0 && Number.isFinite(ratingMax) && ratingMax > 0) {
+    detail.rating = rating;
+    detail.ratingMax = ratingMax;
+  }
 
   const total = Number.parseInt(DETAIL_TOTAL_CHAPTERS.exec(html)?.[1] ?? "", 10);
   if (Number.isFinite(total)) detail.totalChapters = total;
