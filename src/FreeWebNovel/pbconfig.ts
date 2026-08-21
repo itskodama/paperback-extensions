@@ -6,7 +6,7 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 export default {
   name: "FreeWebNovel",
   description: "Read web novels from freewebnovel.com.",
-  version: "1.0.0-alpha.2",
+  version: "1.0.0-alpha.3",
   icon: "icon.png",
   language: "en",
   contentRating: ContentRating.MATURE,
@@ -14,6 +14,7 @@ export default {
     SourceIntents.DISCOVER_SECTION_PROVIDING,
     SourceIntents.SEARCH_RESULT_PROVIDING,
     SourceIntents.CHAPTER_PROVIDING,
+    SourceIntents.SETTINGS_FORM_PROVIDING,
   ],
   badges: [{ label: "Novel", backgroundColor: "#15803d", textColor: "#ffffff" }],
   developers: [
