@@ -26,6 +26,7 @@ import {
   matchesFilters,
   toChapters,
   toSearchResultItem,
+  toSimpleCarouselItem,
   toSourceManga,
 } from "../../src/FreeWebNovel/mappers.ts";
 import { GENRES } from "../../src/FreeWebNovel/models.ts";
@@ -299,6 +300,17 @@ void test("a row offering no WebP still yields its JPEG", () => {
 void test("a row rating is a lower bound, not a verdict", () => {
   assert.equal(contentRatingFor(["Fantasy", "Action"]), ContentRating.MATURE);
   assert.equal(contentRatingFor(["Fantasy", "Smut"]), ContentRating.ADULT);
+});
+
+// When the app is filtering adult titles, main.ts resolves each row against its
+// novel page and passes the answer in; the row's own genres are then irrelevant.
+void test("a resolved rating overrides what the row's genres suggested", () => {
+  const row = parseListing(LISTING_HTML).rows[0]!;
+  assert.equal(
+    toSearchResultItem(row, ContentRating.EVERYONE).contentRating,
+    ContentRating.EVERYONE,
+  );
+  assert.equal(toSimpleCarouselItem(row, ContentRating.ADULT).contentRating, ContentRating.ADULT);
 });
 
 void test("an adult genre lifts the row's rating to ADULT", () => {

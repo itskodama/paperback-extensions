@@ -274,6 +274,36 @@ Those relative times run compound ("11 months, 2 weeks ago" as well as "3 mins a
 present is summed rather than the first one read; and the month and year lengths are the mean
 Gregorian values, because on a year-old chapter a 365-day year is days out.
 
+### Content rating is only knowable on the novel page
+
+The site states a rating as a `content-rating-<value>` class on the novel page, over the same
+vocabulary its filter form uses (`general`, `guidance`, `suggestive`, `adults-only`). **Nothing
+carries it on a listing row** — not the row, not the badge slot; every `18+` string on a listing
+page belongs to the filter form's own `<option>` list.
+
+That matters because a row prints only its **first two genres** and this site orders the explicit
+tags late. Measured against each novel's real rating:
+
+| Browse page    | Adult titles | The row reveals | Leaked as MATURE |
+| -------------- | -----------: | --------------: | ---------------: |
+| Most Popular   |       0 / 20 |               0 |                0 |
+| Latest Release |       7 / 20 |               2 |                5 |
+| Latest Novels  |      12 / 20 |               4 |                8 |
+
+So genre inference on a row is a **lower bound**: an Adult or Smut tag proves a novel is adult,
+its absence proves nothing.
+
+Two signals, treated differently on the novel page: a tag is proof and outranks everything, since
+the site rates some novels "Parental Guidance Suggested" while tagging them Adult and Smut; failing
+that, its stated rating is taken at face value, including when it clears a novel outright; with
+neither, the rating is unknown and this source's floor is MATURE.
+
+For listings, `main.ts` reads `Application.filterAdultTitles` and resolves each row against its
+novel page **only when the app is filtering** — one request per row, paid solely by the users for
+whom it changes anything, and verified to lift Latest Novels from 4 detected to the true 12. When
+filtering is off, no extra request is made. A row that cannot be verified while filtering is
+answered ADULT rather than letting a failed request show adult content.
+
 ## Cost model
 
 `getChapters` must return the complete list, so its cost is `ceil(totalChapters / 200)` requests:

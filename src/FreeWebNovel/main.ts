@@ -13,6 +13,8 @@ import {
   type PagedResults,
   type SearchQuery,
   type SearchResultItem,
+  ContentRating as ContentRatingValue,
+  type ContentRating,
   type SortingOption,
   type SourceManga,
   type UpdateManager,
@@ -25,6 +27,7 @@ import {
   matchesFilters,
   toChapterDetails,
   toChapterUpdateItem,
+  detailContentRating,
   toChapters,
   toFeaturedItem,
   toSearchResultItem,
@@ -46,7 +49,7 @@ import {
   type ChapterEntry,
   type SearchFilters,
 } from "./models.ts";
-import { MainInterceptor, fetchJson, fetchPage } from "./network.ts";
+import { MainInterceptor, fetchJson, fetchPage, fetchPageOnce } from "./network.ts";
 import { parseFeatured, parseLatestReleases, parseListing, parseNovelDetail } from "./parsers.ts";
 import type FreeWebNovelConfig from "./pbconfig.ts";
 import {
@@ -102,10 +105,14 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
     // Featured and Latest Releases both read the homepage; the in-flight dedupe in
     // network.ts is what keeps that one request rather than two.
     if (section.id === DISCOVER_FEATURED) {
-      return { items: parseFeatured(await fetchPage(homeUrl())).map(toFeaturedItem) };
+      const rows = parseFeatured(await fetchPage(homeUrl()));
+      const rated = await this.ratings(rows.map((row) => row.slug));
+      return { items: rows.map((row) => toFeaturedItem(row, rated.get(row.slug))) };
     }
     if (section.id === DISCOVER_LATEST_RELEASE) {
-      return { items: parseLatestReleases(await fetchPage(homeUrl())).map(toChapterUpdateItem) };
+      const entries = parseLatestReleases(await fetchPage(homeUrl()));
+      const rated = await this.ratings(entries.map((entry) => entry.slug));
+      return { items: entries.map((entry) => toChapterUpdateItem(entry, rated.get(entry.slug))) };
     }
 
     const key = BROWSE_SECTIONS[section.id];
@@ -113,9 +120,39 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
 
     const page = typeof metadata === "number" ? metadata : 1;
     const listing = parseListing(await fetchPage(sortUrl(key, page)));
-    const items = listing.rows.map(toSimpleCarouselItem);
+    const rated = await this.ratings(listing.rows.map((row) => row.slug));
+    const items = listing.rows.map((row) => toSimpleCarouselItem(row, rated.get(row.slug)));
 
     return page < listing.lastPage ? { items, metadata: page + 1 } : { items };
+  }
+
+  /**
+   * True ratings for a page of rows, and only when they can change what the user
+   * sees.
+   *
+   * A listing row carries no rating and only its first two genres, and this site
+   * orders the explicit tags late — on the Latest Novels page twelve of twenty
+   * novels are adult and the rows reveal four. The novel page is the only place
+   * that settles it, so when the app is filtering adult titles it is worth one
+   * request per row to be right. When it is not filtering, nothing here would
+   * change the outcome and no request is made.
+   */
+  private async ratings(slugs: string[]): Promise<Map<string, ContentRating>> {
+    if (!Application.filterAdultTitles) return new Map();
+
+    const resolved = await Promise.all(
+      slugs.map(async (slug) => {
+        try {
+          const detail = parseNovelDetail(await fetchPageOnce(novelUrl(slug)), slug);
+          return [slug, detailContentRating(detail)] as const;
+        } catch {
+          // Unverifiable while the user is filtering: answer with the stricter of
+          // the two, rather than letting a failed request show adult content.
+          return [slug, ContentRatingValue.ADULT] as const;
+        }
+      }),
+    );
+    return new Map(resolved);
   }
 
   // --- Search ---
@@ -147,9 +184,9 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
       : advancedSearchUrl(filters, sortingOption?.id ?? DEFAULT_SORT, page);
 
     const listing = parseListing(await fetchPage(url));
-    const items = listing.rows
-      .filter((row) => matchesFilters(row, filters))
-      .map(toSearchResultItem);
+    const rows = listing.rows.filter((row) => matchesFilters(row, filters));
+    const rated = await this.ratings(rows.map((row) => row.slug));
+    const items = rows.map((row) => toSearchResultItem(row, rated.get(row.slug)));
 
     // Both endpoints stop at 100 results whatever the pager claims.
     const lastPage = Math.min(listing.lastPage, SEARCH_PAGE_LIMIT);

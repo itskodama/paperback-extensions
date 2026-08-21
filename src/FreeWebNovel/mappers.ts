@@ -75,34 +75,34 @@ function subtitleFor(row: ListingRow): string | undefined {
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-export function toSearchResultItem(row: ListingRow): SearchResultItem {
+export function toSearchResultItem(row: ListingRow, rating?: ContentRating): SearchResultItem {
   return {
     mangaId: row.slug,
     title: row.title,
     subtitle: subtitleFor(row),
     imageUrl: row.thumbnailUrl,
-    contentRating: contentRatingFor(row.genres),
+    contentRating: rating ?? contentRatingFor(row.genres),
   };
 }
 
-export function toSimpleCarouselItem(row: ListingRow): DiscoverSectionItem {
+export function toSimpleCarouselItem(row: ListingRow, rating?: ContentRating): DiscoverSectionItem {
   return {
     type: "simpleCarouselItem",
     mangaId: row.slug,
     title: row.title,
     subtitle: subtitleFor(row),
     imageUrl: row.thumbnailUrl,
-    contentRating: contentRatingFor(row.genres),
+    contentRating: rating ?? contentRatingFor(row.genres),
   };
 }
 
 type InfoItem = { symbol: string; text: string };
 
 /** `infoItems` is capped at two by the type, so rating and length are the picks. */
-export function toFeaturedItem(row: ListingRow): DiscoverSectionItem {
-  const rating: InfoItem | undefined =
+export function toFeaturedItem(row: ListingRow, rating?: ContentRating): DiscoverSectionItem {
+  const ratingInfo: InfoItem | undefined =
     row.rating === undefined ? undefined : { symbol: "star.fill", text: row.rating.toFixed(1) };
-  const length: InfoItem | undefined =
+  const lengthInfo: InfoItem | undefined =
     row.chapterCount === undefined
       ? undefined
       : { symbol: "book.fill", text: row.chapterCount.toLocaleString("en-US") };
@@ -114,12 +114,19 @@ export function toFeaturedItem(row: ListingRow): DiscoverSectionItem {
     supertitle: row.genres[0],
     imageUrl: row.thumbnailUrl,
     infoItems:
-      rating && length ? [rating, length] : rating ? [rating] : length ? [length] : undefined,
-    contentRating: contentRatingFor(row.genres),
+      ratingInfo && lengthInfo
+        ? [ratingInfo, lengthInfo]
+        : (ratingInfo ?? lengthInfo)
+          ? [(ratingInfo ?? lengthInfo)!]
+          : undefined,
+    contentRating: rating ?? contentRatingFor(row.genres),
   };
 }
 
-export function toChapterUpdateItem(entry: ReleaseEntry): DiscoverSectionItem {
+export function toChapterUpdateItem(
+  entry: ReleaseEntry,
+  rating?: ContentRating,
+): DiscoverSectionItem {
   return {
     type: "chapterUpdatesCarouselItem",
     mangaId: entry.slug,
@@ -128,7 +135,8 @@ export function toChapterUpdateItem(entry: ReleaseEntry): DiscoverSectionItem {
     subtitle: entry.chapterTitle ?? `Chapter ${entry.chapterIndex}`,
     imageUrl: entry.thumbnailUrl,
     publishDate: entry.publishDate,
-    contentRating: ContentRating.MATURE,
+    // The feed carries no genres at all, so unverified means unknown.
+    contentRating: rating ?? ContentRating.MATURE,
   };
 }
 
