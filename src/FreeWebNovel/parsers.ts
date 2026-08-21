@@ -229,6 +229,8 @@ const DETAIL_ALT_TITLES =
 const DETAIL_RATING = /<p class="vote">\s*([\d.]+)\s*\//;
 const DETAIL_TOTAL_CHAPTERS = /data-total-chapters="(\d+)"/;
 const DETAIL_COVER = /<div class="pic">/i;
+// The site states its own rating on the novel page, and nowhere else.
+const DETAIL_CONTENT_RATING = /content-rating-(general|guidance|suggestive|adults-only)\b/i;
 
 /**
  * The novel page.
@@ -278,6 +280,9 @@ export function parseNovelDetail(html: string, slug: string): NovelDetail {
 
   const total = Number.parseInt(DETAIL_TOTAL_CHAPTERS.exec(html)?.[1] ?? "", 10);
   if (Number.isFinite(total)) detail.totalChapters = total;
+
+  const rated = DETAIL_CONTENT_RATING.exec(html)?.[1];
+  if (rated) detail.contentRating = rated.toLowerCase();
 
   return detail;
 }

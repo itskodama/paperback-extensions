@@ -195,6 +195,8 @@ export type NovelDetail = {
   status?: string;
   rating?: number;
   totalChapters?: number;
+  /** The site's own rating: `general`, `guidance`, `suggestive`, `adults-only`. */
+  contentRating?: string;
 };
 
 export type ChapterEntry = {

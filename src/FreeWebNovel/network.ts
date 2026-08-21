@@ -107,6 +107,15 @@ export function fetchPage(url: string): Promise<string> {
   return fetchShared(url, true);
 }
 
+/**
+ * For bulk reads that are never asked for twice — a page of novel pages read only
+ * to rate them. Same reasoning as the chapter walk: they would evict the handful
+ * of pages that are shared.
+ */
+export function fetchPageOnce(url: string): Promise<string> {
+  return fetchShared(url, false);
+}
+
 /** The chapter-list endpoint is the only JSON on the site, and the only one-shot. */
 export async function fetchJson(url: string): Promise<unknown> {
   const body = await fetchShared(url, false);

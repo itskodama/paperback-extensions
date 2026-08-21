@@ -28,10 +28,42 @@ import { novelUrl } from "./urls.ts";
  * and the shaping can be tested — and can break — independently.
  */
 
+/** The site's own vocabulary, from the novel page and the filter form. */
+const SITE_RATINGS: Record<string, ContentRating> = {
+  general: ContentRating.EVERYONE,
+  guidance: ContentRating.EVERYONE,
+  suggestive: ContentRating.MATURE,
+  "adults-only": ContentRating.ADULT,
+};
+
+/**
+ * **A lower bound, not a verdict.** An Adult or Smut tag proves a novel is adult;
+ * their absence proves nothing, because a listing row prints only its first two
+ * genres and this site orders the explicit ones late. Of twenty novels on the
+ * Latest Novels page, twelve are adult and the rows reveal four.
+ *
+ * Only `parseNovelDetail` sees the full genre list and the site's own rating.
+ */
 export function contentRatingFor(genres: string[]): ContentRating {
   return genres.some((genre) => ADULT_GENRES.has(genre))
     ? ContentRating.ADULT
     : ContentRating.MATURE;
+}
+
+/**
+ * The novel page carries both signals, and they are not the same kind of thing.
+ *
+ * An Adult or Smut tag is *proof* and outranks everything — the site rates some
+ * novels "Parental Guidance Suggested" while tagging them both. Failing that, the
+ * site's own rating is its word and is taken at face value, including when it
+ * clears a novel outright. With neither, the rating is simply unknown, and this
+ * source's floor is MATURE.
+ */
+export function detailContentRating(detail: NovelDetail): ContentRating {
+  if (detail.genres.some((genre) => ADULT_GENRES.has(genre))) return ContentRating.ADULT;
+
+  const stated = detail.contentRating ? SITE_RATINGS[detail.contentRating] : undefined;
+  return stated ?? ContentRating.MATURE;
 }
 
 function subtitleFor(row: ListingRow): string | undefined {
@@ -43,34 +75,34 @@ function subtitleFor(row: ListingRow): string | undefined {
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-export function toSearchResultItem(row: ListingRow): SearchResultItem {
+export function toSearchResultItem(row: ListingRow, rating?: ContentRating): SearchResultItem {
   return {
     mangaId: row.slug,
     title: row.title,
     subtitle: subtitleFor(row),
     imageUrl: row.thumbnailUrl,
-    contentRating: contentRatingFor(row.genres),
+    contentRating: rating ?? contentRatingFor(row.genres),
   };
 }
 
-export function toSimpleCarouselItem(row: ListingRow): DiscoverSectionItem {
+export function toSimpleCarouselItem(row: ListingRow, rating?: ContentRating): DiscoverSectionItem {
   return {
     type: "simpleCarouselItem",
     mangaId: row.slug,
     title: row.title,
     subtitle: subtitleFor(row),
     imageUrl: row.thumbnailUrl,
-    contentRating: contentRatingFor(row.genres),
+    contentRating: rating ?? contentRatingFor(row.genres),
   };
 }
 
 type InfoItem = { symbol: string; text: string };
 
 /** `infoItems` is capped at two by the type, so rating and length are the picks. */
-export function toFeaturedItem(row: ListingRow): DiscoverSectionItem {
-  const rating: InfoItem | undefined =
+export function toFeaturedItem(row: ListingRow, rating?: ContentRating): DiscoverSectionItem {
+  const ratingInfo: InfoItem | undefined =
     row.rating === undefined ? undefined : { symbol: "star.fill", text: row.rating.toFixed(1) };
-  const length: InfoItem | undefined =
+  const lengthInfo: InfoItem | undefined =
     row.chapterCount === undefined
       ? undefined
       : { symbol: "book.fill", text: row.chapterCount.toLocaleString("en-US") };
@@ -82,12 +114,19 @@ export function toFeaturedItem(row: ListingRow): DiscoverSectionItem {
     supertitle: row.genres[0],
     imageUrl: row.thumbnailUrl,
     infoItems:
-      rating && length ? [rating, length] : rating ? [rating] : length ? [length] : undefined,
-    contentRating: contentRatingFor(row.genres),
+      ratingInfo && lengthInfo
+        ? [ratingInfo, lengthInfo]
+        : (ratingInfo ?? lengthInfo)
+          ? [(ratingInfo ?? lengthInfo)!]
+          : undefined,
+    contentRating: rating ?? contentRatingFor(row.genres),
   };
 }
 
-export function toChapterUpdateItem(entry: ReleaseEntry): DiscoverSectionItem {
+export function toChapterUpdateItem(
+  entry: ReleaseEntry,
+  rating?: ContentRating,
+): DiscoverSectionItem {
   return {
     type: "chapterUpdatesCarouselItem",
     mangaId: entry.slug,
@@ -96,7 +135,8 @@ export function toChapterUpdateItem(entry: ReleaseEntry): DiscoverSectionItem {
     subtitle: entry.chapterTitle ?? `Chapter ${entry.chapterIndex}`,
     imageUrl: entry.thumbnailUrl,
     publishDate: entry.publishDate,
-    contentRating: ContentRating.MATURE,
+    // The feed carries no genres at all, so unverified means unknown.
+    contentRating: rating ?? ContentRating.MATURE,
   };
 }
 
@@ -124,7 +164,7 @@ export function toSourceManga(detail: NovelDetail): SourceManga {
       synopsis: detail.synopsis,
       primaryTitle: detail.title,
       secondaryTitles: detail.alternativeTitles,
-      contentRating: contentRatingFor(detail.genres),
+      contentRating: detailContentRating(detail),
       contentType: "novel",
       status: normaliseStatus(detail.status),
       author: detail.author,
