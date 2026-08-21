@@ -28,10 +28,42 @@ import { novelUrl } from "./urls.ts";
  * and the shaping can be tested — and can break — independently.
  */
 
+/** The site's own vocabulary, from the novel page and the filter form. */
+const SITE_RATINGS: Record<string, ContentRating> = {
+  general: ContentRating.EVERYONE,
+  guidance: ContentRating.EVERYONE,
+  suggestive: ContentRating.MATURE,
+  "adults-only": ContentRating.ADULT,
+};
+
+/**
+ * **A lower bound, not a verdict.** An Adult or Smut tag proves a novel is adult;
+ * their absence proves nothing, because a listing row prints only its first two
+ * genres and this site orders the explicit ones late. Of twenty novels on the
+ * Latest Novels page, twelve are adult and the rows reveal four.
+ *
+ * Only `parseNovelDetail` sees the full genre list and the site's own rating.
+ */
 export function contentRatingFor(genres: string[]): ContentRating {
   return genres.some((genre) => ADULT_GENRES.has(genre))
     ? ContentRating.ADULT
     : ContentRating.MATURE;
+}
+
+/**
+ * The novel page carries both signals, and they are not the same kind of thing.
+ *
+ * An Adult or Smut tag is *proof* and outranks everything — the site rates some
+ * novels "Parental Guidance Suggested" while tagging them both. Failing that, the
+ * site's own rating is its word and is taken at face value, including when it
+ * clears a novel outright. With neither, the rating is simply unknown, and this
+ * source's floor is MATURE.
+ */
+export function detailContentRating(detail: NovelDetail): ContentRating {
+  if (detail.genres.some((genre) => ADULT_GENRES.has(genre))) return ContentRating.ADULT;
+
+  const stated = detail.contentRating ? SITE_RATINGS[detail.contentRating] : undefined;
+  return stated ?? ContentRating.MATURE;
 }
 
 function subtitleFor(row: ListingRow): string | undefined {
@@ -124,7 +156,7 @@ export function toSourceManga(detail: NovelDetail): SourceManga {
       synopsis: detail.synopsis,
       primaryTitle: detail.title,
       secondaryTitles: detail.alternativeTitles,
-      contentRating: contentRatingFor(detail.genres),
+      contentRating: detailContentRating(detail),
       contentType: "novel",
       status: normaliseStatus(detail.status),
       author: detail.author,

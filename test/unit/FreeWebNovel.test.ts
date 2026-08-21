@@ -20,6 +20,8 @@ import {
   toXhtmlDocument,
 } from "../../src/FreeWebNovel/html.ts";
 import {
+  contentRatingFor,
+  detailContentRating,
   genreChipItems,
   matchesFilters,
   toChapters,
@@ -291,6 +293,14 @@ void test("a row offering no WebP still yields its JPEG", () => {
   assert.equal(row.thumbnailUrl, "https://freewebnovel.com/files/article/image/1/1991/1991s.jpg");
 });
 
+// A row prints only its first two genres and this site orders the explicit ones
+// late, so the row rating is a lower bound: of ten novels the site itself tags
+// adult, seven show neither tag. Only the novel page can settle it.
+void test("a row rating is a lower bound, not a verdict", () => {
+  assert.equal(contentRatingFor(["Fantasy", "Action"]), ContentRating.MATURE);
+  assert.equal(contentRatingFor(["Fantasy", "Smut"]), ContentRating.ADULT);
+});
+
 void test("an adult genre lifts the row's rating to ADULT", () => {
   const item = toSearchResultItem(parseListing(LISTING_HTML).rows[0]!);
   assert.equal(item.contentRating, ContentRating.ADULT);
@@ -350,6 +360,32 @@ void test("the chapter total is read off the page root", () => {
 
 void test("the site's OnGoing is normalised to the spelling every other source uses", () => {
   assert.equal(toSourceManga(parseNovelDetail(NOVEL_HTML, "x")).mangaInfo.status, "Ongoing");
+});
+
+// The site states its own rating only on the novel page, and it does not always
+// agree with the genres: "my-taboo-harem" is rated Parental Guidance while tagged
+// Adult and Smut. The repository's convention is to declare the ceiling.
+void test("the stated rating and the genres are combined by taking the higher", () => {
+  const rated = (cls: string, genre: string) =>
+    detailContentRating(
+      parseNovelDetail(
+        NOVEL_HTML.replace(
+          '<div class="main"',
+          `<div class="item content-rating content-rating-${cls}"></div><div class="main"`,
+        ).replace("Action, Harem, Mature, Romance, Sci-fi", genre),
+        "x",
+      ),
+    );
+
+  assert.equal(rated("adults-only", "Action"), ContentRating.ADULT);
+  assert.equal(rated("guidance", "Action, Smut"), ContentRating.ADULT);
+  assert.equal(rated("general", "Action"), ContentRating.EVERYONE);
+  assert.equal(rated("suggestive", "Action"), ContentRating.MATURE);
+});
+
+// An unrated novel page falls back to what the genres can prove.
+void test("a novel page stating no rating falls back to the genres", () => {
+  assert.equal(detailContentRating(parseNovelDetail(NOVEL_HTML, "x")), ContentRating.MATURE);
 });
 
 void test("a novel page with nothing readable raises rather than returning a blank record", () => {
