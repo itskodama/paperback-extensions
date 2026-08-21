@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-08-20T18:22:39.646Z",
+  "buildTime": "2026-08-21T00:34:33.239Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -72,6 +72,33 @@
       "id": "Comix"
     },
     {
+      "name": "FreeWebNovel",
+      "description": "Read web novels from freewebnovel.com.",
+      "version": "1.0.0-alpha.1",
+      "icon": "icon.png",
+      "language": "en",
+      "contentRating": "MATURE",
+      "capabilities": [
+        4,
+        64,
+        1
+      ],
+      "badges": [
+        {
+          "label": "Novel",
+          "backgroundColor": "#15803d",
+          "textColor": "#ffffff"
+        }
+      ],
+      "developers": [
+        {
+          "name": "Kodama",
+          "github": "https://github.com/itskodama"
+        }
+      ],
+      "id": "FreeWebNovel"
+    },
+    {
       "name": "LNORI",
       "description": "Read light novels from lnori.com. Enable 'Chapters Unique by Volume' under Manage Version Priority for correct chapter lists.",
       "version": "1.0.0-alpha.4",
@@ -98,38 +125,6 @@
         }
       ],
       "id": "LNORI"
-    },
-    {
-      "name": "LightNovelWorld",
-      "description": "DEPRECATED — lightnovelworld.org is merging into chikari.moe, and this extension is no longer maintained or supported. It still works for now, and will be removed once the site goes offline. Read light novels from lightnovelworld.org.",
-      "version": "1.0.0-alpha.2",
-      "icon": "icon.png",
-      "language": "en",
-      "contentRating": "MATURE",
-      "capabilities": [
-        4,
-        64,
-        1
-      ],
-      "badges": [
-        {
-          "label": "Deprecated",
-          "backgroundColor": "#991B1B",
-          "textColor": "#ffffff"
-        },
-        {
-          "label": "Novel",
-          "backgroundColor": "#15803d",
-          "textColor": "#ffffff"
-        }
-      ],
-      "developers": [
-        {
-          "name": "Kodama",
-          "github": "https://github.com/itskodama"
-        }
-      ],
-      "id": "LightNovelWorld"
     },
     {
       "name": "MangaBaka",
