@@ -125,6 +125,12 @@ og:novel:read_url
 og:novel:author_link
 ```
 
+**The rating is a fraction, and its denominator is printed.** `<p class="vote">` reads `4.6 / 5` on
+every novel sampled. The app renders `MangaInfo.rating` as a **0-1 fraction**, so an unscaled score
+displays as hundreds of percent — Comix proved this on device, where a 93% title rendered as 930%.
+Read both halves and divide: 4.6 out of 5 is 92%, not 46%. Reading the denominator rather than
+assuming one also means a page on a different scale normalises itself.
+
 Plus ordinary `og:image` (cover) and `og:description` (synopsis). Only two things are not in a meta
 tag: **alternative titles**, which sit in the `glyphicon-tasks` block, and the **rating**, in
 `div.score .vote`. Read those two from markup and everything else from meta.
@@ -319,8 +325,12 @@ never fetched at all.
 9.6 s and finds all twelve adult titles; the next browse is **0 requests** and finds the same twelve;
 with the setting off it is 0 extra requests and the four the rows admit to. No `429` at any point.
 
-A row that cannot be verified is answered ADULT rather than left unmarked, and that answer is
-deliberately not cached — a dropped request must not harden into a verdict.
+**A row that cannot be verified is not answered at all.** An earlier version replied ADULT so that
+nothing could slip through unmarked, which sounds like the safe direction and is not: the site drops
+requests under load, so ordinary novels — Shadow Slave among them — were labelled adult and then
+un-labelled on the next browse. A dropped request is not evidence about content. The fetch retries
+once and then declines, leaving the caller on the row's own genres, and nothing unverified is
+cached.
 
 ## Cost model
 

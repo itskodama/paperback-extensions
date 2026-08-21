@@ -193,7 +193,10 @@ export type NovelDetail = {
   author?: string;
   language?: string;
   status?: string;
+  /** As the page prints it, on the page's own scale — pair with `ratingMax`. */
   rating?: number;
+  /** The denominator the page prints, so the scale is read rather than assumed. */
+  ratingMax?: number;
   totalChapters?: number;
   /** The site's own rating: `general`, `guidance`, `suggestive`, `adults-only`. */
   contentRating?: string;

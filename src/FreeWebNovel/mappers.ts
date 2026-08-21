@@ -168,12 +168,26 @@ export function toSourceManga(detail: NovelDetail): SourceManga {
       contentType: "novel",
       status: normaliseStatus(detail.status),
       author: detail.author,
-      rating: detail.rating,
+      rating: normalisedRating(detail),
       tagGroups: tags.length > 0 ? [{ id: "genres", title: "Genres", tags }] : [],
       artworkUrls: detail.thumbnailUrl ? [detail.thumbnailUrl] : [],
       shareUrl: novelUrl(detail.slug),
     },
   };
+}
+
+/**
+ * The app renders `rating` as a **0-1 fraction**, so an unscaled score shows as
+ * hundreds of percent — Comix proved this on device, where a 93% title rendered as
+ * 930%. The page prints its own denominator, so divide by that rather than by a
+ * constant: a novel at 4.6 out of 5 is 92%, not 46%.
+ */
+function normalisedRating(detail: NovelDetail): number | undefined {
+  if (detail.rating === undefined || !detail.ratingMax) return undefined;
+  const fraction = Math.min(Math.max(detail.rating / detail.ratingMax, 0), 1);
+  // 4.6 / 5 is 0.9199999999999999 in binary; four places is far more than a
+  // percentage needs and keeps the value clean crossing the bridge.
+  return Math.round(fraction * 10_000) / 10_000;
 }
 
 /** The site writes "OnGoing"; every other source here writes "Ongoing". */

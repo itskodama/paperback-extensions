@@ -165,26 +165,39 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
 
     if (unknown.length === 0) return resolved;
 
-    const fetched = await Promise.all(
-      unknown.map(async (slug): Promise<[string, ContentRating, boolean]> => {
-        try {
-          const detail = parseNovelDetail(await fetchPageOnce(novelUrl(slug)), slug);
-          return [slug, detailContentRating(detail), true];
-        } catch {
-          // Unverifiable: answer with the stricter of the two rather than leaving
-          // adult content unmarked. Flagged not-durable so a transient failure is
-          // not remembered as a verdict — the site does drop requests under load.
-          return [slug, ContentRatingValue.ADULT, false];
-        }
-      }),
-    );
+    const fetched = await Promise.all(unknown.map((slug) => this.rate(slug)));
 
-    for (const [slug, rating] of fetched) resolved.set(slug, rating);
-    rememberRatings(
-      fetched.filter(([, , durable]) => durable).map(([slug, rating]) => [slug, rating]),
-    );
+    const durable: [string, ContentRating][] = [];
+    for (const entry of fetched) {
+      if (!entry) continue;
+      resolved.set(entry[0], entry[1]);
+      durable.push(entry);
+    }
+    rememberRatings(durable);
 
     return resolved;
+  }
+
+  /**
+   * One novel's rating, or `undefined` if the site would not say.
+   *
+   * The site drops requests under load, and an earlier version answered ADULT when
+   * that happened so nothing could slip through unmarked. In practice that
+   * mislabelled ordinary novels — Shadow Slave among them — and the label cleared
+   * itself on the next browse, which is its own kind of wrong. A dropped request is
+   * not evidence about content. So it retries once, and then declines to answer,
+   * which leaves the caller on the row's own genres.
+   */
+  private async rate(slug: string): Promise<[string, ContentRating] | undefined> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const detail = parseNovelDetail(await fetchPageOnce(novelUrl(slug)), slug);
+        return [slug, detailContentRating(detail)];
+      } catch {
+        if (attempt === 0) await Application.sleep(1);
+      }
+    }
+    return undefined;
   }
 
   // --- Search ---
