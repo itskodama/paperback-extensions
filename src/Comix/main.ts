@@ -20,7 +20,7 @@ import {
 } from "@paperback/types";
 
 import { ComixSearchForm, DEFAULT_SEARCH_METADATA, type ComixSearchMetadata } from "./forms.ts";
-import { fetchText } from "./http.ts";
+import { fetchText, isCloudflareError } from "./http.ts";
 import { DEFAULT_SORT, SORT_OPTIONS, type MangaDetail } from "./models.ts";
 import { cookieStorage, mainInterceptor, rateLimiter } from "./network.ts";
 import {
@@ -213,9 +213,13 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
       try {
         detail = await this.seriesDetail(manga.mangaId);
       } catch (error) {
-        // A challenge has to reach the app; anything else is one title's problem
-        // and must not abandon the rest of the sweep.
-        if ((error as { type?: unknown })?.type === "cloudflareError") throw error;
+        // A challenge has to reach the app — it raises the bypass inline in the
+        // library updater — while anything else is one title's problem and must
+        // not abandon the rest of the sweep. Matched with the same helper the
+        // fetch layer uses: a bare `type` check misses the forms a CloudflareError
+        // takes once it has crossed the bridge, and missing it here silently
+        // skips every remaining title instead of prompting.
+        if (isCloudflareError(error)) throw error;
         continue;
       }
 

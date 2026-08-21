@@ -52,7 +52,7 @@ class HttpError extends Error {
  * out of scheduleRequest and does not arrive as the same class, so `instanceof`
  * silently fails. The `type` tag it carries does survive.
  */
-function isCloudflareError(error: unknown): boolean {
+export function isCloudflareError(error: unknown): boolean {
   if (error instanceof CloudflareError) return true;
   const tagged = error as { type?: unknown; message?: unknown } | null;
   if (tagged?.type === "cloudflareError") return true;
