@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#111827"/>
+  <g transform="translate(256 262)">
+    <!-- Spine -->
+    <rect x="-9" y="-136" width="18" height="272" rx="9" fill="#0f5c2e"/>
+    <!-- Left leaf -->
+    <path d="M-9 -128 C -60 -156, -132 -156, -178 -136 L -178 118 C -132 98, -60 98, -9 126 Z"
+          fill="#22c55e"/>
+    <!-- Right leaf -->
+    <path d="M9 -128 C 60 -156, 132 -156, 178 -136 L 178 118 C 132 98, 60 98, 9 126 Z"
+          fill="#15803d"/>
+    <!-- Text lines, left -->
+    <g fill="#111827" opacity="0.42">
+      <rect x="-150" y="-92" width="112" height="15" rx="7.5"/>
+      <rect x="-150" y="-50" width="112" height="15" rx="7.5"/>
+      <rect x="-150" y="-8" width="112" height="15" rx="7.5"/>
+      <rect x="-150" y="34" width="76" height="15" rx="7.5"/>
+    </g>
+    <!-- Text lines, right -->
+    <g fill="#052e16" opacity="0.42">
+      <rect x="38" y="-92" width="112" height="15" rx="7.5"/>
+      <rect x="38" y="-50" width="112" height="15" rx="7.5"/>
+      <rect x="38" y="-8" width="112" height="15" rx="7.5"/>
+      <rect x="38" y="34" width="76" height="15" rx="7.5"/>
+    </g>
+  </g>
+</svg>
