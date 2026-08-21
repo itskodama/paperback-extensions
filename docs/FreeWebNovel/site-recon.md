@@ -49,8 +49,11 @@ _Shadow Slave_. Chapter count, not novel count, is what this extension has to be
   it — Comix decodes WebP page images, and `ignoreImages` lists the extension.
 - **`robots.txt` is `User-agent: *` / `Disallow:` — an empty disallow, which permits everything**,
   plus a sitemap pointer. There is no crawler restriction to reason around.
-- **No observed rate limiting.** 16 concurrent chapter-list requests all returned `200` in 0.53 s
-  total. That is a ceiling probe, not a licence — see [Cost model](#cost-model).
+- **The site does throttle, and an early note here saying otherwise was wrong.** 16 concurrent
+  chapter-list requests return `200` in 0.53 s, which is what that note was based on; an unpaced
+  run of roughly 80 requests returns **`429`**, and recovers within a minute. Paced at the shipped
+  20 requests / 10 s the same work produces no `429` at all. So the ceiling is somewhere above a
+  short burst of 16 and below a sustained flood — pace, and do not read a burst probe as a licence.
 - **Cloudflare blocks Node's `fetch` on its TLS fingerprint, which breaks `npm test`.** Found
   2026-08-20 while driving the finished extension end-to-end. `curl` with a browser UA gets `200`;
   Node's built-in `fetch` (undici) gets `403` on the same URL in the same second, and adding
@@ -298,11 +301,26 @@ the site rates some novels "Parental Guidance Suggested" while tagging them Adul
 that, its stated rating is taken at face value, including when it clears a novel outright; with
 neither, the rating is unknown and this source's floor is MATURE.
 
-For listings, `main.ts` reads `Application.filterAdultTitles` and resolves each row against its
-novel page **only when the app is filtering** — one request per row, paid solely by the users for
-whom it changes anything, and verified to lift Latest Novels from 4 detected to the true 12. When
-filtering is off, no extra request is made. A row that cannot be verified while filtering is
-answered ADULT rather than letting a failed request show adult content.
+For listings, `main.ts` resolves each row against its novel page. Three details matter:
+
+**It is not gated on `Application.filterAdultTitles`.** The app offers three behaviours — Shown,
+Blurred and Filter — and that flag is true only for Filter. A reader on Blurred needs the rating
+just as much and would otherwise get no blur at all on the titles the rows do not reveal. Separately,
+choosing to filter adult content is not the same as consenting to the requests verification costs.
+Both are the reader's decisions, so verification is its own setting, **on by default**, in the
+extension's settings form.
+
+**Ratings are remembered across launches.** A novel's rating does not change, so `settings.ts` keeps
+a slug-to-rating cache in persisted state — as one delimited string, since a record written to state
+is not reliably preserved across the bridge. A row whose own two genres already prove it adult is
+never fetched at all.
+
+**Measured** on the Latest Novels page, paced at the shipped budget: a cold browse is 17 requests and
+9.6 s and finds all twelve adult titles; the next browse is **0 requests** and finds the same twelve;
+with the setting off it is 0 extra requests and the four the rows admit to. No `429` at any point.
+
+A row that cannot be verified is answered ADULT rather than left unmarked, and that answer is
+deliberately not cached — a dropped request must not harden into a verdict.
 
 ## Cost model
 

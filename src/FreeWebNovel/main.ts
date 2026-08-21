@@ -27,6 +27,7 @@ import {
   matchesFilters,
   toChapterDetails,
   toChapterUpdateItem,
+  contentRatingFor,
   detailContentRating,
   toChapters,
   toFeaturedItem,
@@ -52,6 +53,8 @@ import {
 import { MainInterceptor, fetchJson, fetchPage, fetchPageOnce } from "./network.ts";
 import { parseFeatured, parseLatestReleases, parseListing, parseNovelDetail } from "./parsers.ts";
 import type FreeWebNovelConfig from "./pbconfig.ts";
+import { cachedRating, rememberRatings, verifyRatingsEnabled } from "./settings.ts";
+import { FreeWebNovelSettingsForm } from "./settingsForm.ts";
 import {
   advancedSearchUrl,
   chapterListUrl,
@@ -106,12 +109,12 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
     // network.ts is what keeps that one request rather than two.
     if (section.id === DISCOVER_FEATURED) {
       const rows = parseFeatured(await fetchPage(homeUrl()));
-      const rated = await this.ratings(rows.map((row) => row.slug));
+      const rated = await this.ratings(rows);
       return { items: rows.map((row) => toFeaturedItem(row, rated.get(row.slug))) };
     }
     if (section.id === DISCOVER_LATEST_RELEASE) {
       const entries = parseLatestReleases(await fetchPage(homeUrl()));
-      const rated = await this.ratings(entries.map((entry) => entry.slug));
+      const rated = await this.ratings(entries);
       return { items: entries.map((entry) => toChapterUpdateItem(entry, rated.get(entry.slug))) };
     }
 
@@ -120,45 +123,78 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
 
     const page = typeof metadata === "number" ? metadata : 1;
     const listing = parseListing(await fetchPage(sortUrl(key, page)));
-    const rated = await this.ratings(listing.rows.map((row) => row.slug));
+    const rated = await this.ratings(listing.rows);
     const items = listing.rows.map((row) => toSimpleCarouselItem(row, rated.get(row.slug)));
 
     return page < listing.lastPage ? { items, metadata: page + 1 } : { items };
   }
 
   /**
-   * True ratings for a page of rows, and only when they can change what the user
-   * sees.
+   * True ratings for a page of rows.
    *
    * A listing row carries no rating and only its first two genres, and this site
    * orders the explicit tags late — on the Latest Novels page twelve of twenty
    * novels are adult and the rows reveal four. The novel page is the only place
-   * that settles it, so when the app is filtering adult titles it is worth one
-   * request per row to be right. When it is not filtering, nothing here would
-   * change the outcome and no request is made.
+   * that settles it.
+   *
+   * Gated on the extension's own setting rather than `Application.filterAdultTitles`,
+   * which is true only in Filter mode: a reader on Blurred needs the rating just as
+   * much, and would otherwise see none of it applied.
    */
-  private async ratings(slugs: string[]): Promise<Map<string, ContentRating>> {
-    if (!Application.filterAdultTitles) return new Map();
+  private async ratings(
+    rows: { slug: string; genres?: string[] }[],
+  ): Promise<Map<string, ContentRating>> {
+    if (!verifyRatingsEnabled()) return new Map();
 
-    const resolved = await Promise.all(
-      slugs.map(async (slug) => {
+    const resolved = new Map<string, ContentRating>();
+    const unknown: string[] = [];
+
+    for (const row of rows) {
+      if (resolved.has(row.slug)) continue;
+
+      // A row that already prints an adult tag needs no confirming.
+      if (row.genres && contentRatingFor(row.genres) === ContentRatingValue.ADULT) {
+        resolved.set(row.slug, ContentRatingValue.ADULT);
+        continue;
+      }
+
+      const remembered = cachedRating(row.slug);
+      if (remembered) resolved.set(row.slug, remembered);
+      else unknown.push(row.slug);
+    }
+
+    if (unknown.length === 0) return resolved;
+
+    const fetched = await Promise.all(
+      unknown.map(async (slug): Promise<[string, ContentRating, boolean]> => {
         try {
           const detail = parseNovelDetail(await fetchPageOnce(novelUrl(slug)), slug);
-          return [slug, detailContentRating(detail)] as const;
+          return [slug, detailContentRating(detail), true];
         } catch {
-          // Unverifiable while the user is filtering: answer with the stricter of
-          // the two, rather than letting a failed request show adult content.
-          return [slug, ContentRatingValue.ADULT] as const;
+          // Unverifiable: answer with the stricter of the two rather than leaving
+          // adult content unmarked. Flagged not-durable so a transient failure is
+          // not remembered as a verdict — the site does drop requests under load.
+          return [slug, ContentRatingValue.ADULT, false];
         }
       }),
     );
-    return new Map(resolved);
+
+    for (const [slug, rating] of fetched) resolved.set(slug, rating);
+    rememberRatings(
+      fetched.filter(([, , durable]) => durable).map(([slug, rating]) => [slug, rating]),
+    );
+
+    return resolved;
   }
 
   // --- Search ---
 
   async getSortingOptions(): Promise<SortingOption[]> {
     return SORT_OPTIONS;
+  }
+
+  async getSettingsForm(): Promise<FreeWebNovelSettingsForm> {
+    return new FreeWebNovelSettingsForm();
   }
 
   async getAdvancedSearchForm(query: SearchQuery<Metadata>): Promise<FreeWebNovelSearchForm> {
@@ -185,7 +221,7 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
 
     const listing = parseListing(await fetchPage(url));
     const rows = listing.rows.filter((row) => matchesFilters(row, filters));
-    const rated = await this.ratings(rows.map((row) => row.slug));
+    const rated = await this.ratings(rows);
     const items = rows.map((row) => toSearchResultItem(row, rated.get(row.slug)));
 
     // Both endpoints stop at 100 results whatever the pager claims.

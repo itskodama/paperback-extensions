@@ -14,6 +14,7 @@ export default {
     SourceIntents.DISCOVER_SECTION_PROVIDING,
     SourceIntents.SEARCH_RESULT_PROVIDING,
     SourceIntents.CHAPTER_PROVIDING,
+    SourceIntents.SETTINGS_FORM_PROVIDING,
   ],
   badges: [{ label: "Novel", backgroundColor: "#15803d", textColor: "#ffffff" }],
   developers: [
