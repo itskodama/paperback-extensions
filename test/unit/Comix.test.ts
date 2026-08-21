@@ -6,8 +6,13 @@ import test from "node:test";
 
 import { ContentRating, type SourceManga } from "@paperback/types";
 
-import { applyKeystream, parseScrambleConfig, tileOrder } from "../../src/Comix/descramble.ts";
-import { isOurRequest, trackOwnRequest } from "../../src/Comix/http.ts";
+import {
+  applyKeystream,
+  KNOWN_OFFSETS,
+  parseScrambleConfig,
+  tileOrder,
+} from "../../src/Comix/descramble.ts";
+import { isOurRequest, looksLikeChallengePage, trackOwnRequest } from "../../src/Comix/http.ts";
 import {
   CONTENT_RATINGS,
   DEMOGRAPHICS,
@@ -531,4 +536,32 @@ void test("nothing the page fetches for itself is ever paced", () => {
     "https://jloo.wowpic2.store/i5/token",
     "https://static.comix.to/9c57/i/8/6d/abc.jpg",
   ].forEach((url) => assert.equal(isOurRequest(url), false, url));
+});
+
+// --- Cloudflare interstitial detection ---
+
+void test("a challenge interstitial is recognised so the mirror gets tried", () => {
+  assert.ok(looksLikeChallengePage("<html><head><title>Just a moment...</title></head>"));
+  assert.ok(looksLikeChallengePage('<html><script>window._cf_chl_opt={cvId:"3"};</script>'));
+  assert.ok(looksLikeChallengePage('<div class="cf-browser-verification">'));
+});
+
+void test("a healthy page carrying Cloudflare's beacon is not mistaken for a challenge", () => {
+  // Cloudflare injects challenge-platform into ordinary pages; treating that as
+  // an interstitial would condemn every good response and fail over forever.
+  const healthy =
+    "<html><head><title>Magic Emperor</title>" +
+    '<script src="/cdn-cgi/challenge-platform/h/b/scripts/jsd/main.js"></script>' +
+    '</head><body><script id="initial-data">{"queries":{}}</script></body></html>';
+  assert.equal(looksLikeChallengePage(healthy), false);
+});
+
+void test("every known scramble offset is inside the swept search space", () => {
+  // resolveOffset only sweeps [0, 2^18); a shipped offset above it could never
+  // be rediscovered if the table were ever lost.
+  for (const [token, offset] of Object.entries(KNOWN_OFFSETS)) {
+    assert.ok(offset > 0 && offset < 1 << 18, `${token} -> ${offset} outside the sweep`);
+  }
+  assert.equal(KNOWN_OFFSETS["33317"], 261410);
+  assert.equal(KNOWN_OFFSETS["47bc1"], 168100);
 });

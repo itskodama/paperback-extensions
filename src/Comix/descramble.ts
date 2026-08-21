@@ -29,13 +29,15 @@ export type ScrambleConfig = {
   gridded: boolean;
 };
 
-// The site sends a short opaque token rather than the offset itself. These two
-// were derived by seam-scoring real scrambled pages; every other observed token
-// means "use the seed unmodified". A token outside both sets is resolved at
-// runtime — see resolveOffset.
+// The site sends a short opaque token rather than the offset itself. These were
+// derived by seam-scoring real scrambled pages; every other observed token means
+// "use the seed unmodified". A token outside both sets is resolved at runtime —
+// see resolveOffset.
 export const KNOWN_OFFSETS: Record<string, number> = {
-  "03632": 58414,
   "02900": 117532,
+  "03632": 58414,
+  "33317": 261410,
+  "47bc1": 168100,
 };
 
 const DISCOVERED_STATE = "comix.scramble-offsets";
@@ -245,8 +247,10 @@ function tileEdges(
   return edges;
 }
 
-// Every offset observed so far is below 2^18; a token needing more than this is
-// better reported than hunted for while the reader waits.
+// Offsets look like 18-bit values: the four known ones (58414, 117532, 168100,
+// 261410) are spread across [0, 2^18) and the largest sits just under the bound,
+// so the space is swept exactly once rather than guessed at. A token needing more
+// than this is better reported than hunted for while the reader waits.
 const OFFSET_SEARCH_LIMIT = 1 << 18;
 
 /**

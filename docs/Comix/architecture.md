@@ -66,7 +66,15 @@ scrambled image by scoring seam continuity across tile boundaries — a correct 
 | --------------------------------------------------------------- | ------ |
 | `02900`                                                         | 117532 |
 | `03632`                                                         | 58414  |
+| `33317`                                                         | 261410 |
+| `47bc1`                                                         | 168100 |
 | `06a77` `13276` `42791` `44cbb` `4894c` `73c77` `c0f0d` `f40c0` | **0**  |
+
+`33317` and `47bc1` were reported from a device in 2026-08-20 — the first
+non-zero offsets found after the original two, confirming the table is open-ended
+rather than complete. All four sit inside `[0, 2^18)` and are spread across it
+(58414, 117532, 168100, 261410), which is why `resolveOffset` sweeps exactly that
+range: the offsets read as 18-bit values.
 
 An unlisted hash means "use the seed unmodified", not "unknown" — so `descramble.ts`'s two special
 cases plus a zero default are correct and complete as written. An earlier revision of this page

@@ -60,6 +60,41 @@ function isCloudflareError(error: unknown): boolean {
 }
 
 /**
+ * Cloudflare can answer `200` with an interstitial instead of the page, which
+ * parses as "no initial-data" several layers up and never reaches the mirror.
+ *
+ * Matched on markers unique to the interstitial. Deliberately *not* on
+ * "challenge-platform": Cloudflare injects that script into ordinary pages too,
+ * so it would condemn every healthy response.
+ */
+export function looksLikeChallengePage(html: string): boolean {
+  const head = html.slice(0, 2000).toLowerCase();
+  return (
+    head.includes("just a moment") ||
+    head.includes("_cf_chl_opt") ||
+    head.includes("cf-browser-verification")
+  );
+}
+
+/** A 2xx whose body is an interstitial rather than the page that was asked for. */
+class ChallengePageError extends Error {
+  constructor(url: string) {
+    super(`Comix served a challenge page for ${url}`);
+  }
+}
+
+/**
+ * Whether the other origin is worth trying. A 404 or 410 is a real answer about
+ * missing content and says the same on either domain. Everything else — a
+ * transport failure, a block, an outage, a challenge — is a property of the host
+ * that produced it, which is what the mirror exists for.
+ */
+function shouldTryOtherOrigin(error: unknown): boolean {
+  if (error instanceof HttpError) return error.status !== 404 && error.status !== 410;
+  return true;
+}
+
+/**
  * The platform rejects with native errors that are not JS `Error`s and stringify
  * to "[object NSError]", so a message is dug out rather than interpolated.
  */
@@ -116,26 +151,33 @@ async function send(url: string): Promise<string> {
   if (response.status < 200 || response.status >= 300) {
     throw new HttpError(response.status, url);
   }
-  return Application.arrayBufferToUTF8String(data);
+
+  const html = Application.arrayBufferToUTF8String(data);
+  if (looksLikeChallengePage(html)) throw new ChallengePageError(url);
+  return html;
 }
 
 async function requestText(url: string): Promise<string> {
   try {
     return await attempt(onOrigin(url, preferredOrigin));
   } catch (error) {
-    // Only an unreachable host is worth trying elsewhere. A challenge belongs to
-    // the app, and a status the server chose to return says the same on either
-    // domain — retrying those would replace a real diagnosis with the mirror's
-    // unrelated failure.
-    if (isCloudflareError(error) || error instanceof HttpError) throw error;
+    if (!shouldTryOtherOrigin(error)) throw error;
 
+    // A challenge is not surfaced until both origins have been tried. One domain
+    // can sit behind a stalled challenge while the other serves normally, and
+    // raising the app's bypass for a host the reader cannot get past strands
+    // them there — the mirror is the fix, not the banner.
     const fallback = preferredOrigin === DOMAIN ? MIRROR_DOMAIN : DOMAIN;
     try {
       const text = await attempt(onOrigin(url, fallback));
       preferredOrigin = fallback;
       return text;
-    } catch {
-      throw new Error(`Comix could not reach ${preferredOrigin}: ${describe(error)}`);
+    } catch (fallbackError) {
+      // Both are blocked, so the bypass is the only way forward. The first
+      // origin's challenge is preferred: it is the one still set as current.
+      if (isCloudflareError(error)) throw error;
+      if (isCloudflareError(fallbackError)) throw fallbackError;
+      throw new Error(`Comix could not reach ${DOMAIN} or ${MIRROR_DOMAIN}: ${describe(error)}`);
     }
   }
 }
