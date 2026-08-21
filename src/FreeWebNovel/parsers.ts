@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
+import { stripChapterPrefix } from "./chapterTitles.ts";
 import {
   balancedDiv,
   capture,
@@ -165,10 +166,10 @@ export function parseLatestReleases(html: string, now: Date = new Date()): Relea
       chapterIndex: Number.parseInt(chapter[1]!, 10),
     };
 
+    // Prefix only: a feed item has no sibling chapters to judge a second number
+    // against, so the carousel subtitle keeps one where the chapter list would not.
     const label = RELEASE_CHAPTER_TITLE.exec(item)?.[1];
-    const chapterTitle = label
-      ? stripChapterNumber(decodeEntities(label), entry.chapterIndex)
-      : undefined;
+    const chapterTitle = label ? stripChapterPrefix(label) : undefined;
     if (chapterTitle) entry.chapterTitle = chapterTitle;
 
     const published = parseRelativeTime(RELEASE_TIME.exec(item)?.[1] ?? "", now);
@@ -179,27 +180,37 @@ export function parseLatestReleases(html: string, now: Date = new Date()): Relea
   return entries;
 }
 
-const RELATIVE_TIME = /^\s*(\d+)\s*(sec|min|hour|day|week|month|year)/i;
+const RELATIVE_TIME = /(\d+)\s*(sec|min|hour|day|week|month|year)/gi;
 
+// Mean Gregorian lengths, not 30- and 365-day approximations: over a year-old
+// chapter the difference is days.
 const RELATIVE_UNIT_MS: Record<string, number> = {
   sec: 1_000,
   min: 60_000,
   hour: 3_600_000,
   day: 86_400_000,
   week: 604_800_000,
-  month: 2_592_000_000,
-  year: 31_536_000_000,
+  month: 2_629_800_000,
+  year: 31_557_600_000,
 };
 
-/** The release feed dates chapters as "3 mins ago" and nothing more precise. */
+/**
+ * The release feed dates chapters relatively ("3 mins ago") and nothing more
+ * precisely. Every unit present is summed, because these run compound — "11
+ * months, 2 weeks ago" — and reading only the first would silently drop the rest.
+ */
 export function parseRelativeTime(text: string, now: Date = new Date()): Date | undefined {
-  const match = RELATIVE_TIME.exec(text);
-  if (!match) return undefined;
+  let elapsed = 0;
+  let matched = false;
 
-  const unit = RELATIVE_UNIT_MS[match[2]!.toLowerCase()];
-  if (unit === undefined) return undefined;
+  for (const match of text.matchAll(RELATIVE_TIME)) {
+    const unit = RELATIVE_UNIT_MS[match[2]!.toLowerCase()];
+    if (unit === undefined) continue;
+    elapsed += Number.parseInt(match[1]!, 10) * unit;
+    matched = true;
+  }
 
-  return new Date(now.getTime() - Number.parseInt(match[1]!, 10) * unit);
+  return matched ? new Date(now.getTime() - elapsed) : undefined;
 }
 
 const DETAIL_TITLE = /<h1 class="tit">([^<]*)<\/h1>/;
@@ -294,7 +305,10 @@ export function parseChapterList(payload: unknown): ChapterListPage {
     if (!Number.isFinite(index)) continue;
 
     const entry: ChapterEntry = { index };
-    const title = stripChapterNumber(decodeEntities(match[2]!), index);
+    // Only the site's own "Chapter N" prefix comes off here. Whether what remains
+    // still opens with a numbering artifact cannot be decided one entry at a time —
+    // see resolveChapterTitles.
+    const title = stripChapterPrefix(match[2]!);
     if (title) entry.title = title;
     entries.push(entry);
   }
@@ -305,32 +319,6 @@ export function parseChapterList(payload: unknown): ChapterListPage {
     totalPage: body.totalPage ?? 1,
     totalChapters: body.totalChapters ?? entries.length,
   };
-}
-
-const CHAPTER_PREFIX = /^\s*(?:chapter|chap|ch|c)[\s.\-–—]*\d+(?:\.\d+)?\s*[:.\-–—]?\s*/i;
-const LEADING_NUMBER = /^\s*(\d+(?:\.\d+)?)\s*[:.\-–—]?\s*/;
-
-/**
- * The chapter title with its own numbering removed.
- *
- * The app renders the row as `"Chapter {chapNum} - {title}"`, so an un-stripped
- * title reads "Chapter 145 - Chapter 145: Accusation". A bare leading number is
- * only removed when it *equals* the index — otherwise it is the site's own
- * sub-numbering ("Chapter 2213 - 40 closeness") and part of the title.
- */
-export function stripChapterNumber(title: string, index: number): string | undefined {
-  const decoded = decodeEntities(title).trim();
-
-  let stripped = decoded.replace(CHAPTER_PREFIX, "");
-  if (stripped === decoded) {
-    const leading = LEADING_NUMBER.exec(decoded);
-    if (leading && Number.parseFloat(leading[1]!) === index) {
-      stripped = decoded.slice(leading[0].length);
-    }
-  }
-
-  const result = stripped.trim();
-  return result.length > 0 ? result : undefined;
 }
 
 const ARTICLE = /<div\b[^>]*\bid="article"[^>]*>/i;

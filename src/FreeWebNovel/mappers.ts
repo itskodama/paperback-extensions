@@ -143,17 +143,18 @@ function normaliseStatus(status: string | undefined): string | undefined {
 }
 
 /**
- * Chapter numbering.
+ * `chapNum` is the URL index, which is gapless `1..N` on every novel measured. The
+ * number embedded in a title is not usable for it: across one 2,429-chapter novel
+ * it yields 428 distinct offsets from position, is non-monotonic, and is missing
+ * on some entries.
  *
- * `chapNum` is the URL index, which is gapless `1..N` on every novel measured.
- * The number embedded in a title is **not** usable: across one 2,429-chapter
- * novel it yields 428 distinct offsets from position, is non-monotonic, and is
- * missing entirely on some entries.
+ * Do not port NovelArchive's `detectNumberingOffset` for *this* question — it
+ * recovers a consistent offset, and there is none here to recover.
  *
- * Do not port NovelArchive's `detectNumberingOffset` here. It exists to recover a
- * *consistent* offset, and there is none on this site — it would parse every
- * title only to return "no consensus, use position", which is what this already
- * does. See `docs/FreeWebNovel/site-recon.md`.
+ * That argument does not extend to the separate question of whether a leading
+ * number belongs to the title, where a per-novel consensus does exist and is what
+ * `resolveChapterTitles` decides. Conflating the two shipped a bug once already.
+ * See `docs/FreeWebNovel/site-recon.md`.
  */
 export function toChapters(entries: ChapterEntry[], sourceManga: SourceManga): Chapter[] {
   return entries.map((entry) => {

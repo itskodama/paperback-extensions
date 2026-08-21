@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { ContentRating, type SourceManga } from "@paperback/types";
 
+import { resolveChapterTitles, stripChapterPrefix } from "../../src/FreeWebNovel/chapterTitles.ts";
 import { balancedDiv, removeDivs, safeId, toXhtmlDocument } from "../../src/FreeWebNovel/html.ts";
 import {
   genreChipItems,
@@ -21,7 +22,6 @@ import {
   parseListing,
   parseNovelDetail,
   parseRelativeTime,
-  stripChapterNumber,
 } from "../../src/FreeWebNovel/parsers.ts";
 import { advancedSearchUrl, genreUrl, searchUrl, sortUrl } from "../../src/FreeWebNovel/urls.ts";
 
@@ -100,34 +100,121 @@ void test("a chapter with no title text omits the key entirely", () => {
 
 // --- Title stripping: the app already renders "Chapter {chapNum} - {title}" ---
 
-void test("the three title shapes this site emits all lose their leading number", () => {
-  assert.equal(stripChapterNumber("Chapter 1: Return", 1), "Return");
+void test("the three prefix shapes this site emits are all removed", () => {
+  assert.equal(stripChapterPrefix("Chapter 1: Return"), "Return");
   assert.equal(
-    stripChapterNumber("Chapter 3160 Rushing Towards a Nightmare", 3160),
+    stripChapterPrefix("Chapter 3160 Rushing Towards a Nightmare"),
     "Rushing Towards a Nightmare",
   );
-  assert.equal(stripChapterNumber("c-1: Prologue: Start", 1), "Prologue: Start");
+  assert.equal(stripChapterPrefix("c-1: Prologue: Start"), "Prologue: Start");
 });
 
-// A bare leading number that equals the index is the "1 Nightmare Begins" case from
-// docs/paperback/chapters.md — it would otherwise read "Chapter 1 - 1 Nightmare Begins".
-void test("a bare leading number equal to the index is stripped", () => {
-  assert.equal(stripChapterNumber("1 Nightmare Begins", 1), "Nightmare Begins");
-});
-
-// "Chapter 2213 - 40 closeness" at index 2429: the 40 is the site's own sub-numbering,
-// not a duplicate of the chapter number, so eating it would lose real title text.
-void test("a leading number that is not the index survives", () => {
-  assert.equal(stripChapterNumber("Chapter 2213 - 40 closeness", 2429), "40 closeness");
-});
-
-void test("a title carrying no number at all is left alone", () => {
-  assert.equal(stripChapterNumber("Book", 425), "Book");
-  assert.equal(stripChapterNumber("Book Hider (2)", 2169), "Book Hider (2)");
+void test("a title carrying no prefix at all is left alone", () => {
+  assert.equal(stripChapterPrefix("Book"), "Book");
+  assert.equal(stripChapterPrefix("Book Hider (2)"), "Book Hider (2)");
 });
 
 void test("a title that is only its own number yields no title", () => {
-  assert.equal(stripChapterNumber("Chapter 88", 88), undefined);
+  assert.equal(stripChapterPrefix("Chapter 88"), undefined);
+});
+
+// --- A second leading number: numbering on some novels, prose on others ---
+//
+// The decision cannot be made one entry at a time, so these fixtures are whole
+// populations. Both are trimmed from live chapter lists.
+
+/** Apocalypse Descent: a drifted second chapter number ahead of the real title. */
+function driftedNovel(): { index: number; title: string }[] {
+  return [
+    { index: 69, title: "68: New Expansion, Giant Dragon Resurgence" },
+    { index: 70, title: "69: Sword Formation" },
+    { index: 71, title: "69: Sword Formation (2)" },
+    { index: 72, title: "70: Night Raid" },
+    { index: 73, title: "71: The Frozen Lake" },
+    { index: 74, title: "72: Dragon Scale" },
+    { index: 75, title: "72: Dragon Scale (2)" },
+    { index: 76, title: "73: Snowfield March" },
+    { index: 77, title: "74: Ice Crystal Sword" },
+    { index: 78, title: "75: Wild Dad" },
+  ];
+}
+
+/** Apocalypse Gachapon: the same surface form, but the number is title text. */
+function proseNovel(): { index: number; title: string }[] {
+  return [
+    { index: 140, title: "Cloud Hooves" },
+    { index: 141, title: "Potions use" },
+    { index: 142, title: "2 star evolution" },
+    { index: 143, title: "Easiest Gains" },
+    { index: 144, title: "Attacking to help" },
+    { index: 145, title: "Fang Beast Cavalry" },
+    { index: 146, title: "Dragon Race Image" },
+    { index: 147, title: "10 million" },
+    { index: 148, title: "Finally meeting" },
+    { index: 149, title: "3D Wheel" },
+  ];
+}
+
+void test("a systematic drifted number is recognised as numbering and removed", () => {
+  const resolved = resolveChapterTitles(driftedNovel());
+  assert.deepEqual(
+    resolved.slice(0, 3).map((entry) => entry.title),
+    ["New Expansion, Giant Dragon Resurgence", "Sword Formation", "Sword Formation (2)"],
+  );
+});
+
+// Stripping unconditionally — which is right for LightNovelWorld's site, where the
+// artifact is universal — would publish "star evolution", "million" and "D Wheel".
+void test("numbers that are genuinely part of the title survive", () => {
+  const resolved = resolveChapterTitles(proseNovel());
+  assert.deepEqual(
+    resolved.map((entry) => entry.title),
+    proseNovel().map((e) => e.title),
+  );
+});
+
+// The discriminator is prevalence and ordering, not the separator: the drifted set
+// uses ": " and so does the prose set.
+void test("the two populations are separated by prevalence, not by punctuation", () => {
+  const drifted = driftedNovel().map((e) => e.title);
+  const prose = proseNovel().map((e) => e.title);
+  assert.ok(
+    drifted.every((t) => /^\d/.test(t)),
+    "fixture should be entirely numbered",
+  );
+  assert.equal(prose.filter((t) => /^\d/.test(t)).length, 3, "fixture should be mostly unnumbered");
+});
+
+// A run too short to be a population is left alone rather than guessed at.
+void test("a handful of chapters is never treated as a numbering scheme", () => {
+  const few = [
+    { index: 1, title: "1 Beginning" },
+    { index: 2, title: "2 Middle" },
+    { index: 3, title: "3 End" },
+  ];
+  assert.deepEqual(resolveChapterTitles(few), few);
+});
+
+// A bare-numbered list with no "Chapter" keyword is the "1 Nightmare Begins" case
+// from docs/paperback/chapters.md; consensus catches it without a special rule.
+void test("a bare-numbered list is recognised without any Chapter keyword", () => {
+  const bare = Array.from({ length: 10 }, (_unused, i) => ({
+    index: i + 1,
+    title: `${i + 1} Nightmare Begins`,
+  }));
+  assert.deepEqual(
+    resolveChapterTitles(bare).map((entry) => entry.title),
+    Array.from({ length: 10 }, () => "Nightmare Begins"),
+  );
+});
+
+// Removing the number would leave nothing to display, so the entry keeps it.
+void test("a title that is only its number is not emptied by the resolver", () => {
+  const numeric = Array.from({ length: 10 }, (_unused, i) => ({
+    index: i + 1,
+    title: String(i + 1),
+  }));
+  assert.deepEqual(resolveChapterTitles(numeric), numeric);
 });
 
 // --- Listings: one markup serves search, filtered search, /sort and /genre ---

@@ -18,6 +18,7 @@ import {
   type UpdateManager,
 } from "@paperback/types";
 
+import { resolveChapterTitles } from "./chapterTitles.ts";
 import { FreeWebNovelSearchForm } from "./forms.ts";
 import {
   genreChipItems,
@@ -186,7 +187,10 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
       ),
     );
 
-    return [first, ...rest].flatMap((page) => page.entries);
+    // Resolved over the assembled list, never per page: deciding whether a title's
+    // second number is numbering or prose is a question about the novel, not the
+    // entry. See resolveChapterTitles.
+    return resolveChapterTitles([first, ...rest].flatMap((page) => page.entries));
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
@@ -245,8 +249,13 @@ export class FreeWebNovelExtension implements ExtensionImpl<typeof FreeWebNovelC
       return false;
     }
 
+    // Resolved against this page alone rather than the whole novel, which is the
+    // point of the cheap path. A 200-entry sample decides the same way the full
+    // list would — the two populations it separates differ by 65 points.
+    const entries = resolveChapterTitles(newest.entries);
+
     const known = new Set((await updateManager.getChapters(mangaId)).map((c) => c.chapterId));
-    const unseen = toChapters(newest.entries, sourceManga).filter(
+    const unseen = toChapters(entries, sourceManga).filter(
       (chapter) => !known.has(chapter.chapterId),
     );
 

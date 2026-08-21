@@ -197,22 +197,59 @@ All gapless.
 **So `chapNum` is the URL index, and `chapterId` is the same integer as a string** — it round-trips
 straight into `/novel/<slug>/chapter-<id>` with no lookup table.
 
-**NovelArchive's `detectNumberingOffset` consensus machinery must not be ported here.** It exists to
-recover a _consistent_ offset that the title numbers imply and the ids do not. On this site there is
-no such offset; running it parses 2,429 titles to return `{ offset: 0, trusted: false }`. The URL
-index already has every property that detector is trying to manufacture. Porting it looks obviously
-correct, which is exactly why it needs saying.
+### Two different questions, and only one of them lacks a consensus
 
-Three title shapes were observed, and the leading number must be stripped from all of them per
-[`chapters.md`](../paperback/chapters.md) — the app renders `"Chapter {chapNum} - {title}"`, so an
-un-stripped title reads "Chapter 145 - Chapter 145: Accusation":
+These are easy to conflate, and conflating them is how the first cut of this extension shipped a bug.
 
-| Shape               | Example                       |
-| ------------------- | ----------------------------- |
-| `Chapter N: Title`  | `Chapter 1: Return`           |
-| `Chapter N - Title` | `Chapter 2213 - 40 closeness` |
-| `c-N: Title`        | `c-1: Prologue: Start`        |
-| No number at all    | `Book`, `Book hider (2)`      |
+**Question one — what should `chapNum` be?** The URL index, per the table above. **NovelArchive's
+`detectNumberingOffset` must not be ported for this.** It exists to recover a _consistent_ offset
+that the title numbers imply and the ids do not; here there is no such offset, so it would parse
+2,429 titles only to return `{ offset: 0, trusted: false }`. The URL index already has every
+property that detector is trying to manufacture.
+
+**Question two — is a number at the front of a title part of the title, or a numbering artifact?**
+Here a consensus very much does exist, and the first cut of this extension wrongly generalised
+"no consensus on this site" from question one and got question two wrong as a result.
+
+Some novels label chapters with a second, drifted chapter number ahead of the real title. Others
+put a genuine number there. The surface forms are identical:
+
+| Novel                 | Title                              | The leading number is |
+| --------------------- | ---------------------------------- | --------------------- |
+| _Apocalypse Descent_  | `Chapter 69 - 68: New Expansion…`  | a drifted number      |
+| _Apocalypse Descent_  | `Chapter 86 80 Ice Crystal Sword…` | a drifted number      |
+| _Apocalypse Gachapon_ | `Chapter 142 - 2 star evolution`   | title text            |
+| _Apocalypse Gachapon_ | `Chapter 1993 - 10 million`        | title text            |
+
+Not even the separator distinguishes them. What does is that **an artifact is systematic and prose
+is not** — measured over first pages:
+
+| Novel                                                                | Titles opening with a number | Ascending |
+| -------------------------------------------------------------------- | ---------------------------: | --------- |
+| _I Am Immortal in Great Yu_                                          |                    **97.8%** | yes       |
+| _Apocalypse Descent_                                                 |                    **66.0%** | yes       |
+| _Cultivation Online_                                                 |                         1.0% | no        |
+| _Apocalypse Gachapon_                                                |                         0.5% | no        |
+| _Shadow Slave_, _Emperor's Domination_, _TBATE_, _My Vampire System_ |                           0% | —         |
+
+Two populations with sixty-five points of empty space between them. `resolveChapterTitles` takes the
+whole assembled list and strips the leading number only when it is present on ≥50% of entries and
+ascends across ≥95% of adjacent pairs, with a minimum sample so a short novel is never guessed at.
+Verified end to end: 96% and 98% of entries stripped on the two affected novels with no leading
+digit left behind, and **zero** entries touched across the other four.
+
+Neither single-entry rule works. Stripping unconditionally — correct for the
+[LightNovelWorld extension](../LightNovelWorld/site-recon.md), whose site carries the artifact
+universally — yields "star evolution", "million" and "D Wheel". Never stripping leaves exactly the
+duplicated number [`chapters.md`](../paperback/chapters.md) warns about. The population decides, not
+the entry.
+
+A useful side effect: this subsumes the "1 Nightmare Begins" case from `chapters.md` without a
+special rule, and catches it even when the bare number has drifted away from the index.
+
+The one place it cannot apply is the homepage release feed, where a single item has no siblings to
+be judged against. There only the `Chapter N` prefix comes off, so a carousel subtitle on an
+affected novel keeps a number the chapter list would have dropped.
 
 **The accepted consequence:** on a novel whose own numbering has drifted, the app shows
 "Chapter 2429" where the site's list shows "Chapter 2213". Ordering, resume position and chapter
@@ -222,8 +259,12 @@ silently collapsed by the app's version priority.
 
 **No per-chapter dates are available.** The chapter list carries titles only. The novel page's
 `og:novel:update_time` dates the newest chapter and nothing else, and the homepage feed gives
-relative times ("3 mins ago") for the latest chapter of each listed novel. So `publishDate` is set
-on discover's chapter-update items and omitted on `Chapter` — omitted, not `undefined`.
+relative times for the latest chapter of each listed novel. So `publishDate` is set on discover's
+chapter-update items and omitted on `Chapter` — omitted, not `undefined`.
+
+Those relative times run compound ("11 months, 2 weeks ago" as well as "3 mins ago"), so every unit
+present is summed rather than the first one read; and the month and year lengths are the mean
+Gregorian values, because on a year-old chapter a 365-day year is days out.
 
 ## Cost model
 
