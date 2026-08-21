@@ -39,6 +39,14 @@ _Shadow Slave_. Chapter count, not novel count, is what this extension has to be
 - **Cover images need no referer and no UA.** Both the JPEG originals (`/files/article/image/…`)
   and the WebP derivatives (`/cache/cover-webp/…`) serve `200` to an unadorned request. Both carry
   file extensions, so `BasicRateLimiter`'s `ignoreImages` works here (it matches by extension).
+- **Use the WebP derivatives, not the JPEG the `<img>` points at.** Every listing row, the release
+  feed and the novel page all carry a `<source type="image/webp" srcset="…">` beside the `<img>`,
+  offering the cover pre-scaled to the width it is being shown at. The `<img>` src is always the
+  single full-size JPEG. Measured over 14 covers the WebP set is **76% smaller** — 183 KB against
+  760 KB — and over a real 12-cover discover page, **75%** (154 KB against 629 KB). A handful of
+  already-small covers are a few hundred bytes _larger_ as WebP; the aggregate is not close. The
+  runtime cannot **encode** WebP (`api-reference.md`), which is a different question from displaying
+  it — Comix decodes WebP page images, and `ignoreImages` lists the extension.
 - **`robots.txt` is `User-agent: *` / `Disallow:` — an empty disallow, which permits everything**,
   plus a sitemap pointer. There is no crawler restriction to reason around.
 - **No observed rate limiting.** 16 concurrent chapter-list requests all returned `200` in 0.53 s

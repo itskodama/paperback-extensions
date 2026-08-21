@@ -6,8 +6,19 @@ import test from "node:test";
 
 import { ContentRating, type SourceManga } from "@paperback/types";
 
-import { resolveChapterTitles, stripChapterPrefix } from "../../src/FreeWebNovel/chapterTitles.ts";
-import { balancedDiv, removeDivs, safeId, toXhtmlDocument } from "../../src/FreeWebNovel/html.ts";
+import {
+  parseChapterBody,
+  parseChapterList,
+  resolveChapterTitles,
+  stripChapterPrefix,
+} from "../../src/FreeWebNovel/chapters.ts";
+import {
+  balancedDiv,
+  balancedDivs,
+  removeDivs,
+  safeId,
+  toXhtmlDocument,
+} from "../../src/FreeWebNovel/html.ts";
 import {
   genreChipItems,
   matchesFilters,
@@ -17,8 +28,6 @@ import {
 } from "../../src/FreeWebNovel/mappers.ts";
 import { GENRES } from "../../src/FreeWebNovel/models.ts";
 import {
-  parseChapterBody,
-  parseChapterList,
   parseListing,
   parseNovelDetail,
   parseRelativeTime,
@@ -224,7 +233,7 @@ void test("a title that is only its number is not emptied by the resolver", () =
 const LISTING_HTML = `
 <div class="ul-list1 ul-list1-2 ss-custom rank-list">
   <div class="li-row"><div class="li"><div class="con">
-    <div class="pic"><a href="/novel/shadow-slave"><picture><source srcset="/cache/cover-webp/1/1991/x.webp 100w"><img src="/files/article/image/1/1991/1991s.jpg" alt="Shadow Slave"></picture></a></div>
+    <div class="pic"><a href="/novel/shadow-slave"><picture><source type="image/webp" srcset="/cache/cover-webp/1/1991/c-w100.webp 100w, /cache/cover-webp/1/1991/c-w200.webp 200w"><img src="/files/article/image/1/1991/1991s.jpg" alt="Shadow Slave"></picture></a></div>
     <div class="txt">
       <h3 class="tit"><a href="/novel/shadow-slave" title="Shadow Slave">Shadow Slave</a></h3>
       <div class="core"><span>4.6</span><i></i></div>
@@ -245,7 +254,7 @@ void test("a listing row yields every field the search screen renders", () => {
   assert.deepEqual(listing.rows[0], {
     slug: "shadow-slave",
     title: "Shadow Slave",
-    thumbnailUrl: "https://freewebnovel.com/files/article/image/1/1991/1991s.jpg",
+    thumbnailUrl: "https://freewebnovel.com/cache/cover-webp/1/1991/c-w200.webp",
     genres: ["Action", "Smut"],
     language: "English",
     rating: 4.6,
@@ -267,6 +276,19 @@ void test("an empty result list is not mistaken for page one of many", () => {
 void test("thumbnails are absolute", () => {
   const item = toSearchResultItem(parseListing(LISTING_HTML).rows[0]!);
   assert.ok(item.imageUrl.startsWith("https://"));
+});
+
+// The JPEG is the only <img> src, and across a 14-cover sample it is four times
+// the bytes of the WebP the same row already offers.
+void test("the largest offered WebP wins over the full-size JPEG", () => {
+  const row = parseListing(LISTING_HTML).rows[0]!;
+  assert.ok(row.thumbnailUrl.endsWith("c-w200.webp"), row.thumbnailUrl);
+});
+
+void test("a row offering no WebP still yields its JPEG", () => {
+  const noWebp = LISTING_HTML.replace(/<source[^>]*>/, "");
+  const row = parseListing(noWebp).rows[0]!;
+  assert.equal(row.thumbnailUrl, "https://freewebnovel.com/files/article/image/1/1991/1991s.jpg");
 });
 
 void test("an adult genre lifts the row's rating to ADULT", () => {
@@ -470,6 +492,14 @@ void test("void elements are self-closed", () => {
 void test("a balanced slice spans nested divs where a non-greedy match would not", () => {
   const html = '<div id="a">one<div>two</div>three</div>after';
   assert.equal(balancedDiv(html, /<div id="a">/), '<div id="a">one<div>two</div>three</div>');
+});
+
+void test("every matching div is returned, and nested matches are not double-counted", () => {
+  const html = '<div class="c">one<div class="c">nested</div></div><div class="c">two</div>';
+  assert.deepEqual(balancedDivs(html, /<div class="c">/), [
+    '<div class="c">one<div class="c">nested</div></div>',
+    '<div class="c">two</div>',
+  ]);
 });
 
 void test("removing a div takes its whole subtree with it", () => {

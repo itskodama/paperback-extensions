@@ -1,20 +1,9 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import { stripChapterPrefix } from "./chapterTitles.ts";
+import { stripChapterPrefix } from "./chapters.ts";
+import { balancedDiv, balancedDivs, capture, decodeEntities, metaContent, textOf } from "./html.ts";
 import {
-  balancedDiv,
-  capture,
-  decodeEntities,
-  metaContent,
-  removeDivs,
-  removeScripts,
-  textOf,
-  toXhtmlDocument,
-} from "./html.ts";
-import {
-  type ChapterEntry,
-  type ChapterListPage,
   type ListingPage,
   type ListingRow,
   type NovelDetail,
@@ -30,13 +19,14 @@ import { absoluteUrl } from "./urls.ts";
 
 const SLUG_HREF = /href="\/novel\/([^"/]+)"/;
 const ROW_TITLE = /<h3 class="tit"><a href="\/novel\/[^"]*" title="([^"]*)"/;
-const ROW_COVER = /<img[^>]*\bsrc="([^"]*)"/;
+const COVER_SRC = /<img[^>]*\bsrc="([^"]*)"/;
+const COVER_WEBP = /<source[^>]*type="image\/webp"[^>]*srcset="([^"]*)"/i;
 const ROW_RATING = /<div class="core">\s*<span>\s*([\d.]+)/;
 const ROW_LANGUAGE = /href="\/sort\/latest-release\/([a-z]+)-novel"/;
 const ROW_GENRE = /href="\/genre\/[^"]*"[^>]*>([^<]+)<\/a>/g;
 const ROW_CHAPTER_COUNT = /<span class="s1">\s*([\d,]+) Chapters<\/span>/;
 
-const CONTAINER_BOUNDARY = /<div class="con">/gi;
+const ROW_CONTAINER = /<div class="con">/i;
 
 /**
  * Every listing surface on this site — search, filtered search, `/sort`, `/genre`
@@ -45,28 +35,48 @@ const CONTAINER_BOUNDARY = /<div class="con">/gi;
  */
 function parseRows(html: string): ListingRow[] {
   const rows: ListingRow[] = [];
-
-  CONTAINER_BOUNDARY.lastIndex = 0;
-  let opening: RegExpExecArray | null;
-  while ((opening = CONTAINER_BOUNDARY.exec(html)) !== null) {
-    const block = balancedDiv(html.slice(opening.index), /<div class="con">/i);
-    if (!block) continue;
-    CONTAINER_BOUNDARY.lastIndex = opening.index + block.length;
-
+  for (const block of balancedDivs(html, ROW_CONTAINER)) {
     const row = parseRow(block);
     if (row) rows.push(row);
   }
   return rows;
 }
 
+/**
+ * Covers exist as one full-size JPEG — the only thing the `<img>` src points at —
+ * and as pre-scaled WebP derivatives offered in the sibling `<source>`. Across a
+ * 14-cover sample the WebP set is **76% smaller** (183 KB against 760 KB), and the
+ * largest one offered is already sized for where it is being shown.
+ *
+ * The runtime cannot *encode* WebP (`api-reference.md`), which is a different
+ * thing from displaying it; Comix decodes WebP page images, and the rate limiter's
+ * `ignoreImages` already matches the extension.
+ */
+function preferredCover(block: string, fallback: string): string {
+  const srcset = COVER_WEBP.exec(block)?.[1];
+  if (!srcset) return fallback;
+
+  let best: string | undefined;
+  let bestWidth = -1;
+  for (const candidate of srcset.split(",")) {
+    const [url, descriptor] = candidate.trim().split(/\s+/);
+    if (!url) continue;
+    const width = Number.parseInt(descriptor ?? "", 10);
+    if (!(width <= bestWidth)) {
+      bestWidth = Number.isFinite(width) ? width : bestWidth;
+      best = url;
+    }
+  }
+  return best ?? fallback;
+}
+
 function parseRow(block: string): ListingRow | undefined {
   const slug = SLUG_HREF.exec(block)?.[1];
   const title = capture(block, ROW_TITLE);
-  const cover = ROW_COVER.exec(block)?.[1];
+  const cover = COVER_SRC.exec(block)?.[1];
   if (!slug || !title || !cover) return undefined;
 
   const genres: string[] = [];
-  ROW_GENRE.lastIndex = 0;
   for (const match of block.matchAll(ROW_GENRE)) {
     const genre = decodeEntities(match[1]!).trim();
     if (genre) genres.push(genre);
@@ -75,7 +85,7 @@ function parseRow(block: string): ListingRow | undefined {
   const row: ListingRow = {
     slug,
     title,
-    thumbnailUrl: absoluteUrl(cover),
+    thumbnailUrl: absoluteUrl(preferredCover(block, cover)),
     genres,
   };
 
@@ -130,7 +140,6 @@ export function parseFeatured(html: string): ListingRow[] {
 
 const RELEASE_LIST = /<ul class="home-release-list">[\s\S]*?<\/ul>/i;
 const RELEASE_ITEM = /<li>[\s\S]*?<\/li>/g;
-const RELEASE_COVER = /<img[^>]*\bsrc="([^"]*)"/;
 const RELEASE_TITLE = /class="home-release-title" title="([^"]*)"/;
 const RELEASE_CHAPTER = /href="\/novel\/[^"]*\/chapter-(\d+)"/;
 // The link's `title` is prefixed with the novel's name; this span is the bare label.
@@ -155,14 +164,14 @@ export function parseLatestReleases(html: string, now: Date = new Date()): Relea
     const item = match[0];
     const slug = SLUG_HREF.exec(item)?.[1];
     const title = capture(item, RELEASE_TITLE);
-    const cover = RELEASE_COVER.exec(item)?.[1];
+    const cover = COVER_SRC.exec(item)?.[1];
     const chapter = RELEASE_CHAPTER.exec(item);
     if (!slug || !title || !cover || !chapter) continue;
 
     const entry: ReleaseEntry = {
       slug,
       title,
-      thumbnailUrl: absoluteUrl(fullSizeCover(cover)),
+      thumbnailUrl: absoluteUrl(preferredCover(item, fullSizeCover(cover))),
       chapterIndex: Number.parseInt(chapter[1]!, 10),
     };
 
@@ -219,6 +228,7 @@ const DETAIL_ALT_TITLES =
   /title="Alternative names"[\s\S]{0,200}?<span class="s1">([\s\S]*?)<\/span>/i;
 const DETAIL_RATING = /<p class="vote">\s*([\d.]+)\s*\//;
 const DETAIL_TOTAL_CHAPTERS = /data-total-chapters="(\d+)"/;
+const DETAIL_COVER = /<div class="pic">/i;
 
 /**
  * The novel page.
@@ -240,13 +250,15 @@ export function parseNovelDetail(html: string, slug: string): NovelDetail {
     ? textOf(paragraphs.replace(/<\/p>\s*<p[^>]*>/gi, "\n\n"))
     : (metaContent(html, "og:description") ?? "");
 
+  // og:image is the full-size JPEG; the cover block offers scaled WebP alongside it.
   const cover = metaContent(html, "og:image");
+  const picture = balancedDiv(html, DETAIL_COVER);
 
   const detail: NovelDetail = {
     slug,
     title,
     synopsis: synopsis || "No synopsis.",
-    thumbnailUrl: cover ? absoluteUrl(cover) : "",
+    thumbnailUrl: cover ? absoluteUrl(picture ? preferredCover(picture, cover) : cover) : "",
     alternativeTitles: splitList(capture(html, DETAIL_ALT_TITLES)),
     genres: splitList(metaContent(html, "og:novel:genre")),
   };
@@ -276,77 +288,4 @@ function splitList(value: string | undefined): string[] {
     .split(/[,、]/)
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
-}
-
-const CHAPTER_LINK = /href="\/novel\/[^"]*\/chapter-(\d+)"[^>]*title="([^"]*)"/g;
-
-/**
- * The `?ajax=chapters` payload.
- *
- * The response reports `totalPage`, so page 1 both returns data and states how
- * many further requests the walk needs — no request is ever speculative.
- */
-export function parseChapterList(payload: unknown): ChapterListPage {
-  const body = payload as {
-    code?: number;
-    html?: string;
-    page?: number;
-    totalPage?: number;
-    totalChapters?: number;
-  } | null;
-
-  if (!body || body.code !== 200 || typeof body.html !== "string") {
-    throw new Error("FreeWebNovel returned an unreadable chapter list");
-  }
-
-  const entries: ChapterEntry[] = [];
-  for (const match of body.html.matchAll(CHAPTER_LINK)) {
-    const index = Number.parseInt(match[1]!, 10);
-    if (!Number.isFinite(index)) continue;
-
-    const entry: ChapterEntry = { index };
-    // Only the site's own "Chapter N" prefix comes off here. Whether what remains
-    // still opens with a numbering artifact cannot be decided one entry at a time —
-    // see resolveChapterTitles.
-    const title = stripChapterPrefix(match[2]!);
-    if (title) entry.title = title;
-    entries.push(entry);
-  }
-
-  return {
-    entries,
-    page: body.page ?? 1,
-    totalPage: body.totalPage ?? 1,
-    totalChapters: body.totalChapters ?? entries.length,
-  };
-}
-
-const ARTICLE = /<div\b[^>]*\bid="article"[^>]*>/i;
-const AD_BLOCK = /<div\b[^>]*\bclass="[^"]*\breader-ad-skip\b[^"]*"[^>]*>/i;
-const PARAGRAPH = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
-
-/**
- * A chapter's prose as a complete XHTML document.
- *
- * The ad blocks the site injects mid-article carry no `<p>` today, so collecting
- * paragraphs would skip them anyway — they are removed explicitly regardless,
- * because if that ever changes the failure is ad copy appearing mid-chapter.
- */
-export function parseChapterBody(html: string, label: string): string {
-  const article = balancedDiv(html, ARTICLE);
-  if (!article) throw new Error(`FreeWebNovel served no readable content for ${label}`);
-
-  const prose = removeScripts(removeDivs(article, AD_BLOCK));
-
-  const paragraphs: string[] = [];
-  for (const match of prose.matchAll(PARAGRAPH)) {
-    const paragraph = match[1]!.trim();
-    if (paragraph.length > 0) paragraphs.push(`<p>${paragraph}</p>`);
-  }
-
-  // A chapter with no content renders as a silently blank reader, so it has to raise.
-  if (paragraphs.length === 0) {
-    throw new Error(`FreeWebNovel served an empty chapter for ${label}`);
-  }
-  return toXhtmlDocument(paragraphs.join(""));
 }

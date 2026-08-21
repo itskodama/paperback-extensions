@@ -74,12 +74,19 @@ function rememberPage(url: string, body: string): void {
 }
 
 /**
- * There is no fetch cache in this runtime, and de-duplicating in flight is what
- * keeps a burst of discover sections from fetching the same page concurrently.
+ * De-duplicating in flight is what keeps a burst of discover sections from
+ * fetching the same page concurrently; there is no fetch cache in this runtime.
+ *
+ * `remember` is separate because not everything is worth keeping. A chapter walk
+ * is up to 37 one-shot JSON payloads that are never requested twice, and letting
+ * them into an eight-entry cache evicts every page that *is* — the homepage two
+ * discover sections share, and the novel page details and the update sweep read.
  */
-export async function fetchPage(url: string): Promise<string> {
-  const cached = cachedPage(url);
-  if (cached !== undefined) return cached;
+async function fetchShared(url: string, remember: boolean): Promise<string> {
+  if (remember) {
+    const cached = cachedPage(url);
+    if (cached !== undefined) return cached;
+  }
 
   const pending = inFlight.get(url);
   if (pending) return pending;
@@ -89,16 +96,20 @@ export async function fetchPage(url: string): Promise<string> {
 
   try {
     const body = await request;
-    rememberPage(url, body);
+    if (remember) rememberPage(url, body);
     return body;
   } finally {
     inFlight.delete(url);
   }
 }
 
-/** The chapter-list endpoint is the only JSON on the site. */
+export function fetchPage(url: string): Promise<string> {
+  return fetchShared(url, true);
+}
+
+/** The chapter-list endpoint is the only JSON on the site, and the only one-shot. */
 export async function fetchJson(url: string): Promise<unknown> {
-  const body = await fetchPage(url);
+  const body = await fetchShared(url, false);
   try {
     return JSON.parse(body) as unknown;
   } catch {

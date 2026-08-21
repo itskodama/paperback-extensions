@@ -74,6 +74,25 @@ function globalised(pattern: RegExp): RegExp {
     : new RegExp(pattern.source, `${pattern.flags}g`);
 }
 
+/** The `[start, end)` range of every `<div>` whose opening tag matches. */
+function divRanges(html: string, openPattern: RegExp): [number, number][] {
+  const scanner = globalised(openPattern);
+  const ranges: [number, number][] = [];
+
+  let cursor = 0;
+  let opening: RegExpExecArray | null;
+  while ((opening = scanner.exec(html)) !== null) {
+    // A match nested inside a range already taken is behind the cursor.
+    if (opening.index < cursor) continue;
+    const block = divAt(html, opening.index);
+    if (!block) continue;
+    cursor = opening.index + block.length;
+    ranges.push([opening.index, cursor]);
+    scanner.lastIndex = cursor;
+  }
+  return ranges;
+}
+
 /**
  * The element whose opening tag matches `openPattern`, through its balanced close.
  *
@@ -81,25 +100,22 @@ function globalised(pattern: RegExp): RegExp {
  * which on this site truncates a chapter at its first inlined ad block.
  */
 export function balancedDiv(html: string, openPattern: RegExp): string | undefined {
-  const opening = globalised(openPattern).exec(html);
-  return opening ? divAt(html, opening.index) : undefined;
+  const first = divRanges(html, openPattern)[0];
+  return first ? html.slice(first[0], first[1]) : undefined;
+}
+
+/** Every matching `<div>`, each through its own balanced close. */
+export function balancedDivs(html: string, openPattern: RegExp): string[] {
+  return divRanges(html, openPattern).map(([start, end]) => html.slice(start, end));
 }
 
 /** Drops every `<div>` whose opening tag matches, including its whole subtree. */
 export function removeDivs(html: string, openPattern: RegExp): string {
-  const scanner = globalised(openPattern);
-
   let kept = "";
   let cursor = 0;
-  let opening: RegExpExecArray | null;
-  while ((opening = scanner.exec(html)) !== null) {
-    // A match inside an already-dropped subtree is behind the cursor.
-    if (opening.index < cursor) continue;
-    const block = divAt(html, opening.index);
-    if (!block) continue;
-    kept += html.slice(cursor, opening.index);
-    cursor = opening.index + block.length;
-    scanner.lastIndex = cursor;
+  for (const [start, end] of divRanges(html, openPattern)) {
+    kept += html.slice(cursor, start);
+    cursor = end;
   }
   return kept + html.slice(cursor);
 }

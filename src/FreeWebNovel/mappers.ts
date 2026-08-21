@@ -10,6 +10,7 @@ import {
   type SourceManga,
 } from "@paperback/types";
 
+import { parseChapterBody } from "./chapters.ts";
 import { safeId } from "./html.ts";
 import {
   ADULT_GENRES,
@@ -20,7 +21,6 @@ import {
   type ReleaseEntry,
   type SearchFilters,
 } from "./models.ts";
-import { parseChapterBody } from "./parsers.ts";
 import { novelUrl } from "./urls.ts";
 
 /**

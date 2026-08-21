@@ -18,7 +18,7 @@ import {
   type UpdateManager,
 } from "@paperback/types";
 
-import { resolveChapterTitles } from "./chapterTitles.ts";
+import { parseChapterList, resolveChapterTitles } from "./chapters.ts";
 import { FreeWebNovelSearchForm } from "./forms.ts";
 import {
   genreChipItems,
@@ -47,13 +47,7 @@ import {
   type SearchFilters,
 } from "./models.ts";
 import { MainInterceptor, fetchJson, fetchPage } from "./network.ts";
-import {
-  parseChapterList,
-  parseFeatured,
-  parseLatestReleases,
-  parseListing,
-  parseNovelDetail,
-} from "./parsers.ts";
+import { parseFeatured, parseLatestReleases, parseListing, parseNovelDetail } from "./parsers.ts";
 import type FreeWebNovelConfig from "./pbconfig.ts";
 import {
   advancedSearchUrl,

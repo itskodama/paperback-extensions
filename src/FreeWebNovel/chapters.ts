@@ -1,16 +1,60 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 /* Copyright © 2026 Kodama */
 
-import { decodeEntities } from "./html.ts";
-import { type ChapterEntry } from "./models.ts";
+import { balancedDiv, decodeEntities, removeDivs, removeScripts, toXhtmlDocument } from "./html.ts";
+import { type ChapterEntry, type ChapterListPage } from "./models.ts";
 
 /**
- * Deciding what a chapter is called.
+ * Everything chapter-shaped: reading the list endpoint, deciding what each chapter
+ * is called, and turning one chapter's markup into the document the reader wants.
  *
- * Separate from `parsers.ts` because this reads no markup: it works on entries
- * that have already been parsed, and its central decision needs the whole novel
- * rather than one entry or one page.
+ * Split from `parsers.ts`, which reads the catalog. The central decision here needs
+ * the whole novel rather than one entry, which is a different shape of problem from
+ * anything on the catalog side.
  */
+
+const CHAPTER_LINK = /href="\/novel\/[^"]*\/chapter-(\d+)"[^>]*title="([^"]*)"/g;
+
+/**
+ * The `?ajax=chapters` payload.
+ *
+ * The response reports `totalPage`, so page 1 both returns data and states how
+ * many further requests the walk needs — no request is ever speculative.
+ */
+export function parseChapterList(payload: unknown): ChapterListPage {
+  const body = payload as {
+    code?: number;
+    html?: string;
+    page?: number;
+    totalPage?: number;
+    totalChapters?: number;
+  } | null;
+
+  if (!body || body.code !== 200 || typeof body.html !== "string") {
+    throw new Error("FreeWebNovel returned an unreadable chapter list");
+  }
+
+  const entries: ChapterEntry[] = [];
+  for (const match of body.html.matchAll(CHAPTER_LINK)) {
+    const index = Number.parseInt(match[1]!, 10);
+    if (!Number.isFinite(index)) continue;
+
+    const entry: ChapterEntry = { index };
+    // Only the site's own "Chapter N" prefix comes off here. Whether what remains
+    // still opens with a numbering artifact cannot be decided one entry at a time —
+    // see resolveChapterTitles.
+    const title = stripChapterPrefix(match[2]!);
+    if (title) entry.title = title;
+    entries.push(entry);
+  }
+
+  return {
+    entries,
+    page: body.page ?? 1,
+    totalPage: body.totalPage ?? 1,
+    totalChapters: body.totalChapters ?? entries.length,
+  };
+}
 
 const CHAPTER_PREFIX = /^\s*(?:chapter|chap|ch|c)[\s.\-–—]*\d+(?:\.\d+)?\s*[:.\-–—]?\s*/i;
 const LEADING_NUMBER = /^(\d+(?:\.\d+)?)\s*[:.\-–—]?\s*/;
@@ -93,4 +137,34 @@ function titlesCarryNumbering(entries: ChapterEntry[]): boolean {
     if (numbers[i]! >= numbers[i - 1]!) ascending++;
   }
   return ascending / pairs >= NUMBERING_CONSISTENCY;
+}
+
+const ARTICLE = /<div\b[^>]*\bid="article"[^>]*>/i;
+const AD_BLOCK = /<div\b[^>]*\bclass="[^"]*\breader-ad-skip\b[^"]*"[^>]*>/i;
+const PARAGRAPH = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+
+/**
+ * A chapter's prose as a complete XHTML document.
+ *
+ * The ad blocks the site injects mid-article carry no `<p>` today, so collecting
+ * paragraphs would skip them anyway — they are removed explicitly regardless,
+ * because if that ever changes the failure is ad copy appearing mid-chapter.
+ */
+export function parseChapterBody(html: string, label: string): string {
+  const article = balancedDiv(html, ARTICLE);
+  if (!article) throw new Error(`FreeWebNovel served no readable content for ${label}`);
+
+  const prose = removeScripts(removeDivs(article, AD_BLOCK));
+
+  const paragraphs: string[] = [];
+  for (const match of prose.matchAll(PARAGRAPH)) {
+    const paragraph = match[1]!.trim();
+    if (paragraph.length > 0) paragraphs.push(`<p>${paragraph}</p>`);
+  }
+
+  // A chapter with no content renders as a silently blank reader, so it has to raise.
+  if (paragraphs.length === 0) {
+    throw new Error(`FreeWebNovel served an empty chapter for ${label}`);
+  }
+  return toXhtmlDocument(paragraphs.join(""));
 }
