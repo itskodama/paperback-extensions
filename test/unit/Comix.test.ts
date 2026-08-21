@@ -10,6 +10,9 @@ import {
   applyKeystream,
   KNOWN_OFFSETS,
   parseScrambleConfig,
+  seamCost,
+  seamCosts,
+  tileEdges,
   tileOrder,
 } from "../../src/Comix/descramble.ts";
 import { isOurRequest, looksLikeChallengePage, trackOwnRequest } from "../../src/Comix/http.ts";
@@ -564,4 +567,106 @@ void test("every known scramble offset is inside the swept search space", () => 
   }
   assert.equal(KNOWN_OFFSETS["33317"], 261410);
   assert.equal(KNOWN_OFFSETS["47bc1"], 168100);
+});
+
+// --- seam scoring: the precomputed matrix must not change the oracle ---
+
+/** A deterministic RGBA image with structure, so tile seams carry real signal. */
+function syntheticPixels(width: number, height: number): Uint8ClampedArray {
+  const pixels = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const at = (y * width + x) * 4;
+      pixels[at] = (x * 7 + y * 13) & 0xff;
+      pixels[at + 1] = (x * x + y) & 0xff;
+      pixels[at + 2] = (x + y * y) & 0xff;
+      pixels[at + 3] = 255;
+    }
+  }
+  return pixels;
+}
+
+/**
+ * The scoring as it was written before the cost matrix: compare the strips
+ * themselves on every call. Kept here so the optimised version is checked
+ * against an independent statement of the same rule rather than against itself.
+ */
+function referenceSeamCost(
+  edges: ReturnType<typeof tileEdges>,
+  order: number[],
+  cols: number,
+  rows: number,
+): number {
+  const gap = (a: number[] | undefined, b: number[] | undefined): number => {
+    const left = a ?? [];
+    const right = b ?? [];
+    let sum = 0;
+    for (let i = 0; i < left.length; i += 1) sum += Math.abs((left[i] ?? 0) - (right[i] ?? 0));
+    return sum;
+  };
+
+  let total = 0;
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const here = order[row * cols + col] ?? 0;
+      if (col + 1 < cols) {
+        total += gap(edges.right[here], edges.left[order[row * cols + col + 1] ?? 0]);
+      }
+      if (row + 1 < rows) {
+        total += gap(edges.bottom[here], edges.top[order[(row + 1) * cols + col] ?? 0]);
+      }
+    }
+  }
+  return total;
+}
+
+void test("the precomputed cost matrix scores identically to comparing strips", () => {
+  const [width, height, cols, rows] = [160, 240, 5, 5];
+  const edges = tileEdges(
+    syntheticPixels(width, height),
+    width,
+    cols,
+    rows,
+    Math.floor(width / cols),
+    Math.floor(height / rows),
+  );
+  const costs = seamCosts(edges, cols * rows);
+
+  // Identity plus a spread of real shuffles, so the check covers the orderings
+  // the search actually scores rather than one convenient case.
+  const orders = [
+    Array.from({ length: cols * rows }, (_, i) => i),
+    ...[0, 1, 58414, 117532, 168100, 261410].map((offset) => tileOrder(4242 ^ offset)),
+    ...[7, 99, 4242].map((offset) => tileOrder(offset, "3")),
+  ];
+
+  for (const order of orders) {
+    assert.equal(seamCost(costs, order, cols, rows), referenceSeamCost(edges, order, cols, rows));
+  }
+});
+
+void test("the correct arrangement is the cheapest, which is what the search relies on", () => {
+  const [width, height, cols, rows] = [160, 240, 5, 5];
+  const count = cols * rows;
+  const pixels = syntheticPixels(width, height);
+  const edges = tileEdges(
+    pixels,
+    width,
+    cols,
+    rows,
+    Math.floor(width / cols),
+    Math.floor(height / rows),
+  );
+  const costs = seamCosts(edges, count);
+
+  const identity = Array.from({ length: count }, (_, i) => i);
+  const intact = seamCost(costs, identity, cols, rows);
+
+  // An unscrambled image is contiguous, so every shuffle should score worse.
+  for (const seed of [1, 2, 3, 4242, 999_983]) {
+    assert.ok(
+      seamCost(costs, tileOrder(seed), cols, rows) > intact,
+      `shuffle ${seed} scored no worse than the intact page`,
+    );
+  }
 });

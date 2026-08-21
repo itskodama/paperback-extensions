@@ -152,8 +152,20 @@ export function applyKeystream(
  * each destination tile to the source tile that belongs there, which is the
  * direction a descrambling blit needs.
  */
-export function tileOrder(seed: number, algo?: string, count: number = TILE_COUNT): number[] {
-  const shuffled = Array.from({ length: count }, (_, index) => index);
+/**
+ * Writes the tile order into caller-owned buffers. The offset search runs this
+ * a quarter of a million times, and allocating two arrays per call is enough
+ * garbage to stall the app rather than merely slow it.
+ */
+function fillTileOrder(
+  shuffled: number[],
+  inverse: number[],
+  seed: number,
+  algo: string | undefined,
+  count: number,
+): number[] {
+  for (let i = 0; i < count; i += 1) shuffled[i] = i;
+
   const xorshift = algo === "3";
   let state = (xorshift ? seed | 1 : seed) | 0;
 
@@ -168,46 +180,91 @@ export function tileOrder(seed: number, algo?: string, count: number = TILE_COUN
     shuffled[j] = swap;
   }
 
-  const inverse: number[] = Array.from({ length: count }, () => 0);
-  shuffled.forEach((source, destination) => {
-    inverse[source] = destination;
-  });
+  for (let i = 0; i < count; i += 1) inverse[shuffled[i] ?? 0] = i;
   return inverse;
 }
 
 /**
- * Edge discontinuity across internal tile seams, sampled sparsely. A correctly
- * reassembled page scores an order of magnitude lower than a wrong one, which
- * makes this a reliable oracle for choosing between candidate offsets without
- * any knowledge of what the page depicts.
+ * Reproduces the site's seeded Fisher-Yates, then inverts it: the result maps
+ * each destination tile to the source tile that belongs there, which is the
+ * direction a descrambling blit needs.
  */
-function seamCost(edges: TileEdges, order: number[], cols: number, rows: number): number {
-  const gap = (a: number[], b: number[]): number => {
-    let sum = 0;
-    for (let i = 0; i < a.length; i += 1) sum += Math.abs((a[i] ?? 0) - (b[i] ?? 0));
-    return sum;
-  };
+export function tileOrder(seed: number, algo?: string, count: number = TILE_COUNT): number[] {
+  return fillTileOrder(
+    Array.from({ length: count }, () => 0),
+    Array.from({ length: count }, () => 0),
+    seed,
+    algo,
+    count,
+  );
+}
 
+/** Mean absolute difference between two sampled edge strips. */
+function stripGap(a: number[] | undefined, b: number[] | undefined): number {
+  const left = a ?? [];
+  const right = b ?? [];
+  let sum = 0;
+  for (let i = 0; i < left.length; i += 1) sum += Math.abs((left[i] ?? 0) - (right[i] ?? 0));
+  return sum;
+}
+
+/**
+ * The cost of every ordered tile pairing, computed once per image.
+ *
+ * The search rescores the same `count * count` pairings for every candidate
+ * offset, so comparing the strips inside the loop repeats one bounded piece of
+ * work a quarter of a million times. Precomputing turns each candidate from
+ * dozens of strip comparisons into dozens of array lookups.
+ */
+export function seamCosts(edges: TileEdges, count: number): SeamCosts {
+  const horizontal = new Float64Array(count * count);
+  const vertical = new Float64Array(count * count);
+
+  for (let a = 0; a < count; a += 1) {
+    for (let b = 0; b < count; b += 1) {
+      horizontal[a * count + b] = stripGap(edges.right[a], edges.left[b]);
+      vertical[a * count + b] = stripGap(edges.bottom[a], edges.top[b]);
+    }
+  }
+  return { horizontal, vertical, count };
+}
+
+/**
+ * Edge discontinuity across internal tile seams. A correctly reassembled page
+ * scores an order of magnitude lower than a wrong one, which makes this a
+ * reliable oracle for choosing between candidate offsets without any knowledge
+ * of what the page depicts.
+ */
+export function seamCost(costs: SeamCosts, order: number[], cols: number, rows: number): number {
+  const { horizontal, vertical, count } = costs;
   let total = 0;
+
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
       const here = order[row * cols + col] ?? 0;
       if (col + 1 < cols) {
-        total += gap(edges.right[here] ?? [], edges.left[order[row * cols + col + 1] ?? 0] ?? []);
+        total += horizontal[here * count + (order[row * cols + col + 1] ?? 0)] ?? 0;
       }
       if (row + 1 < rows) {
-        total += gap(edges.bottom[here] ?? [], edges.top[order[(row + 1) * cols + col] ?? 0] ?? []);
+        total += vertical[here * count + (order[(row + 1) * cols + col] ?? 0)] ?? 0;
       }
     }
   }
   return total;
 }
 
-type TileEdges = { right: number[][]; left: number[][]; bottom: number[][]; top: number[][] };
+export type TileEdges = {
+  right: number[][];
+  left: number[][];
+  bottom: number[][];
+  top: number[][];
+};
+
+export type SeamCosts = { horizontal: Float64Array; vertical: Float64Array; count: number };
 
 /** Sampled every 16px: enough signal to rank arrangements, cheap enough to run
  * a search over. */
-function tileEdges(
+export function tileEdges(
   pixels: Uint8ClampedArray,
   width: number,
   cols: number,
@@ -253,6 +310,9 @@ function tileEdges(
 // than this is better reported than hunted for while the reader waits.
 const OFFSET_SEARCH_LIMIT = 1 << 18;
 
+/** Comfortably inside the ~20x margin every correct arrangement showed. */
+const CONFIDENT_MARGIN = 10;
+
 /**
  * A token in neither the shipped nor the learned table is resolved against the
  * image itself. The seed unmodified is tried first, since that is what almost
@@ -275,37 +335,50 @@ function resolveOffset(
 
   const { cols, rows } = config;
   const count = cols * rows;
-  const edges = tileEdges(
-    pixels,
-    width,
-    cols,
-    rows,
-    Math.floor(width / cols),
-    Math.floor(height / rows),
+  const costs = seamCosts(
+    tileEdges(pixels, width, cols, rows, Math.floor(width / cols), Math.floor(height / rows)),
+    count,
   );
 
+  // Reused for every candidate rather than reallocated per call.
+  const shuffled = Array.from({ length: count }, () => 0);
+  const inverse = Array.from({ length: count }, () => 0);
+
   const identity = Array.from({ length: count }, (_, i) => i);
-  const asDelivered = seamCost(edges, identity, cols, rows);
+  const asDelivered = seamCost(costs, identity, cols, rows);
   const costOf = (offset: number): number =>
     seamCost(
-      edges,
-      tileOrder((config.scrambleSeedRaw ^ offset) | 0, config.scrambleAlgo, count),
+      costs,
+      fillTileOrder(
+        shuffled,
+        inverse,
+        (config.scrambleSeedRaw ^ offset) | 0,
+        config.scrambleAlgo,
+        count,
+      ),
       cols,
       rows,
     );
 
   // A correct arrangement beat the scrambled one by 20x in every sample, so this
   // margin is a confident accept rather than a lucky one.
-  if (costOf(0) * 4 < asDelivered) return 0;
+  const unmodified = costOf(0);
+  if (unmodified * 4 < asDelivered) return 0;
 
   let best = 0;
-  let bestCost = costOf(0);
+  let bestCost = unmodified;
   for (let offset = 1; offset < OFFSET_SEARCH_LIMIT; offset += 1) {
     const cost = costOf(offset);
-    if (cost < bestCost) {
-      bestCost = cost;
-      best = offset;
-    }
+    if (cost >= bestCost) continue;
+
+    bestCost = cost;
+    best = offset;
+
+    // The right offset scores an order of magnitude below the delivered page, so
+    // once one clears that bar nothing later can beat it by enough to matter.
+    // Sweeping the remainder anyway is what leaves the reader looking at a
+    // frozen app.
+    if (bestCost * CONFIDENT_MARGIN < asDelivered) break;
   }
 
   if (bestCost * 4 < asDelivered && config.scrambleHash) rememberOffset(config.scrambleHash, best);
