@@ -204,17 +204,52 @@ void test("a series with no chapters yet omits the subtitle rather than sending 
   assert.equal("subtitle" in toSearchResultItem(parsed.posts[0]!), false);
 });
 
-void test("adult, mature and ecchi genres mark a title MATURE", () => {
+void test("an ordinary title is EVERYONE", () => {
   assert.equal(contentRatingOf([{ id: 5, name: "Action" }]), ContentRating.EVERYONE);
-  for (const id of [11, 19, 48]) {
+  assert.equal(contentRatingOf([]), ContentRating.EVERYONE);
+});
+
+void test("mature-only genres rate MATURE", () => {
+  for (const name of ["Mature", "Ecchi", "Gore"]) {
     assert.equal(
       contentRatingOf([
         { id: 5, name: "Action" },
-        { id, name: "x" },
+        { id: 9, name },
       ]),
       ContentRating.MATURE,
+      name,
     );
   }
+});
+
+// Shotacon was tagged on a live title and rated EVERYONE before this.
+void test("explicit and sexualised-minor genres rate ADULT", () => {
+  for (const name of ["Adult", "Hentai", "Smut", "Erotica", "Shotacon", "Lolicon"]) {
+    assert.equal(
+      contentRatingOf([
+        { id: 5, name: "Action" },
+        { id: 9, name },
+      ]),
+      ContentRating.ADULT,
+      name,
+    );
+  }
+});
+
+void test("the strictest genre wins, whatever the order", () => {
+  const mature = { id: 1, name: "Mature" };
+  const adult = { id: 2, name: "Adult" };
+
+  assert.equal(contentRatingOf([mature, adult]), ContentRating.ADULT);
+  assert.equal(contentRatingOf([adult, mature]), ContentRating.ADULT);
+});
+
+// Matched on the name the site publishes, not on its arbitrary id, so a genre added later is
+// still rated; and matched exactly, so an unrelated genre containing the word is not caught.
+void test("rating follows the genre name, not its id, and matches exactly", () => {
+  assert.equal(contentRatingOf([{ id: 99999, name: "  ADULT  " }]), ContentRating.ADULT);
+  assert.equal(contentRatingOf([{ id: 19, name: "Adventure" }]), ContentRating.EVERYONE);
+  assert.equal(contentRatingOf([{ id: 11, name: "Premature Ending" }]), ContentRating.EVERYONE);
 });
 
 // --- Series detail ---
@@ -250,7 +285,8 @@ void test("series details come from /api/post, and the rating is scaled to a fra
   assert.equal(manga.mangaInfo.artist, "An Artist");
   assert.equal(manga.mangaInfo.author, "An Author");
   assert.equal(manga.mangaInfo.contentType, "comic");
-  assert.equal(manga.mangaInfo.contentRating, ContentRating.MATURE);
+  // The fixture carries an Adult genre, which is the strictest level.
+  assert.equal(manga.mangaInfo.contentRating, ContentRating.ADULT);
   // The app renders `rating` as a 0-1 fraction; the site rates out of ten.
   assert.equal(manga.mangaInfo.rating, 0.985);
   assert.ok(manga.mangaInfo.rating! <= 1);
@@ -357,6 +393,13 @@ void test("an unreadable chapter list throws rather than reporting no chapters",
 });
 
 // The app renders "Chapter {chapNum} - {title}", so a title carrying its own number reads twice.
+// A number only labels a chapter when nothing word-like follows it, or "1st Year" loses its digit.
+void test("an ordinal or number that begins a real title is left alone", () => {
+  assert.equal(cleanChapterTitle("1st Year"), "1st Year");
+  assert.equal(cleanChapterTitle("2nd Awakening"), "2nd Awakening");
+  assert.equal(cleanChapterTitle("3D"), "3D");
+});
+
 void test("a leading chapter number is stripped from the title", () => {
   assert.equal(cleanChapterTitle("117"), undefined);
   assert.equal(cleanChapterTitle("Chapter 5 - The Fall"), "The Fall");

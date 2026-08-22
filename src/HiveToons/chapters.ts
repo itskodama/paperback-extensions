@@ -51,7 +51,10 @@ export function isPaid(chapter: ApiChapter): boolean {
   return chapter.price > 0;
 }
 
-const LEADING_NUMBER = /^\s*(?:chapter|episode|ep\.?)?\s*\d+(?:\.\d+)?\s*[-–—:.]?\s*/i;
+// The lookahead is what keeps an ordinal intact: without it "1st Year" loses its digit and
+// becomes "st Year". A number only counts as a chapter label when nothing word-like follows it.
+const LEADING_NUMBER =
+  /^\s*(?:chapter|episode|ep\.?)?\s*\d+(?:\.\d+)?(?![\dA-Za-z])\s*[-–—:.]?\s*/i;
 
 /**
  * The app renders a row as "Chapter {chapNum} - {title}", so a title carrying its own leading

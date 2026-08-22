@@ -5,7 +5,7 @@
 
 export const DOMAIN = "https://hivetoons.org";
 
-/** `/api/chapters` lives only here; the main host 404s it. `/api/query` answers on both. */
+/** Everything except `/api/query` answers only here; the main host 404s the rest. */
 export const API_DOMAIN = "https://api.hivetoons.org";
 
 /** The origin caps the page size here — asking for 120 or 200 still returns 100. */
@@ -77,12 +77,29 @@ export const STATUS_OPTIONS: { id: string; title: string }[] = [
   { id: "DROPPED", title: "Dropped" },
 ];
 
-/** Any of these on a title makes it MATURE; everything else is EVERYONE. */
-export const MATURE_GENRE_IDS: ReadonlySet<number> = new Set([
-  11, // Mature
-  19, // Adult
-  48, // Ecchi
+/**
+ * Content rating is decided from a title's genre *names*, not their ids.
+ *
+ * The site's ids are arbitrary and non-contiguous, and a set of them only ever describes the
+ * catalog as it stood when it was written — a genre added next month goes unrated. Names are what
+ * the site actually publishes and are stable across the platform's other deployments, so matching
+ * on them means a new `Smut` or `Hentai` needs no code change.
+ *
+ * Matched exactly against a normalised name, never as a substring: `Adult` must not be caught by
+ * an unrelated genre that merely contains the word.
+ */
+export const ADULT_GENRE_NAMES: ReadonlySet<string> = new Set([
+  "adult",
+  "erotica",
+  "hentai",
+  // Tags denoting sexualised minors are rated at the strictest level the app offers, so that a
+  // reader filtering adult content is never shown one unasked.
+  "lolicon",
+  "shotacon",
+  "smut",
 ]);
+
+export const MATURE_GENRE_NAMES: ReadonlySet<string> = new Set(["ecchi", "gore", "mature"]);
 
 // --- The site's own JSON ---
 

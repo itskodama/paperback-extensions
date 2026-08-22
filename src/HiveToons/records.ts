@@ -2,9 +2,8 @@
 /* Copyright © 2026 Kodama */
 
 /**
- * Typed reads out of untrusted objects. Both of the site's data shapes — decoded Astro island
- * props and parsed `/api/*` JSON — arrive as plain records of `unknown`, so one set of readers
- * serves both and every field the extension uses is narrowed exactly once, here.
+ * Typed reads out of untrusted objects. Every `/api/*` response arrives as plain records of
+ * `unknown`, so each field the extension uses is narrowed exactly once, here.
  */
 
 export type Rec = Record<string, unknown>;

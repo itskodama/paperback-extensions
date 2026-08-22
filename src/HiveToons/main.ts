@@ -145,28 +145,27 @@ class HiveToonsExtension implements ExtensionImpl<typeof HiveToonsConfig> {
     return toChapters(parseChapterList(payload), sourceManga, hidePaidChaptersEnabled());
   }
 
+  /**
+   * Which kind of chapter this is comes from the payload, not from
+   * `sourceManga.mangaInfo.contentType`: that arrives on whatever `Chapter` the app hands back,
+   * and a sweep or a cold cache can supply one without it. Reading it there would send a novel
+   * down the comic path and report a free chapter as paywalled.
+   */
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
     if (chapterIsPaid(chapter)) throw paidChapterError(chapter);
 
     const mangaId = chapter.sourceManga.mangaId;
     const payload = await fetchJson(chapterUrl(chapter.chapterId));
 
-    if (chapter.sourceManga.mangaInfo.contentType === "novel") {
-      const body = parseNovelBody(payload);
-      if (body === undefined) {
-        throw new Error(`HiveToons served no text for chapter ${chapter.chapNum}`);
-      }
-      return { id: chapter.chapterId, mangaId, type: "html", html: body };
-    }
-
     const pages = parsePages(payload);
-    if (pages.length === 0) {
-      // The API serves no images for a chapter it will not release, so an empty list means the
-      // site withheld them — which for an anonymous reader is always the paywall.
-      throw paidChapterError(chapter);
-    }
+    if (pages.length > 0) return { id: chapter.chapterId, mangaId, pages };
 
-    return { id: chapter.chapterId, mangaId, pages };
+    const body = parseNovelBody(payload);
+    if (body !== undefined) return { id: chapter.chapterId, mangaId, type: "html", html: body };
+
+    // The API serves neither images nor text for a chapter it will not release, so having both
+    // come back empty means the site withheld them — which for an anonymous reader is the paywall.
+    throw paidChapterError(chapter);
   }
 }
 

@@ -3,8 +3,8 @@
 
 /**
  * Pure transforms of what the catalog says about a series: the archive JSON behind search, browse
- * and discover, plus the series page's own hydration props. Nothing here performs I/O or reads
- * persisted state.
+ * and discover, plus the series record behind the details screen. Nothing here performs I/O or
+ * reads persisted state.
  */
 
 import {
@@ -17,7 +17,8 @@ import {
 
 import { toPlainText } from "./html.ts";
 import {
-  MATURE_GENRE_IDS,
+  ADULT_GENRE_NAMES,
+  MATURE_GENRE_NAMES,
   type ApiGenre,
   type ApiPost,
   type ApiQueryResponse,
@@ -99,10 +100,17 @@ export function applySearchTerm(posts: ApiPost[], requested: string): ApiPost[] 
   return matched.length > 0 ? matched : posts;
 }
 
+/**
+ * The strictest rating any of the title's genres implies. Reported from what the source says about
+ * itself: the site does mis-tag the odd title, but under-reporting shows flagged content to a
+ * reader who asked not to see it, where over-reporting only costs a badge.
+ */
 export function contentRatingOf(genres: ApiGenre[]): ContentRating {
-  return genres.some((genre) => MATURE_GENRE_IDS.has(genre.id))
-    ? ContentRating.MATURE
-    : ContentRating.EVERYONE;
+  const names = genres.map((genre) => genre.name.trim().toLowerCase());
+
+  if (names.some((name) => ADULT_GENRE_NAMES.has(name))) return ContentRating.ADULT;
+  if (names.some((name) => MATURE_GENRE_NAMES.has(name))) return ContentRating.MATURE;
+  return ContentRating.EVERYONE;
 }
 
 /** A result cell and a carousel cell differ only by their discriminator. */
