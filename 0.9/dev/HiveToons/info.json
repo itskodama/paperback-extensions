@@ -1,0 +1,1 @@
+{"name":"HiveToons","description":"Read manhwa, manga and web novels from hivetoons.org.","version":"1.0.0-alpha.1","icon":"icon.png","language":"en","contentRating":"MATURE","capabilities":[4,64,1,32],"badges":[{"label":"Comic","textColor":"#ffffff","backgroundColor":"#B45309"}],"developers":[{"name":"Kodama","github":"https://github.com/itskodama"}],"id":"HiveToons"}
