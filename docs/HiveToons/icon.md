@@ -1,38 +1,34 @@
 # Icon provenance
 
-`src/HiveToons/static/icon.png` is generated from [`icon.svg`](icon.svg) in this directory.
+`src/HiveToons/static/icon-v2.png` is the site's own logo, composited onto the repository's plate.
 
-## The artwork is original
+## Where the artwork came from
 
-**It is not the site's logo, and deliberately so.** hivetoons.org's own wordmark is its branding;
-reproducing it would put someone else's mark on a bundle published from this account. The mark here
-is three honeycomb cells drawn from scratch — pointy-top hexagons on the lattice a real honeycomb
-uses, sized a little under their cell so the gaps read as seams. It says "hive" without borrowing
-anything.
+hivetoons.org serves two variants of one mark — a red disc carrying a black flame — and swaps
+between them by theme:
 
-That also makes it robust in a way a traced logo would not be: nothing to re-sample if the site
-restyles, and no colour that is a guess at a brand value.
+| Variant | Element                              | Source                                            |
+| ------- | ------------------------------------ | ------------------------------------------------- |
+| Light   | `class="… dark:hidden"`, 1024x1053   | `storage.hivetoon.com/public/upload/2026/03/25/…` |
+| Dark    | `class="hidden dark:block"`, 512x527 | `storage.hivetoon.com/public/upload/2026/03/30/…` |
 
-## Colours
+The **light** variant is the one used here: both are the same mark, but it ships at twice the
+resolution, and its outer edge is red rather than black, which is what keeps it from dissolving
+into the dark plate. Both arrive with a transparent background, so the mark composites directly.
 
-| Element       | Hex       | Why                                                |
-| ------------- | --------- | -------------------------------------------------- |
-| Backing plate | `#111827` | The repository's dark plate, as used by Comix      |
-| Upper-left    | `#f59e0b` | The lightest amber, so the cluster reads top-lit   |
-| Upper-right   | `#d97706` | One step darker, to separate it from its neighbour |
-| Lower         | `#b45309` | **The comic badge colour** from `pbconfig.ts`      |
+This is the site's mark, not an original drawing — the same approach `docs/Comix/icon.md` records
+for comix.to. It identifies which source the extension reads, which is the whole job of the icon in
+the app's source list.
 
-The lower cell is the same `#b45309` the badge uses, so the icon and the badge agree on screen. The
-three shades give the cluster depth without an outline, which would not survive being small.
+## The plate
 
-The plate is deliberate rather than transparent. A transparent background follows the app's theming,
-which only helps when the mark has contrast to spare in both directions; amber on white would lose
-its edges.
+512x512 to match the other sources, `#111827` — the repository's dark plate, as used by Comix and
+FreeWebNovel — with a 96px corner radius, and the mark inset to 400px so it does not crowd the
+corners.
 
-## Legibility
-
-The mark is drawn to survive being small — three solid shapes, no strokes, no interior detail. At
-the size the app lists sources, finer detail turns to noise. Check any change at 32px, not at 512.
+The plate is deliberate rather than transparent. A transparent background follows the app's
+theming, which only helps when the mark has contrast to spare in both directions; the logo's black
+flame would close up against a dark theme with nothing behind it.
 
 ## The filename is a cache key
 
@@ -41,17 +37,18 @@ version bump refetches the manifest and the bundle but not an asset whose URL is
 only way to make a changed icon appear on a device that has already seen one is to change its
 filename.
 
-The sharp edge: reverting to a previously-used name serves that name's **old cached bytes**. Comix
-hit this — `icon.png` → `icon-v2.png` → back to `icon.png` resurrected the original placeholder.
-
-`icon.png` is correct here because this extension has never shipped, so no install holds a cache
-entry for it. If the icon changes during device testing, move to `icon-v2.png` and only rename back
-before the release reaches `0.9/stable`.
+This extension shipped `icon.png` to `0.9/dev` first, carrying a placeholder, so that name is burnt
+on any device that installed it — hence `icon-v2.png`. **Do not rename back to `icon.png`**:
+reverting to a previously-used name serves that name's _old cached bytes_, which is how Comix
+resurrected its original placeholder. `0.9/stable` has never served either name, so `icon-v2.png`
+is safe to ship there as it stands.
 
 ## Regenerating
 
-512x512, matching the other sources:
-
 ```sh
-rsvg-convert -w 512 -h 512 -o src/HiveToons/static/icon.png docs/HiveToons/icon.svg
+magick -size 512x512 xc:none -fill '#111827' \
+  -draw 'roundrectangle 0,0,511,511,96,96' plate.png
+magick <logo>.webp -trim +repage -resize 400x400 \
+  -background none -gravity center -extent 512x512 mark.png
+magick plate.png mark.png -composite src/HiveToons/static/icon-v2.png
 ```

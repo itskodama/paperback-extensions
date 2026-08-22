@@ -6,8 +6,8 @@ import { ContentRating, SourceIntents, type ExtensionInfo } from "@paperback/typ
 export default {
   name: "HiveToons",
   description: "Read manhwa, manga and web novels from hivetoons.org.",
-  version: "1.0.0-alpha.1",
-  icon: "icon.png",
+  version: "1.0.0-alpha.2",
+  icon: "icon-v2.png",
   language: "en",
   contentRating: ContentRating.MATURE,
   capabilities: [
