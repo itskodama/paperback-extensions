@@ -8,9 +8,9 @@
 
 import { type Chapter, type SourceManga } from "@paperback/types";
 
+import { toXhtml } from "./html.ts";
 import { type ApiChapter } from "./models.ts";
 import { asRecord, readNumber, readRecords, readString, type Rec } from "./records.ts";
-import { toXhtml } from "./xhtml.ts";
 
 export function parseChapterList(payload: unknown): ApiChapter[] {
   const root = asRecord(payload);

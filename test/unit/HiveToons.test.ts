@@ -24,9 +24,9 @@ import {
   parsePages,
   toChapters,
 } from "../../src/HiveToons/chapters.ts";
+import { toPlainText, toXhtml } from "../../src/HiveToons/html.ts";
 import { DEFAULT_FILTERS, DEFAULT_SORT, SORT_OPTIONS } from "../../src/HiveToons/models.ts";
 import { chapterUrl, chaptersUrl, postUrl, queryUrl, seriesUrl } from "../../src/HiveToons/urls.ts";
-import { toXhtml } from "../../src/HiveToons/xhtml.ts";
 
 /** The charset the Swift bridge validates every ID against — see docs/paperback/forms.md. */
 const VALID_ID = /^[a-zA-Z0-9._\-@()[\]%?#+=/&:]+$/;
@@ -428,6 +428,44 @@ void test("pages are ordered by the API's own order field, not array position", 
 void test("a paywalled chapter yields no pages rather than throwing", () => {
   assert.deepEqual(parsePages({ chapter: { images: [] } }), []);
   assert.deepEqual(parsePages({}), []);
+});
+
+// The site stores synopses as markup — paragraphs, styled spans pasted out of Discord — where
+// MangaInfo.synopsis is plain text and would print the tags verbatim.
+void test("a synopsis is reduced to plain text", () => {
+  assert.equal(toPlainText("<p>One.</p><p>Two.</p>"), "One.\n\nTwo.");
+  assert.equal(toPlainText("a<br>b"), "a\nb");
+  assert.equal(
+    toPlainText('<p><span style="color: oklab(0.85 0.01 -0.04)">Styled.</span></p>'),
+    "Styled.",
+  );
+  assert.equal(
+    toPlainText("<p><strong>Bold</strong> and <em>italic</em>.</p>"),
+    "Bold and italic.",
+  );
+});
+
+void test("entities in a synopsis are decoded, including numeric ones", () => {
+  assert.equal(
+    toPlainText("<p>&quot;Quoted&quot; &amp; &lt;bracketed&gt;</p>"),
+    '"Quoted" & <bracketed>',
+  );
+  assert.equal(toPlainText("<p>&#8217;&#x2014;</p>"), "’—");
+  assert.equal(toPlainText("<p>a&nbsp;b</p>"), "a b");
+});
+
+// A title in angle brackets is prose, not a tag, and survives intact.
+void test("angle-bracketed prose is not mistaken for markup", () => {
+  assert.equal(
+    toPlainText("<p>The story of &lt;A Title&gt; begins.</p>"),
+    "The story of <A Title> begins.",
+  );
+});
+
+void test("runs of blank lines collapse, and an empty synopsis stays empty", () => {
+  assert.equal(toPlainText("<p>a</p><p></p><p></p><p>b</p>"), "a\n\nb");
+  assert.equal(toPlainText(""), "");
+  assert.equal(toPlainText("<p></p>"), "");
 });
 
 // The reader parses `html` chapters with an XML parser, and only applies HTML semantics inside

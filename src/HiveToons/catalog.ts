@@ -15,6 +15,7 @@ import {
   type TagSection,
 } from "@paperback/types";
 
+import { toPlainText } from "./html.ts";
 import {
   MATURE_GENRE_IDS,
   type ApiGenre,
@@ -172,7 +173,8 @@ export function parseSeriesDetail(payload: unknown, mangaId: string): SourceMang
             .filter(Boolean)
         : [],
     thumbnailUrl: readString(post, "featuredImage") ?? "",
-    synopsis: readString(post, "postContent") ?? "",
+    // The site stores this as markup; the app's field is plain text.
+    synopsis: toPlainText(readString(post, "postContent") ?? "") || "No synopsis.",
     contentRating: contentRatingOf(genres),
     // The API says so outright, where the catalog only implies it through `seriesType`.
     contentType: post.isNovel === true ? "novel" : "comic",
