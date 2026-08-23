@@ -15,7 +15,13 @@ import {
   tileEdges,
   tileOrder,
 } from "../../src/Comix/descramble.ts";
-import { isOurRequest, looksLikeChallengePage, trackOwnRequest } from "../../src/Comix/http.ts";
+import {
+  describeBadPage,
+  isChallengeBody,
+  isOurRequest,
+  looksLikeSitePage,
+  trackOwnRequest,
+} from "../../src/Comix/http.ts";
 import {
   CONTENT_RATINGS,
   DEMOGRAPHICS,
@@ -541,22 +547,49 @@ void test("nothing the page fetches for itself is ever paced", () => {
   ].forEach((url) => assert.equal(isOurRequest(url), false, url));
 });
 
-// --- Cloudflare interstitial detection ---
+// --- telling the site apart from whatever is served instead ---
 
-void test("a challenge interstitial is recognised so the mirror gets tried", () => {
-  assert.ok(looksLikeChallengePage("<html><head><title>Just a moment...</title></head>"));
-  assert.ok(looksLikeChallengePage('<html><script>window._cf_chl_opt={cvId:"3"};</script>'));
-  assert.ok(looksLikeChallengePage('<div class="cf-browser-verification">'));
+const REAL_PAGE =
+  '<!DOCTYPE html><html lang="en" data-theme="dark"><head><meta charset="utf-8">' +
+  '<script src="/cdn-cgi/challenge-platform/h/b/scripts/jsd/main.js"></script></head>' +
+  '<body><script type="application/json" id="initial-data">{"queries":{}}</script></body></html>';
+
+void test("the site is recognised by its data payload, not by what a block looks like", () => {
+  assert.ok(looksLikeSitePage(REAL_PAGE));
+  assert.equal(looksLikeSitePage('<!doctype html><html lang="en"><head></head></html>'), false);
 });
 
-void test("a healthy page carrying Cloudflare's beacon is not mistaken for a challenge", () => {
-  // Cloudflare injects challenge-platform into ordinary pages; treating that as
-  // an interstitial would condemn every good response and fail over forever.
-  const healthy =
-    "<html><head><title>Magic Emperor</title>" +
-    '<script src="/cdn-cgi/challenge-platform/h/b/scripts/jsd/main.js"></script>' +
-    '</head><body><script id="initial-data">{"queries":{}}</script></body></html>';
-  assert.equal(looksLikeChallengePage(healthy), false);
+void test("a healthy page is never classified, so Cloudflare's beacon cannot condemn it", () => {
+  // challenge-platform is injected into ordinary pages, so it only counts once a
+  // body is already known not to be the site. REAL_PAGE carries it deliberately.
+  assert.ok(looksLikeSitePage(REAL_PAGE), "would be classified, and wrongly");
+});
+
+void test("a challenge is recognised however far into the body its markers sit", () => {
+  // The device case: an 8KB interstitial whose markers all fell beyond the first
+  // 2000 characters, which an earlier sampled check passed straight through.
+  const padded =
+    `<!doctype html><html lang="en"><head>${"<meta name=x>".repeat(400)}` +
+    "<title>Just a moment...</title></head></html>";
+  assert.ok(padded.length > 4000);
+  assert.ok(isChallengeBody(padded));
+
+  assert.ok(isChallengeBody('<script>window._cf_chl_opt={cvId:"3"};</script>'));
+  assert.ok(isChallengeBody("<div>Enable JavaScript and cookies to continue</div>"));
+});
+
+void test("a block or an outage is not treated as a solvable challenge", () => {
+  // A bypass cannot clear a firewall block or a 5xx, so prompting for one would
+  // loop: solved, refetched, failed identically.
+  assert.equal(isChallengeBody("<title>Attention Required! | Cloudflare</title>"), false);
+  assert.equal(isChallengeBody("<title>Web server is down</title><p>Error 521</p>"), false);
+});
+
+void test("a bad page is described well enough to tell those cases apart", () => {
+  const described = describeBadPage("<html><head><title>Just a moment...</title></head></html>");
+  assert.match(described, /Just a moment/);
+  assert.match(described, /just a moment/);
+  assert.match(described, /^\d+B/);
 });
 
 void test("every known scramble offset is inside the swept search space", () => {

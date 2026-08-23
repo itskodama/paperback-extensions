@@ -61,29 +61,50 @@ export function isCloudflareError(error: unknown): boolean {
 }
 
 /**
- * Cloudflare can answer `200` with an interstitial instead of the page, which
- * parses as "no initial-data" several layers up and never reaches the mirror.
- *
- * Matched on markers unique to the interstitial. Deliberately *not* on
- * "challenge-platform": Cloudflare injects that script into ordinary pages too,
- * so it would condemn every healthy response.
+ * The site always identifies itself by this script tag, so its presence is the
+ * one reliable test. Matching on what a block looks like instead is a losing
+ * game: a device saw an 8KB interstitial whose markers all sat beyond the first
+ * 2000 characters, which an earlier version sampled and so passed through.
  */
-export function looksLikeChallengePage(html: string): boolean {
-  const head = html.slice(0, 2000).toLowerCase();
-  return (
-    head.includes("just a moment") ||
-    head.includes("_cf_chl_opt") ||
-    head.includes("cf-browser-verification")
-  );
+const PAGE_MARKER = 'id="initial-data"';
+
+export function looksLikeSitePage(html: string): boolean {
+  return html.includes(PAGE_MARKER);
 }
 
 /**
- * Every page this extension fetches is a Comix app page, and each carries its
- * state in this script tag. A 2xx without it is not the site — an interstitial,
- * an error page, or a block — and is worth trying the other origin for rather
- * than failing several layers up where nothing can recover.
+ * Whether a body that is *not* the site is a Cloudflare challenge.
+ *
+ * Only ever applied to a response already known not to be the site, which is
+ * what makes the whole body safe to scan and lets "challenge-platform" count —
+ * Cloudflare injects that into healthy pages too, so on its own it would
+ * condemn every good response.
+ *
+ * Excludes the firewall block page ("attention required") and Cloudflare's 5xx
+ * pages on purpose: those are not solvable by a bypass, and prompting for one
+ * is how a reader ends up in a loop that cannot resolve.
  */
-const PAGE_MARKER = 'id="initial-data"';
+const CHALLENGE_MARKERS = [
+  "just a moment",
+  "_cf_chl_opt",
+  "cf_chl_",
+  "cf-browser-verification",
+  "challenge-platform",
+  "enable javascript and cookies",
+  "turnstile",
+];
+
+export function isChallengeBody(html: string): boolean {
+  const body = html.toLowerCase();
+  return CHALLENGE_MARKERS.some((marker) => body.includes(marker));
+}
+
+/** Enough to tell a challenge from a block from a site change, in one line. */
+export function describeBadPage(html: string): string {
+  const title = /<title[^>]*>([^<]*)</i.exec(html)?.[1]?.trim() ?? "no title";
+  const hit = CHALLENGE_MARKERS.filter((marker) => html.toLowerCase().includes(marker));
+  return `${html.length}B "${title.slice(0, 60)}" markers=[${hit.join(",") || "none"}]`;
+}
 
 /** A 2xx that is not the page that was asked for. */
 class UnusablePageError extends Error {
@@ -169,15 +190,24 @@ async function send(url: string): Promise<string> {
   }
 
   const html = Application.arrayBufferToUTF8String(data);
-  if (looksLikeChallengePage(html)) throw new ChallengePageError(url);
+  if (looksLikeSitePage(html)) return html;
 
-  if (!html.includes(PAGE_MARKER)) {
-    // Recorded because the body is the only evidence of what was served instead,
-    // and by the time the reader reports it the response is long gone.
-    recordFetchIssue(`${url} -> ${html.length}B ${html.replace(/\s+/g, " ").slice(0, 100)}`);
-    throw new UnusablePageError(url);
-  }
-  return html;
+  // Recorded whatever it turns out to be: the body is the only evidence of what
+  // was served instead, and it is gone by the time anyone looks.
+  recordFetchIssue(`${url} -> ${describeBadPage(html)}`);
+  throw isChallengeBody(html) ? new ChallengePageError(url) : new UnusablePageError(url);
+}
+
+/** The app raises its bypass for whichever origin this names. */
+async function challengeFor(target: string): Promise<CloudflareError> {
+  return new CloudflareError(
+    {
+      url: target,
+      method: "GET",
+      headers: { "user-agent": await Application.getDefaultUserAgent() },
+    },
+    `Comix requires a Cloudflare check on ${target}`,
+  );
 }
 
 async function requestText(url: string): Promise<string> {
@@ -196,17 +226,22 @@ async function requestText(url: string): Promise<string> {
       preferredOrigin = fallback;
       return text;
     } catch (fallbackError) {
-      // Both are blocked, so the bypass is the only way forward. The first
-      // origin's challenge is preferred: it is the one still set as current.
+      // The domain still in use is the one worth solving, so its challenge wins
+      // over the mirror's. Without this the reader is sent to bypass whichever
+      // domain happened to fail second, which leaves the broken one broken and
+      // the prompt returning forever.
       if (isCloudflareError(error)) throw error;
+      if (error instanceof ChallengePageError) {
+        throw await challengeFor(preferredOrigin);
+      }
       if (isCloudflareError(fallbackError)) throw fallbackError;
+      if (fallbackError instanceof ChallengePageError) {
+        throw await challengeFor(fallback);
+      }
 
-      // Deliberately not escalated to a CloudflareError. Raising the bypass for
-      // a page that merely failed to parse asks the reader to solve a challenge
-      // that was never the problem: the bypass succeeds, the next fetch fails
-      // the same way, and it asks again forever. A genuine challenge is already
-      // recognised before this point — by cf-mitigated and the body markers — so
-      // reaching here means there is no evidence it is Cloudflare at all.
+      // Neither body looked like a challenge, so there is no evidence Cloudflare
+      // is involved. Raising the bypass here would ask the reader to solve
+      // something unrelated, succeed, and fail identically on the next fetch.
       throw new Error(
         `Comix could not load ${DOMAIN} or ${MIRROR_DOMAIN}: ${describe(error)}. ` +
           "If this persists, open the source's settings and use Debug > Forget " +
