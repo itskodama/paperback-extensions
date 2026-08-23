@@ -4,6 +4,7 @@
 import { CloudflareError } from "@paperback/types";
 
 import { DOMAIN, MIRROR_DOMAIN } from "./models.ts";
+import { recordFetchIssue } from "./settings.ts";
 
 /**
  * How the extension fetches a page: origin failover, a short cache, and in-flight
@@ -74,6 +75,21 @@ export function looksLikeChallengePage(html: string): boolean {
     head.includes("_cf_chl_opt") ||
     head.includes("cf-browser-verification")
   );
+}
+
+/**
+ * Every page this extension fetches is a Comix app page, and each carries its
+ * state in this script tag. A 2xx without it is not the site — an interstitial,
+ * an error page, or a block — and is worth trying the other origin for rather
+ * than failing several layers up where nothing can recover.
+ */
+const PAGE_MARKER = 'id="initial-data"';
+
+/** A 2xx that is not the page that was asked for. */
+class UnusablePageError extends Error {
+  constructor(url: string) {
+    super(`Comix served a page without its data payload for ${url}`);
+  }
 }
 
 /** A 2xx whose body is an interstitial rather than the page that was asked for. */
@@ -154,7 +170,19 @@ async function send(url: string): Promise<string> {
 
   const html = Application.arrayBufferToUTF8String(data);
   if (looksLikeChallengePage(html)) throw new ChallengePageError(url);
+
+  if (!html.includes(PAGE_MARKER)) {
+    // Recorded because the body is the only evidence of what was served instead,
+    // and by the time the reader reports it the response is long gone.
+    recordFetchIssue(`${url} -> ${html.length}B ${html.replace(/\s+/g, " ").slice(0, 100)}`);
+    throw new UnusablePageError(url);
+  }
   return html;
+}
+
+/** A response that arrived but was not the site. */
+function unrecognisedBlock(error: unknown): boolean {
+  return error instanceof UnusablePageError || error instanceof ChallengePageError;
 }
 
 async function requestText(url: string): Promise<string> {
@@ -177,9 +205,35 @@ async function requestText(url: string): Promise<string> {
       // origin's challenge is preferred: it is the one still set as current.
       if (isCloudflareError(error)) throw error;
       if (isCloudflareError(fallbackError)) throw fallbackError;
+
+      // Neither origin returned the site. That is nearly always a challenge the
+      // detection above did not recognise, so raise the app's bypass instead of
+      // reporting a dead end the reader can do nothing about. If it turns out
+      // not to be Cloudflare, the Debug section can drop the clearance by hand.
+      if (unrecognisedBlock(error) || unrecognisedBlock(fallbackError)) {
+        throw new CloudflareError(
+          {
+            url: preferredOrigin,
+            method: "GET",
+            headers: { "user-agent": await Application.getDefaultUserAgent() },
+          },
+          "Comix could not load either domain — a Cloudflare check may be required",
+        );
+      }
       throw new Error(`Comix could not reach ${DOMAIN} or ${MIRROR_DOMAIN}: ${describe(error)}`);
     }
   }
+}
+
+/**
+ * Drops every cached page and returns to the primary origin. Paired with
+ * clearing the clearance: a stale origin choice would otherwise outlive the
+ * cookie that caused it.
+ */
+export function resetFetchState(): void {
+  cache.clear();
+  inFlight.clear();
+  preferredOrigin = DOMAIN;
 }
 
 export async function fetchText(url: string): Promise<string> {

@@ -10,6 +10,7 @@ const THOROUGH_STATE = "comix.thoroughDescramble";
 const SCRAMBLE_LOG_STATE = "comix.scrambleLog";
 const TIMING_LOG_STATE = "comix.timingLog";
 const LATEST_SEEN_STATE = "comix.latestSeen";
+const FETCH_ISSUE_STATE = "comix.fetchIssues";
 const FULL_SCAN_STATE = "comix.fullUpdateScan";
 
 /** How many scrambled pages to keep. One is not enough: with roughly one page in
@@ -89,6 +90,19 @@ export function setFullUpdateScan(enabled: boolean): void {
   Application.setState(enabled, FULL_SCAN_STATE);
 }
 
+/**
+ * Pages that came back without their data payload, newest first. Always
+ * recorded, not gated on diagnostics: this fires exactly when the source has
+ * stopped working, which is when nobody has diagnostics on yet.
+ */
+export function recordFetchIssue(summary: string): void {
+  appendLog(FETCH_ISSUE_STATE, `${localTime()} ${summary}`);
+}
+
+export function fetchIssueLog(): string[] {
+  return readLog(FETCH_ISSUE_STATE);
+}
+
 /** Newest first, capped. Descrambling runs inside an interceptor with nowhere to
  * report to, so without this a wrong result is invisible. */
 export function recordScramble(summary: string): void {
@@ -150,6 +164,7 @@ export function clearDiagnostics(): void {
   try {
     Application.setState("", SCRAMBLE_LOG_STATE);
     Application.setState("", TIMING_LOG_STATE);
+    Application.setState("", FETCH_ISSUE_STATE);
     Application.setState("", LATEST_SEEN_STATE);
     Application.setState({}, "comix.scramble-offsets");
   } catch {

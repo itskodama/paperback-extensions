@@ -11,7 +11,7 @@ import {
 } from "@paperback/types";
 
 import { applyKeystream, descrambleImage, parseScrambleConfig } from "./descramble.ts";
-import { isOurRequest } from "./http.ts";
+import { isOurRequest, resetFetchState } from "./http.ts";
 import { DOMAIN } from "./models.ts";
 import { recordScramble, thoroughDescrambleEnabled } from "./settings.ts";
 
@@ -40,6 +40,22 @@ export const rateLimiter = new OriginRateLimiter("comix", {
 // here and every request goes out under Application.getDefaultUserAgent() — the
 // UA the app's own WebView used. See docs/LNORI/site-recon.md.
 export const cookieStorage = new CookieStorageInterceptor({ storage: "stateManager" });
+
+/**
+ * Forgets the Cloudflare clearance and everything derived from it.
+ *
+ * The app's bypass can end in a state the extension cannot see — a crash while
+ * completing it leaves a clearance that exists but was never valid — and from
+ * then on every request is refused with no way back except reinstalling the
+ * source. This is that way back, offered in the Debug section.
+ */
+export function clearCloudflareState(): number {
+  const stale = cookieStorage.cookies.filter((cookie) => cookie.name === "cf_clearance");
+  for (const cookie of stale) cookieStorage.deleteCookie(cookie);
+
+  resetFetchState();
+  return stale.length;
+}
 
 function isChallenge(response: Response, data: ArrayBuffer): boolean {
   if (response.status !== 403 && response.status !== 503) return false;

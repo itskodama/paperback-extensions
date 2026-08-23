@@ -12,12 +12,15 @@ import {
 
 import { canEncode } from "./canvas.ts";
 import { KNOWN_OFFSETS, learnedOffsets } from "./descramble.ts";
+import { origin } from "./http.ts";
+import { clearCloudflareState } from "./network.ts";
 import {
   clearDiagnostics,
   debugEnabled,
   fullUpdateScanEnabled,
   setFullUpdateScan,
   scrambleLog,
+  fetchIssueLog,
   timingLog,
   setDebugEnabled,
   setThoroughDescramble,
@@ -113,6 +116,10 @@ export class ComixSettingsForm extends Form {
           title: "Clear diagnostics",
           onSelect: Application.Selector(this as ComixSettingsForm, "handleClear"),
         }),
+        ButtonRow("resetCloudflare", {
+          title: "Forget Cloudflare clearance",
+          onSelect: Application.Selector(this as ComixSettingsForm, "handleResetCloudflare"),
+        }),
       ],
     );
   }
@@ -180,6 +187,34 @@ export class ComixSettingsForm extends Form {
       ),
     );
 
+    // Which origin is in use and what the last unloadable page contained. This
+    // is the state that matters when the source has stopped working entirely,
+    // and none of it is recoverable after the fact.
+    const issues = fetchIssueLog();
+    sections.push(
+      Section(
+        {
+          id: "connection",
+          header: "Connection",
+          footer:
+            issues.length > 0
+              ? "Pages that came back without their data payload. Report these with the " +
+                "domain above — they are what a Cloudflare block looks like from here."
+              : "No failed page loads recorded.",
+        },
+        [
+          LabelRow("origin", { title: `Domain in use: ${origin()}` }),
+          ...(issues.length > 0
+            ? issues.flatMap((line, index) =>
+                chunk(line, 58).map((part, partIndex) =>
+                  LabelRow(`issue-${index}-${partIndex}`, { title: part }),
+                ),
+              )
+            : []),
+        ],
+      ),
+    );
+
     const timings = timingLog();
     if (timings.length > 0) {
       sections.push(
@@ -230,6 +265,16 @@ export class ComixSettingsForm extends Form {
 
   async handleClear(): Promise<void> {
     clearDiagnostics();
+    this.reloadForm();
+  }
+
+  /**
+   * Last resort when the source has stopped loading. Dropping the clearance
+   * makes the next request challenge again, which is what gives the app a fresh
+   * bypass to run.
+   */
+  async handleResetCloudflare(): Promise<void> {
+    clearCloudflareState();
     this.reloadForm();
   }
 
