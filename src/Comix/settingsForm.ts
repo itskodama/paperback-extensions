@@ -4,44 +4,27 @@
 import {
   ButtonRow,
   Form,
-  LabelRow,
+  NavigationRow,
   Section,
   ToggleRow,
   type FormSectionElement,
 } from "@paperback/types";
 
-import { canEncode } from "./canvas.ts";
-import { KNOWN_OFFSETS, learnedOffsets } from "./descramble.ts";
-import { origin } from "./http.ts";
+import { ComixDiagnosticsForm } from "./diagnosticsForm.ts";
 import { clearCloudflareState } from "./network.ts";
 import {
   clearDiagnostics,
   debugEnabled,
   fullUpdateScanEnabled,
-  setFullUpdateScan,
-  scrambleLog,
-  fetchIssueLog,
-  timingLog,
   setDebugEnabled,
+  setFullUpdateScan,
   setThoroughDescramble,
   thoroughDescrambleEnabled,
 } from "./settings.ts";
 
-/** Long row titles are truncated on screen, so they are split across rows. */
-function chunk(text: string, width: number): string[] {
-  const lines: string[] = [];
-  for (let i = 0; i < text.length; i += width) lines.push(text.slice(i, i + width));
-  return lines.length > 0 ? lines : [text];
-}
-
 export class ComixSettingsForm extends Form {
   override getSections(): FormSectionElement<unknown>[] {
-    return [
-      this.updatesSection(),
-      this.descrambleSection(),
-      this.debugSection(),
-      ...this.diagnosticsSections(),
-    ];
+    return [this.updatesSection(), this.descrambleSection(), this.debugSection()];
   }
 
   /**
@@ -103,14 +86,18 @@ export class ComixSettingsForm extends Form {
         id: "debug",
         header: "Debug",
         footer:
-          "Shows the most recent scrambled page and any descramble offsets this device " +
-          "worked out for itself. Turn this on before reporting a problem.",
+          "Diagnostics are always available and include a copyable report. The toggle only " +
+          "adds per-page timings, which are written on every image and so are off by default.",
       },
       [
         ToggleRow("debug", {
-          title: "Show diagnostics",
+          title: "Record timings",
           value: debugEnabled(),
           onValueChange: Application.Selector(this as ComixSettingsForm, "handleDebugChange"),
+        }),
+        NavigationRow("diagnostics", {
+          title: "Diagnostics",
+          form: new ComixDiagnosticsForm(),
         }),
         ButtonRow("clear", {
           title: "Clear diagnostics",
@@ -122,141 +109,6 @@ export class ComixSettingsForm extends Form {
         }),
       ],
     );
-  }
-
-  /**
-   * What this build of the app can actually do. Recorded because two decisions
-   * hinge on it: whether a re-encode can keep a page in its original format, and
-   * whether a compiled encoder could ever be shipped to make it.
-   */
-  private capabilityRows(): string[] {
-    const present = (name: string): string =>
-      (globalThis as Record<string, unknown>)[name] ? "yes" : "no";
-
-    return [
-      `canvas encodes webp: ${canEncode("image/webp") ? "yes" : "no"}`,
-      `canvas encodes jpeg: ${canEncode("image/jpeg") ? "yes" : "no"}`,
-      `WebAssembly: ${present("WebAssembly")}`,
-      `createImageBitmap: ${present("createImageBitmap")}`,
-      `OffscreenCanvas: ${present("OffscreenCanvas")}`,
-    ];
-  }
-
-  private diagnosticsSections(): FormSectionElement<unknown>[] {
-    if (!debugEnabled()) return [];
-
-    const sections: FormSectionElement<unknown>[] = [];
-
-    sections.push(
-      Section(
-        {
-          id: "capabilities",
-          header: "Runtime capabilities",
-          footer:
-            "What this build of the app supports. Pages are re-encoded as JPEG only because " +
-            "the canvas cannot produce WebP; if that ever reads yes, they can keep their " +
-            "original format instead.",
-        },
-        this.capabilityRows().map((row, index) => LabelRow(`capability-${index}`, { title: row })),
-      ),
-    );
-
-    /**
-     * Offsets absent from the hardcoded table are worked out on device by
-     * scoring seam continuity. Anything listed here is a value the source does
-     * not yet know about, and is worth reporting so it can be hardcoded.
-     */
-    const learned = Object.entries(learnedOffsets()).filter(([hash]) => !(hash in KNOWN_OFFSETS));
-
-    sections.push(
-      Section(
-        {
-          id: "offsets",
-          header: "Descramble offsets learned here",
-          footer:
-            learned.length > 0
-              ? "Report these so they can be shipped as defaults."
-              : "Nothing yet. Only values that differ from the usual arrangement are kept, " +
-                "and finding one requires Thorough mode.",
-        },
-        learned.length > 0
-          ? learned.map(([hash, offset]) =>
-              LabelRow(`offset-${hash}`, { title: `${hash} = ${offset}` }),
-            )
-          : [LabelRow("offset-none", { title: "None" })],
-      ),
-    );
-
-    // Which origin is in use and what the last unloadable page contained. This
-    // is the state that matters when the source has stopped working entirely,
-    // and none of it is recoverable after the fact.
-    const issues = fetchIssueLog();
-    sections.push(
-      Section(
-        {
-          id: "connection",
-          header: "Connection",
-          footer:
-            issues.length > 0
-              ? "Pages that came back without their data payload. Report these with the " +
-                "domain above — they are what a Cloudflare block looks like from here."
-              : "No failed page loads recorded.",
-        },
-        [
-          LabelRow("origin", { title: `Domain in use: ${origin()}` }),
-          ...(issues.length > 0
-            ? issues.flatMap((line, index) =>
-                chunk(line, 58).map((part, partIndex) =>
-                  LabelRow(`issue-${index}-${partIndex}`, { title: part }),
-                ),
-              )
-            : []),
-        ],
-      ),
-    );
-
-    const timings = timingLog();
-    if (timings.length > 0) {
-      sections.push(
-        Section(
-          {
-            id: "timings",
-            header: `Recent operations (${timings.length})`,
-            footer:
-              "How long each step took. These cover the extension's own work only — an " +
-              "image's download time is not included, so if pages feel slow while these " +
-              "read fast, the wait is the network rather than the source.",
-          },
-          timings.flatMap((entry, index) =>
-            chunk(entry, 58).map((line, part) =>
-              LabelRow(`timing-${index}-${part}`, { title: line }),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // One slot is not enough: with roughly one page in twelve scrambled, the
-    // interesting entry is overwritten before anyone reads it.
-    const recent = scrambleLog();
-    if (recent.length > 0) {
-      sections.push(
-        Section(
-          {
-            id: "recent-scrambles",
-            header: `Recent scrambled pages (${recent.length})`,
-            footer: "Newest first. Each line is one page that needed unscrambling.",
-          },
-          recent.flatMap((entry, index) =>
-            chunk(entry, 58).map((line, part) =>
-              LabelRow(`scramble-${index}-${part}`, { title: line }),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return sections;
   }
 
   async handleFullScanChange(value: boolean): Promise<void> {
