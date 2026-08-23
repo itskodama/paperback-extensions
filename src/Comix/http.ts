@@ -180,11 +180,6 @@ async function send(url: string): Promise<string> {
   return html;
 }
 
-/** A response that arrived but was not the site. */
-function unrecognisedBlock(error: unknown): boolean {
-  return error instanceof UnusablePageError || error instanceof ChallengePageError;
-}
-
 async function requestText(url: string): Promise<string> {
   try {
     return await attempt(onOrigin(url, preferredOrigin));
@@ -206,21 +201,17 @@ async function requestText(url: string): Promise<string> {
       if (isCloudflareError(error)) throw error;
       if (isCloudflareError(fallbackError)) throw fallbackError;
 
-      // Neither origin returned the site. That is nearly always a challenge the
-      // detection above did not recognise, so raise the app's bypass instead of
-      // reporting a dead end the reader can do nothing about. If it turns out
-      // not to be Cloudflare, the Debug section can drop the clearance by hand.
-      if (unrecognisedBlock(error) || unrecognisedBlock(fallbackError)) {
-        throw new CloudflareError(
-          {
-            url: preferredOrigin,
-            method: "GET",
-            headers: { "user-agent": await Application.getDefaultUserAgent() },
-          },
-          "Comix could not load either domain — a Cloudflare check may be required",
-        );
-      }
-      throw new Error(`Comix could not reach ${DOMAIN} or ${MIRROR_DOMAIN}: ${describe(error)}`);
+      // Deliberately not escalated to a CloudflareError. Raising the bypass for
+      // a page that merely failed to parse asks the reader to solve a challenge
+      // that was never the problem: the bypass succeeds, the next fetch fails
+      // the same way, and it asks again forever. A genuine challenge is already
+      // recognised before this point — by cf-mitigated and the body markers — so
+      // reaching here means there is no evidence it is Cloudflare at all.
+      throw new Error(
+        `Comix could not load ${DOMAIN} or ${MIRROR_DOMAIN}: ${describe(error)}. ` +
+          "If this persists, open the source's settings and use Debug > Forget " +
+          "Cloudflare clearance.",
+      );
     }
   }
 }
