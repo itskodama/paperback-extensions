@@ -130,6 +130,44 @@ function bootstrapFor(
   })();`;
 }
 
+/**
+ * Fetches a page from inside the WebView, for when a plain request is challenged.
+ *
+ * Nothing is navigated to: the WebView is seeded with an empty document at the
+ * target's own address, and the injected script fetches it same-origin. That
+ * request carries the browser identity and clearance an interactive challenge
+ * issues, which Application.scheduleRequest cannot present.
+ */
+const WEBVIEW_FETCH_TIMEOUT_MS = 30_000;
+
+export async function fetchViaWebView(url: string): Promise<string> {
+  const bootstrap = `(function () {
+    var settle;
+    window.__comixHtml__ = new Promise(function (resolve) { settle = resolve; });
+    var timer = setTimeout(function () { settle(""); }, ${WEBVIEW_FETCH_TIMEOUT_MS});
+    function finish(value) { clearTimeout(timer); settle(value); }
+
+    fetch(location.href, { credentials: "include" })
+      .then(function (response) { return response.text(); })
+      .then(finish)
+      .catch(function () { finish(""); });
+  })();`;
+
+  const { result } = await Application.executeInWebView({
+    source: {
+      html: `<!doctype html><html><head><script>${bootstrap}</script></head><body></body></html>`,
+      baseUrl: url,
+      loadCSS: false,
+      loadImages: false,
+      userAgent: await Application.getDefaultUserAgent(),
+    },
+    inject: "return window.__comixHtml__",
+    storage: { cookies: cookieStorage.cookiesForUrl(url) },
+  });
+
+  return typeof result === "string" ? result : "";
+}
+
 // Walking a long series costs one round trip per 20 chapters, so the result is
 // reused — but only while the series page still reports the same newest chapter.
 // A plain time-based cache would swallow an upload mid-window and make a

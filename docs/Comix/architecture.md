@@ -19,8 +19,9 @@ crowd a single file.
 | `forms.ts`      | Advanced search form.                                                 |
 | `main.ts`       | The extension class; wiring only.                                     |
 
-`parsers.ts` and `descramble.ts` are deliberately free of `Application` calls so both are
-exercisable by `test/unit/Comix.test.ts` offline. That is most of the risk in this extension, and
+`parsers.ts` and `pageKind.ts` are free of `Application` calls, so both are exercisable by
+`test/unit/Comix.test.ts` offline. `descramble.ts` is pure apart from the learned-offset table it
+reads and writes through `Application`, which is why its maths is tested and `resolveOffset` is not. That is most of the risk in this extension, and
 all of it is testable without a network.
 
 ## Decisions

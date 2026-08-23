@@ -4,6 +4,7 @@
 import { CloudflareError } from "@paperback/types";
 
 import { DOMAIN, MIRROR_DOMAIN } from "./models.ts";
+import { describeBadPage, isChallengeBody, looksLikeSitePage } from "./pageKind.ts";
 import { recordFetchIssue } from "./settings.ts";
 
 /**
@@ -58,74 +59,6 @@ export function isCloudflareError(error: unknown): boolean {
   const tagged = error as { type?: unknown; message?: unknown } | null;
   if (tagged?.type === "cloudflareError") return true;
   return typeof tagged?.message === "string" && tagged.message.includes("Cloudflare check");
-}
-
-/**
- * The site always identifies itself by this script tag, so its presence is the
- * one reliable test. Matching on what a block looks like instead is a losing
- * game: a device saw an 8KB interstitial whose markers all sat beyond the first
- * 2000 characters, which an earlier version sampled and so passed through.
- */
-const PAGE_MARKER = 'id="initial-data"';
-
-export function looksLikeSitePage(html: string): boolean {
-  return html.includes(PAGE_MARKER);
-}
-
-/**
- * Whether a body that is *not* the site is a Cloudflare challenge.
- *
- * Only ever applied to a response already known not to be the site, which is
- * what makes the whole body safe to scan and lets "challenge-platform" count —
- * Cloudflare injects that into healthy pages too, so on its own it would
- * condemn every good response.
- *
- * Excludes the firewall block page ("attention required") and Cloudflare's 5xx
- * pages on purpose: those are not solvable by a bypass, and prompting for one
- * is how a reader ends up in a loop that cannot resolve.
- */
-const CHALLENGE_MARKERS = [
-  "_cf_chl_opt",
-  "cf_chl_",
-  "cf-browser-verification",
-  "challenge-platform",
-  "enable javascript and cookies",
-  "turnstile",
-];
-
-/**
- * Cloudflare lets a site rebrand its challenge, so the body can carry no
- * recognisable script at all. comix.to serves two variants of the same
- * interstitial — one with `challenge-platform`, one 900 bytes shorter with
- * nothing — and only the title identifies both.
- */
-const CHALLENGE_TITLES = [
-  "just a moment",
-  "security check",
-  "checking your browser",
-  "verifying you are human",
-  "verify you are human",
-  "one more step",
-  "ddos protection",
-];
-
-function pageTitle(html: string): string {
-  return (/<title[^>]*>([^<]*)</i.exec(html)?.[1] ?? "").trim();
-}
-
-export function isChallengeBody(html: string): boolean {
-  const title = pageTitle(html).toLowerCase();
-  if (CHALLENGE_TITLES.some((known) => title.includes(known))) return true;
-
-  const body = html.toLowerCase();
-  return CHALLENGE_MARKERS.some((marker) => body.includes(marker));
-}
-
-/** Enough to tell a challenge from a block from a site change, in one line. */
-export function describeBadPage(html: string): string {
-  const body = html.toLowerCase();
-  const hit = CHALLENGE_MARKERS.filter((marker) => body.includes(marker));
-  return `${html.length}B "${pageTitle(html).slice(0, 60) || "no title"}" markers=[${hit.join(",") || "none"}]`;
 }
 
 /** A 2xx that is not the page that was asked for. */
@@ -208,6 +141,9 @@ async function attempt(url: string): Promise<string> {
 async function send(url: string): Promise<string> {
   const [response, data] = await Application.scheduleRequest({ url, method: "GET" });
   if (response.status < 200 || response.status >= 300) {
+    // Recorded too: without this a challenged mirror fails silently and the log
+    // shows only the primary, which reads as if failover never ran.
+    recordFetchIssue(`${url} -> HTTP ${response.status}`);
     throw new HttpError(response.status, url);
   }
 
@@ -218,6 +154,38 @@ async function send(url: string): Promise<string> {
   // was served instead, and it is gone by the time anyone looks.
   recordFetchIssue(`${url} -> ${describeBadPage(html)}`);
   throw isChallengeBody(html) ? new ChallengePageError(url) : new UnusablePageError(url);
+}
+
+/**
+ * A way to fetch a page that a plain request cannot reach, registered by
+ * webview.ts. Injected rather than imported: this module sits below the WebView
+ * in the layering, and importing upward would make the two mutually dependent.
+ */
+type HtmlFetcher = (url: string) => Promise<string>;
+let challengeFallback: HtmlFetcher | undefined;
+
+export function setChallengeFallback(fetcher: HtmlFetcher): void {
+  challengeFallback = fetcher;
+}
+
+/**
+ * An interactive challenge — the rotate-the-image kind — issues a clearance
+ * bound to the browser that solved it, which a plain request cannot present. The
+ * WebView can: it is a real browser, and the site's own XHRs already pass
+ * through it. So a challenged page is retried there before the reader is asked
+ * to solve anything, because solving it again would not help.
+ */
+async function viaWebView(url: string): Promise<string | undefined> {
+  if (!challengeFallback) return undefined;
+
+  try {
+    const html = await challengeFallback(url);
+    if (looksLikeSitePage(html)) return html;
+    recordFetchIssue(`webview ${url} -> ${describeBadPage(html)}`);
+  } catch (error) {
+    recordFetchIssue(`webview ${url} failed: ${describe(error)}`);
+  }
+  return undefined;
 }
 
 /**
@@ -285,6 +253,12 @@ async function requestText(url: string): Promise<string> {
             : undefined;
 
       if (challenged !== undefined) {
+        const rescued = await viaWebView(onOrigin(url, challenged));
+        if (rescued !== undefined) {
+          preferredOrigin = challenged;
+          return rescued;
+        }
+
         if (bypassJustFailed()) throw unresolvedChallenge(challenged);
         if (isCloudflareError(error)) throw error;
         if (isCloudflareError(fallbackError) && challenged === fallback) throw fallbackError;

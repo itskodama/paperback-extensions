@@ -13,9 +13,9 @@ const LATEST_SEEN_STATE = "comix.latestSeen";
 const FETCH_ISSUE_STATE = "comix.fetchIssues";
 const FULL_SCAN_STATE = "comix.fullUpdateScan";
 
-/** How many scrambled pages to keep. One is not enough: with roughly one page in
- * twelve scrambled, a single slot is overwritten long before anyone reads it. */
-const SCRAMBLE_LOG_LIMIT = 10;
+/** Entries kept per log. One is not enough for any of them: with roughly one page
+ * in twelve scrambled, a single slot is overwritten long before anyone reads it. */
+const LOG_LIMIT = 10;
 
 /** Off by default: diagnostics are for reporting a problem, not everyday reading. */
 export function debugEnabled(): boolean {
@@ -67,7 +67,7 @@ function readLog(key: string): string[] {
  */
 function appendLog(key: string, line: string): void {
   try {
-    const kept = [line, ...readLog(key)].slice(0, SCRAMBLE_LOG_LIMIT);
+    const kept = [line, ...readLog(key)].slice(0, LOG_LIMIT);
     Application.setState(kept.join(LOG_SEPARATOR), key);
   } catch {
     // A diagnostic is never worth failing a read for.

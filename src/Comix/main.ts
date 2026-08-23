@@ -20,7 +20,7 @@ import {
 } from "@paperback/types";
 
 import { ComixSearchForm, DEFAULT_SEARCH_METADATA, type ComixSearchMetadata } from "./forms.ts";
-import { fetchText, isCloudflareError, noteBypassCompleted } from "./http.ts";
+import { fetchText, isCloudflareError, noteBypassCompleted, setChallengeFallback } from "./http.ts";
 import { DEFAULT_SORT, SORT_OPTIONS, type MangaDetail } from "./models.ts";
 import { cookieStorage, mainInterceptor, rateLimiter } from "./network.ts";
 import {
@@ -43,6 +43,7 @@ import {
   captureChapterList,
   captureNewestChapters,
   capturePageList,
+  fetchViaWebView,
 } from "./webview.ts";
 
 type QueryParams = { type?: string; scope?: string; order?: Record<string, string> };
@@ -84,6 +85,9 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   async initialise(): Promise<void> {
     // Cookie storage registers before the main interceptor so the clearance is
     // attached to a request before anything inspects the response it produces.
+    // Wired here rather than imported by http.ts, which sits below the WebView.
+    setChallengeFallback(fetchViaWebView);
+
     rateLimiter.registerInterceptor();
     cookieStorage.registerInterceptor();
     mainInterceptor.registerInterceptor();

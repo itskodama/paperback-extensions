@@ -13,6 +13,7 @@ import {
 import { applyKeystream, descrambleImage, parseScrambleConfig } from "./descramble.ts";
 import { isOurRequest, resetFetchState } from "./http.ts";
 import { DOMAIN } from "./models.ts";
+import { isChallengeBody } from "./pageKind.ts";
 import { recordScramble, thoroughDescrambleEnabled } from "./settings.ts";
 
 /**
@@ -64,8 +65,10 @@ function isChallenge(response: Response, data: ArrayBuffer): boolean {
   );
   if (mitigated !== undefined) return true;
 
-  const body = Application.arrayBufferToUTF8String(data).slice(0, 800).toLowerCase();
-  return body.includes("just a moment") || body.includes("challenge-platform");
+  // Shared with the fetch layer rather than sniffed again here. The copy this
+  // replaced read 800 bytes for two markers, which misses a rebranded challenge
+  // whose only tell is its title — the one that broke the source.
+  return isChallengeBody(Application.arrayBufferToUTF8String(data));
 }
 
 /** cf_clearance is per-domain, so a challenge must be solved on the host that

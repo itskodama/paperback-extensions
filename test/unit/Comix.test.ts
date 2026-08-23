@@ -15,13 +15,7 @@ import {
   tileEdges,
   tileOrder,
 } from "../../src/Comix/descramble.ts";
-import {
-  describeBadPage,
-  isChallengeBody,
-  isOurRequest,
-  looksLikeSitePage,
-  trackOwnRequest,
-} from "../../src/Comix/http.ts";
+import { isOurRequest, trackOwnRequest } from "../../src/Comix/http.ts";
 import {
   CONTENT_RATINGS,
   DEMOGRAPHICS,
@@ -33,6 +27,7 @@ import {
   type ChapterItem,
   type MangaDetail,
 } from "../../src/Comix/models.ts";
+import { describeBadPage, isChallengeBody, looksLikeSitePage } from "../../src/Comix/pageKind.ts";
 import {
   ageToDate,
   chapterPagesRemain,
