@@ -20,7 +20,7 @@ import {
 } from "@paperback/types";
 
 import { ComixSearchForm, DEFAULT_SEARCH_METADATA, type ComixSearchMetadata } from "./forms.ts";
-import { fetchText, isCloudflareError } from "./http.ts";
+import { fetchText, isCloudflareError, noteBypassCompleted } from "./http.ts";
 import { DEFAULT_SORT, SORT_OPTIONS, type MangaDetail } from "./models.ts";
 import { cookieStorage, mainInterceptor, rateLimiter } from "./network.ts";
 import {
@@ -298,6 +298,9 @@ export class ComixExtension implements ExtensionImpl<typeof ComixConfig> {
   ): Promise<void> {
     void request;
     void localStorage;
+
+    // Noted so that a challenge surviving this does not re-prompt immediately.
+    noteBypassCompleted();
 
     // Only the clearance is kept: persisting the site's other cookies would
     // outlive their session and be sent back stale.

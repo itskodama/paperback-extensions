@@ -85,7 +85,6 @@ export function looksLikeSitePage(html: string): boolean {
  * is how a reader ends up in a loop that cannot resolve.
  */
 const CHALLENGE_MARKERS = [
-  "just a moment",
   "_cf_chl_opt",
   "cf_chl_",
   "cf-browser-verification",
@@ -94,16 +93,39 @@ const CHALLENGE_MARKERS = [
   "turnstile",
 ];
 
+/**
+ * Cloudflare lets a site rebrand its challenge, so the body can carry no
+ * recognisable script at all. comix.to serves two variants of the same
+ * interstitial — one with `challenge-platform`, one 900 bytes shorter with
+ * nothing — and only the title identifies both.
+ */
+const CHALLENGE_TITLES = [
+  "just a moment",
+  "security check",
+  "checking your browser",
+  "verifying you are human",
+  "verify you are human",
+  "one more step",
+  "ddos protection",
+];
+
+function pageTitle(html: string): string {
+  return (/<title[^>]*>([^<]*)</i.exec(html)?.[1] ?? "").trim();
+}
+
 export function isChallengeBody(html: string): boolean {
+  const title = pageTitle(html).toLowerCase();
+  if (CHALLENGE_TITLES.some((known) => title.includes(known))) return true;
+
   const body = html.toLowerCase();
   return CHALLENGE_MARKERS.some((marker) => body.includes(marker));
 }
 
 /** Enough to tell a challenge from a block from a site change, in one line. */
 export function describeBadPage(html: string): string {
-  const title = /<title[^>]*>([^<]*)</i.exec(html)?.[1]?.trim() ?? "no title";
-  const hit = CHALLENGE_MARKERS.filter((marker) => html.toLowerCase().includes(marker));
-  return `${html.length}B "${title.slice(0, 60)}" markers=[${hit.join(",") || "none"}]`;
+  const body = html.toLowerCase();
+  const hit = CHALLENGE_MARKERS.filter((marker) => body.includes(marker));
+  return `${html.length}B "${pageTitle(html).slice(0, 60) || "no title"}" markers=[${hit.join(",") || "none"}]`;
 }
 
 /** A 2xx that is not the page that was asked for. */
@@ -198,6 +220,31 @@ async function send(url: string): Promise<string> {
   throw isChallengeBody(html) ? new ChallengePageError(url) : new UnusablePageError(url);
 }
 
+/**
+ * A bypass that was just completed and did not help must not immediately ask
+ * again. comix.to has served a challenge the app's bypass could not clear, and
+ * without this the reader is returned to the same prompt forever with no way to
+ * reach the settings that would let them out.
+ */
+const BYPASS_GRACE_MS = 90_000;
+let bypassCompletedAt = 0;
+
+export function noteBypassCompleted(): void {
+  bypassCompletedAt = Date.now();
+}
+
+function bypassJustFailed(): boolean {
+  return bypassCompletedAt > 0 && Date.now() - bypassCompletedAt < BYPASS_GRACE_MS;
+}
+
+function unresolvedChallenge(target: string): Error {
+  return new Error(
+    `Comix is being challenged by ${target} and the bypass did not clear it. ` +
+      "Wait a minute and retry, or open the source's settings and use " +
+      "Debug > Forget Cloudflare clearance.",
+  );
+}
+
 /** The app raises its bypass for whichever origin this names. */
 async function challengeFor(target: string): Promise<CloudflareError> {
   return new CloudflareError(
@@ -230,13 +277,18 @@ async function requestText(url: string): Promise<string> {
       // over the mirror's. Without this the reader is sent to bypass whichever
       // domain happened to fail second, which leaves the broken one broken and
       // the prompt returning forever.
-      if (isCloudflareError(error)) throw error;
-      if (error instanceof ChallengePageError) {
-        throw await challengeFor(preferredOrigin);
-      }
-      if (isCloudflareError(fallbackError)) throw fallbackError;
-      if (fallbackError instanceof ChallengePageError) {
-        throw await challengeFor(fallback);
+      const challenged =
+        isCloudflareError(error) || error instanceof ChallengePageError
+          ? preferredOrigin
+          : isCloudflareError(fallbackError) || fallbackError instanceof ChallengePageError
+            ? fallback
+            : undefined;
+
+      if (challenged !== undefined) {
+        if (bypassJustFailed()) throw unresolvedChallenge(challenged);
+        if (isCloudflareError(error)) throw error;
+        if (isCloudflareError(fallbackError) && challenged === fallback) throw fallbackError;
+        throw await challengeFor(challenged);
       }
 
       // Neither body looked like a challenge, so there is no evidence Cloudflare

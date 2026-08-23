@@ -578,6 +578,20 @@ void test("a challenge is recognised however far into the body its markers sit",
   assert.ok(isChallengeBody("<div>Enable JavaScript and cookies to continue</div>"));
 });
 
+void test("a rebranded challenge is recognised by its title alone", () => {
+  // comix.to serves two variants of one interstitial: 9160B carrying
+  // challenge-platform, and 8222B carrying no recognisable script whatsoever.
+  // Only the title identifies the second, so the title has to be enough.
+  const bare =
+    '<!doctype html> <html lang="en"> <head> <meta charset="utf-8"> ' +
+    '<meta name="viewport" content="width=device-width"> ' +
+    "<title>Security check</title></head><body></body></html>";
+
+  assert.equal(bare.toLowerCase().includes("challenge-platform"), false, "no body marker");
+  assert.ok(isChallengeBody(bare), "must still be recognised");
+  assert.match(describeBadPage(bare), /Security check/);
+});
+
 void test("a block or an outage is not treated as a solvable challenge", () => {
   // A bypass cannot clear a firewall block or a 5xx, so prompting for one would
   // loop: solved, refetched, failed identically.
@@ -586,10 +600,22 @@ void test("a block or an outage is not treated as a solvable challenge", () => {
 });
 
 void test("a bad page is described well enough to tell those cases apart", () => {
-  const described = describeBadPage("<html><head><title>Just a moment...</title></head></html>");
-  assert.match(described, /Just a moment/);
-  assert.match(described, /just a moment/);
-  assert.match(described, /^\d+B/);
+  // The title says what it is; the marker list says which body evidence backed
+  // that up. A title-only challenge legitimately reports none.
+  const titled = describeBadPage("<html><head><title>Security check</title></head></html>");
+  assert.match(titled, /^\d+B/);
+  assert.match(titled, /Security check/);
+  assert.match(titled, /markers=\[none\]/);
+
+  const scripted = describeBadPage(
+    "<html><head><title>Security check</title></head>" +
+      '<body><script src="/cdn-cgi/challenge-platform/x.js"></script></body></html>',
+  );
+  assert.match(scripted, /markers=\[challenge-platform\]/);
+
+  const unknown = describeBadPage("<html><head><title>Web server is down</title></head></html>");
+  assert.match(unknown, /Web server is down/);
+  assert.match(unknown, /markers=\[none\]/);
 });
 
 void test("every known scramble offset is inside the swept search space", () => {
