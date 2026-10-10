@@ -3,8 +3,8 @@
 
 import { PaperbackInterceptor, type Request, type Response } from "@paperback/types";
 
-import { authHeaders, renewTokens } from "./auth";
-import { API_BASE } from "./types";
+import { authHeaders, renewTokens } from "./auth.ts";
+import { API_BASE } from "./types.ts";
 
 // Politeness, not evasion: the API challenges nothing and its ToS invites clients.
 const USER_AGENT = "Paperback-MangaBaka (https://github.com/itskodama/paperback-extensions)";
