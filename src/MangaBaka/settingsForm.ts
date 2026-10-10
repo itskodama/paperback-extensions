@@ -23,10 +23,10 @@ import {
   logout,
   refreshProfile,
   type MangaBakaProfile,
-} from "./auth";
-import { humanizeSlug } from "./mapping";
-import { clearCache } from "./network";
-import { authorizeUrl, newAuthorizeSession } from "./oauth";
+} from "./auth.ts";
+import { humanizeSlug } from "./mapping.ts";
+import { clearCache } from "./network.ts";
+import { authorizeUrl, newAuthorizeSession } from "./oauth.ts";
 import {
   autoCompleteEnabled,
   debugEnabled,
@@ -34,9 +34,9 @@ import {
   getSyncStatus,
   STATE_KEYS,
   titlePreference,
-} from "./settings";
-import { TITLE_PREFERENCES } from "./titles";
-import { LIBRARY_STATES, SITE_BASE } from "./types";
+} from "./settings.ts";
+import { TITLE_PREFERENCES } from "./titles.ts";
+import { LIBRARY_STATES, SITE_BASE } from "./types.ts";
 
 /** Long row titles are truncated on screen, so they are split across rows. */
 function chunk(text: string, width: number): string[] {

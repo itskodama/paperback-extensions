@@ -49,6 +49,19 @@ export type SeriesCover = {
   x350?: CoverVariantField;
 };
 
+export type SeriesTag = {
+  id?: number | null;
+  name?: string | null;
+  is_genre?: boolean | null;
+  is_spoiler?: boolean | null;
+};
+
+/** Dates arrive as `YYYY-MM-DD`. */
+export type SeriesPublished = {
+  start_date?: string | null;
+  end_date?: string | null;
+};
+
 export type Series = {
   id: number;
   state?: string | null;
@@ -61,7 +74,9 @@ export type Series = {
   authors?: string[] | null;
   artists?: string[] | null;
   description?: string | null;
+  /** Deprecated for `published`, and absent from v2 shapes. */
   year?: number | null;
+  published?: SeriesPublished | null;
   status?: string | null;
   content_rating?: string | null;
   type?: string | null;
@@ -71,8 +86,9 @@ export type Series = {
   /** Nullable **strings**, not numbers — e.g. `"232"`. */
   total_chapters?: string | null;
   final_volume?: string | null;
+  /** Deprecated for `tags_v2`; carries no spoiler flag. */
   genres?: string[] | null;
-  tags?: string[] | null;
+  tags_v2?: SeriesTag[] | null;
 };
 
 export type SeriesContentRating = "safe" | "suggestive" | "erotica" | "pornographic";

@@ -30,25 +30,31 @@ import {
   fetchSeries,
   fetchSeriesList,
   saveLibraryEntry,
-} from "./api";
-import { isLoggedIn } from "./auth";
-import { cryptoSupport } from "./crypto";
-import { count, num, positive } from "./decode";
-import { MangaBakaSearchForm, type MangaBakaSearchMetadata } from "./forms";
-import { toSearchResultItem, toSimpleCarouselItem, toSourceManga } from "./mapping";
-import { MainInterceptor } from "./network";
-import type MangaBakaConfig from "./pbconfig";
-import { collapseReadActions, progressChapter, today } from "./progress";
+} from "./api.ts";
+import { isLoggedIn } from "./auth.ts";
+import { cryptoSupport } from "./crypto.ts";
+import { count, num, positive } from "./decode.ts";
+import { MangaBakaSearchForm, type MangaBakaSearchMetadata } from "./forms.ts";
+import { toSearchResultItem, toSimpleCarouselItem, toSourceManga } from "./mapping.ts";
+import { MainInterceptor } from "./network.ts";
+import type MangaBakaConfig from "./pbconfig.ts";
+import { collapseReadActions, progressChapter, today } from "./progress.ts";
 import {
   autoCompleteEnabled,
   recordCryptoSupport,
   recordSyncStatus,
   titlePreference,
-} from "./settings";
-import { MangaBakaSettingsForm } from "./settingsForm";
-import { MangaBakaTrackingForm } from "./trackingForm";
-import { BROWSE_SORT, DEFAULT_SORT, LIBRARY_STATES, SEARCH_PAGE_SIZE, SORT_OPTIONS } from "./types";
-import { searchPath } from "./urls";
+} from "./settings.ts";
+import { MangaBakaSettingsForm } from "./settingsForm.ts";
+import { MangaBakaTrackingForm } from "./trackingForm.ts";
+import {
+  BROWSE_SORT,
+  DEFAULT_SORT,
+  LIBRARY_STATES,
+  SEARCH_PAGE_SIZE,
+  SORT_OPTIONS,
+} from "./types.ts";
+import { searchPath } from "./urls.ts";
 
 // Sections that page through /series/search, keyed by the sort they apply.
 const SEARCH_SECTIONS: Record<string, string> = {

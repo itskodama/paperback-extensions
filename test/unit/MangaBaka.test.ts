@@ -26,6 +26,7 @@ import {
   mergedTargetId,
   PLACEHOLDER_COVER,
   snapRating,
+  publishedYear,
   tagSections,
   toGenreOptions,
   toId,
@@ -54,7 +55,8 @@ import { buildQuery, searchPath } from "../../src/MangaBaka/urls.ts";
 
 // Trimmed from the live GET /v1/series/1677 response (Chainsaw Man), keeping the
 // shapes that actually bite: string counts, deprecated scalar titles alongside
-// titles[], the nested cover variants, and space-bearing tag names.
+// titles[], the nested cover variants, and tags_v2 carrying spoilers among both
+// tags and genres.
 const CHAINSAW_MAN: Series = {
   id: 1677,
   state: "active",
@@ -76,6 +78,7 @@ const CHAINSAW_MAN: Series = {
   artists: ["Tatsuki Fujimoto"],
   description: "Denji was a small-time devil hunter…",
   year: 2018,
+  published: { start_date: "2018-12-03", end_date: "2026-03-25" },
   status: "completed",
   content_rating: "suggestive",
   type: "manga",
@@ -83,7 +86,13 @@ const CHAINSAW_MAN: Series = {
   total_chapters: "232",
   final_volume: "24",
   genres: ["action", "boys_love"],
-  tags: ["Slice of Life", "Arts & Crafts"],
+  tags_v2: [
+    { id: 39, name: "Action", is_genre: true, is_spoiler: false },
+    { id: 5, name: "Tragedy", is_genre: true, is_spoiler: true },
+    { id: 288, name: "Crimes", is_genre: false, is_spoiler: false },
+    { id: 120, name: "Cannibalism", is_genre: false, is_spoiler: true },
+    { id: 999, name: "Slice of Life", is_genre: false, is_spoiler: false },
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -343,26 +352,41 @@ void test("toMangaInfo omits rating entirely when the series is unrated", () => 
   assert.equal(toMangaInfo({ id: 1 }).rating, undefined);
 });
 
-void test("tagSections sanitizes tag ids while keeping the readable title", () => {
+void test("tagSections hides spoilers from both genres and tags", () => {
   const sections = tagSections(CHAINSAW_MAN);
-  const tags = sections.find((section) => section.id === "tags");
 
-  assert.ok(tags);
-  assert.deepEqual(
-    tags.tags.map((tag) => tag.id),
-    ["slice_of_life", "arts_&_crafts"],
-  );
-  // The display text keeps its spaces; only the id is coerced.
-  assert.deepEqual(
-    tags.tags.map((tag) => tag.title),
-    ["Slice of Life", "Arts & Crafts"],
-  );
+  assert.deepEqual(sections.find((section) => section.id === "genres")?.tags, [
+    { id: "39", title: "Action" },
+  ]);
+  // Ids are the numeric tag id, so a name with spaces never reaches the bridge.
+  assert.deepEqual(sections.find((section) => section.id === "tags")?.tags, [
+    { id: "288", title: "Crimes" },
+    { id: "999", title: "Slice of Life" },
+  ]);
+});
 
-  const genres = sections.find((section) => section.id === "genres");
+void test("tagSections falls back to legacy genres only when tags_v2 is absent", () => {
+  const legacy = tagSections({ id: 1, genres: ["action", "boys_love"] });
+
   assert.deepEqual(
-    genres?.tags.map((tag) => tag.title),
-    ["Action", "Boys Love"],
+    legacy.map((section) => section.id),
+    ["genres"],
   );
+  assert.deepEqual(legacy[0]?.tags, [
+    { id: "action", title: "Action" },
+    { id: "boys_love", title: "Boys Love" },
+  ]);
+
+  // An empty tags_v2 is an answer, not a reason to reach for the spoiler-blind list.
+  assert.deepEqual(tagSections({ id: 1, genres: ["action"], tags_v2: [] }), []);
+});
+
+void test("publishedYear prefers published.start_date, which v2 shapes still carry", () => {
+  // The discover feeds serve v2 series: no `year`, only `published`.
+  assert.equal(publishedYear({ id: 1, published: { start_date: "2020-05-26" } }), 2020);
+  assert.equal(publishedYear({ id: 1, year: 2018 }), 2018);
+  assert.equal(publishedYear({ id: 1, published: { start_date: null }, year: 2018 }), 2018);
+  assert.equal(publishedYear({ id: 1 }), undefined);
 });
 
 void test("toSearchResultItem disambiguates near-duplicates by type and year", () => {

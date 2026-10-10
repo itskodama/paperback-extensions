@@ -131,28 +131,42 @@ export function coverUrlOrPlaceholder(series: Series, size: "thumbnail" | "full"
 
 // Paperback types
 
+function visibleTags(series: Series): { genres: Tag[]; tags: Tag[] } {
+  const genres: Tag[] = [];
+  const tags: Tag[] = [];
+
+  for (const tag of series.tags_v2 ?? []) {
+    const id = positive(tag.id);
+    const name = str(tag.name);
+    if (id === undefined || name === undefined || tag.is_spoiler === true) continue;
+
+    (tag.is_genre === true ? genres : tags).push({ id: String(id), title: name });
+  }
+
+  return { genres, tags };
+}
+
+/** Legacy `genres` only stands in when `tags_v2` is absent; it cannot tell a spoiler apart. */
 export function tagSections(series: Series): TagSection[] {
+  const { genres, tags } = Array.isArray(series.tags_v2)
+    ? visibleTags(series)
+    : {
+        genres: (series.genres ?? [])
+          .filter(isText)
+          .map((genre): Tag => ({ id: toId(genre), title: humanizeSlug(genre) })),
+        tags: [],
+      };
+
   const sections: TagSection[] = [];
-
-  const genres = (series.genres ?? []).filter(isText);
-  if (genres.length > 0) {
-    sections.push({
-      id: "genres",
-      title: "Genres",
-      tags: genres.map((genre): Tag => ({ id: toId(genre), title: humanizeSlug(genre) })),
-    });
-  }
-
-  const tags = (series.tags ?? []).filter(isText);
-  if (tags.length > 0) {
-    sections.push({
-      id: "tags",
-      title: "Tags",
-      tags: tags.map((tag): Tag => ({ id: toId(tag), title: tag })),
-    });
-  }
-
+  if (genres.length > 0) sections.push({ id: "genres", title: "Genres", tags: genres });
+  if (tags.length > 0) sections.push({ id: "tags", title: "Tags", tags });
   return sections;
+}
+
+/** v2 shapes drop the deprecated `year`, so `published` is the one source both share. */
+export function publishedYear(series: Series): number | undefined {
+  const match = /^(\d{4})/.exec(str(series.published?.start_date) ?? "");
+  return match ? positive(Number(match[1])) : positive(series.year);
 }
 
 export function toMangaInfo(
@@ -197,7 +211,7 @@ function buildAdditionalInfo(series: Series): Record<string, string> {
   const type = label(series.type, SERIES_TYPE_LABELS);
   if (type) info.Type = type;
 
-  const year = positive(series.year);
+  const year = publishedYear(series);
   if (year !== undefined) info.Year = String(year);
 
   const chapters = count(series.total_chapters);
@@ -258,7 +272,7 @@ export function resultSubtitle(series: Series): string | undefined {
   const type = label(series.type, SERIES_TYPE_LABELS);
   if (type) parts.push(type);
 
-  const year = positive(series.year);
+  const year = publishedYear(series);
   if (year !== undefined) parts.push(String(year));
 
   return parts.length > 0 ? parts.join(" • ") : undefined;

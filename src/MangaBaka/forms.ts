@@ -11,13 +11,13 @@ import {
   type SearchQuery,
 } from "@paperback/types";
 
-import { fetchGenres } from "./api";
+import { fetchGenres } from "./api.ts";
 import {
   CONTENT_RATING_FILTERS,
   SERIES_STATUS_FILTERS,
   SERIES_TYPE_FILTERS,
   type GenreOption,
-} from "./types";
+} from "./types.ts";
 
 export type MangaBakaSearchMetadata = {
   types?: string[];

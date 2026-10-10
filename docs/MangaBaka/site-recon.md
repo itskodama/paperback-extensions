@@ -190,6 +190,10 @@ Traps in this shape, all verified:
 - **`title` / `native_title` / `romanized_title` are marked `deprecated` in the spec** in favour of
   `titles[]` (`{language, traits, title, note, is_primary}`). They still populate today; prefer
   `titles[]` and fall back.
+- **`tags`, `genres` and `year` are deprecated too** (checked 2026-10-10), and v2 shapes —
+  including the discover feeds — omit them entirely. `tags` also mixes in spoiler tags with no way
+  to tell them apart. Use `tags_v2` (`{id, name, is_genre, is_spoiler, …}`, filtered on
+  `is_spoiler`; a genre can be a spoiler too) and `published.start_date`.
 - **`state: "merged"` means the id was retired** and `merged_with` names the survivor. The spec says
   _"You should update your system reference to the new ID"_. For a tracker this matters more than for
   a source: a stored link must self-heal by following the pointer, or it 404s forever.
@@ -244,8 +248,8 @@ chapNum: progress_chapter, volume: progress_volume }`.
 
 ## Risks
 
-- **The `openid` scope is undocumented but mandatory.** The spec declares no per-endpoint scopes;
-  without `openid` every `/v1/my/*` call 401s against an otherwise valid token. See
+- **The `openid` scope is undocumented but mandatory.** The spec names `library.*` scopes but not
+  `openid`; without `openid` every `/v1/my/*` call 401s against an otherwise valid token. See
   [`auth.md`](auth.md#openid-is-required-not-cosmetic).
 - **Beta `/v2` endpoints.** `/v2/my/library` and `/v2/series/discover/*` are marked beta and may
   change without the `/v1` stability promise. `/v1` equivalents exist for everything except the
