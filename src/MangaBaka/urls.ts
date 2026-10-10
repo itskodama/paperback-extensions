@@ -34,8 +34,6 @@ export type SearchParams = {
   contentRatings?: readonly string[];
   genres?: readonly string[];
   genresExcluded?: readonly string[];
-  yearFrom?: number;
-  yearTo?: number;
 };
 
 function present(values: readonly string[] | undefined): readonly string[] | undefined {
@@ -54,7 +52,5 @@ export function searchPath(params: SearchParams): string {
     content_rating: present(params.contentRatings),
     genre: present(params.genres),
     genre_not: present(params.genresExcluded),
-    year_lower: params.yearFrom,
-    year_upper: params.yearTo,
   })}`;
 }

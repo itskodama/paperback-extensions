@@ -87,8 +87,9 @@ from a token that was not issued under OIDC.
 
 Corroborating: the OpenAPI spec declares its OAuth security scheme as `type: openIdConnect`.
 
-The spec declares **no per-endpoint scopes**, so this is not discoverable from documentation;
-it was established empirically.
+The spec now names per-endpoint scopes (`library.read` / `library.write`, checked 2026-10-10),
+but **still never mentions `openid`**, so this is not discoverable from documentation; it was
+established empirically.
 
 A unit test asserts `openid` is present in the authorize URL. It has been removed twice
 before (`83444a2`, `f9778a8`) on the belief that it only bought a display nickname.
