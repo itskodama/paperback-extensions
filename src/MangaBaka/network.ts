@@ -142,7 +142,8 @@ async function requestJson<T>(
   const request: Request = { url, method, headers };
   if (body !== undefined) {
     request.headers = { ...headers, "content-type": "application/json" };
-    request.body = body as Request["body"];
+    // Encoded here, not by the bridge, which turns every 0 into `false`. See bridge.md.
+    request.body = JSON.stringify(body);
   }
 
   const [response, data] = await Application.scheduleRequest(request);

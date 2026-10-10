@@ -46,6 +46,17 @@ is allowed there and the distinction matters for readable code.
 - `searchQuery.metadata` embedded in `genresCarouselItem`s — compiled by your own code, so build
   them with every key present (see [Discover sections](discover.md)).
 
+## Request bodies: `0` becomes `false`
+
+`scheduleRequest` accepts an `object` body and lets Swift encode it, and Swift writes every numeric
+`0` in it as `false`. Nothing fails until the server validates the body: MangaBaka rejected a
+tracking-form save with `Invalid input at "number_of_rereads"; Invalid input at "progress_volume"`,
+exactly the two fields that were zero, while the non-zero numbers beside them went through. The Node
+test runner encodes in JS and never shows it.
+
+**Pass `JSON.stringify(body)`, never the object**, whenever a body can contain a number. The same
+`0`/`false` collapse applies to values written with `Application.setState`.
+
 ## See also
 
 - [Testing](testing.md#device-verification) — why no local test catches this
