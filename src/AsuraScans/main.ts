@@ -22,10 +22,14 @@ import {
 
 import { getSession } from "./auth.ts";
 import {
+  EarlyAccessError,
   chapterIsLocked,
+  hasScrambledPages,
+  parseChapterApiList,
   parseChapterApiPayload,
   parseChapterDetails,
   parseChapterList,
+  parseSeriesApiDetails,
   parseSeriesDetails,
 } from "./comics.ts";
 import {
@@ -54,6 +58,9 @@ import {
   fetchNovelChapterJson,
   fetchNovelSearch,
   fetchPage,
+  fetchPublicChapterJson,
+  fetchSeriesChaptersJson,
+  fetchSeriesJson,
   recordBypass,
   setChallengeFallback,
 } from "./network.ts";
@@ -320,17 +327,30 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       throw new Error(`Asura Scans no longer lists the novel ${slug}`);
     }
 
+    try {
+      return parseSeriesApiDetails(await fetchSeriesJson(mangaId), mangaId);
+    } catch {
+      // The HTML page is the fallback; see site-architecture.md#cloudflare-challenge
+    }
+
     const page = await fetchPage(seriesUrl(mangaId));
     return parseSeriesDetails(page.html, mangaId);
   }
 
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
-    // Asura embeds every chapter in the series/novel page, so the whole list gets returned
+    // Every source here returns the whole list at once
     void sinceDate;
 
     if (sourceManga.mangaInfo.contentType === "novel") {
       const page = await fetchPage(novelUrl(sourceManga.mangaId));
       return parseNovelChapterList(page.html, sourceManga);
+    }
+
+    try {
+      const payload = await fetchSeriesChaptersJson(sourceManga.mangaId);
+      return parseChapterApiList(payload, sourceManga, hidesEarlyAccess());
+    } catch {
+      // Falls back to the HTML page
     }
 
     const page = await fetchPage(seriesUrl(sourceManga.mangaId));
@@ -352,6 +372,19 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       }
 
       return parseNovelChapterDetails(page.html, chapter);
+    }
+
+    try {
+      const { mangaId } = chapter.sourceManga;
+      const payload = getSession()
+        ? await fetchChapterJson(mangaId, chapter.chapterId)
+        : await fetchPublicChapterJson(mangaId, chapter.chapterId);
+      if (payload !== undefined && !hasScrambledPages(payload)) {
+        return parseChapterApiPayload(payload, chapter);
+      }
+    } catch (error) {
+      if (error instanceof EarlyAccessError) throw error;
+      // Anything else falls back to the HTML reader
     }
 
     const page = await fetchPage(chapterUrl(chapter));

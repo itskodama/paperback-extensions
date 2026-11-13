@@ -15,9 +15,13 @@ import {
   type AsuraSession,
 } from "../../src/AsuraScans/auth.ts";
 import {
+  EarlyAccessError,
   chapterIsLocked,
+  hasScrambledPages,
+  parseChapterApiList,
   parseChapterApiPayload,
   parseChapterList,
+  parseSeriesApiDetails,
 } from "../../src/AsuraScans/comics.ts";
 import { formatCount } from "../../src/AsuraScans/format.ts";
 import { DEFAULT_SORT, SORT_OPTIONS } from "../../src/AsuraScans/models.ts";
@@ -151,6 +155,124 @@ void test("parseChapterApiPayload throws the early-access message when still loc
     () => parseChapterApiPayload(LOCKED_API_PAYLOAD, testChapter),
     /in early access until/,
   );
+});
+
+// Shapes from nyzzik/extensions' AsuraScans interfaces, which read these endpoints in production;
+// api.asurascans.com challenges non-device clients, so no live capture was possible (2026-11-12)
+const SERIES_API_PAYLOAD = {
+  series: {
+    id: 1943,
+    slug: "logging-10000-years-into-the-future-f212c582",
+    title: "Logging 10,000 Years into the Future",
+    alt_titles: ["Alt One", " Alt Two "],
+    description: "<p>First line.</p><p>Second line.</p>",
+    cover: "https://cdn.asurascans.com/covers/fallback.webp",
+    cover_url: "https://cdn.asurascans.com/covers/logging.webp",
+    status: "ongoing",
+    type: "manhua",
+    author: "_",
+    artist: "Some Artist",
+    rating: 9.2,
+    public_url: "/comics/logging-10000-years-into-the-future-f212c582",
+    genres: [
+      { id: 1, name: "Action", slug: "action" },
+      { id: 2, name: "Fantasy", slug: "fantasy" },
+    ],
+  },
+};
+
+const CHAPTERS_API_PAYLOAD = {
+  data: [
+    {
+      id: 900002,
+      number: 2,
+      title: "Second",
+      is_premium: true,
+      is_locked: true,
+      early_access_until: "2999-01-01T00:00:00Z",
+      published_at: "2026-11-10T00:00:00Z",
+    },
+    {
+      id: 900001,
+      number: 1,
+      is_premium: false,
+      is_locked: false,
+      published_at: "2026-11-01T00:00:00Z",
+    },
+  ],
+};
+
+void test("parseSeriesApiDetails maps the API series and drops the _ creator placeholder", () => {
+  const manga = parseSeriesApiDetails(
+    SERIES_API_PAYLOAD,
+    "logging-10000-years-into-the-future-f212c582",
+  );
+  assert.equal(manga.mangaInfo.primaryTitle, "Logging 10,000 Years into the Future");
+  assert.deepEqual(manga.mangaInfo.secondaryTitles, ["Alt One", "Alt Two"]);
+  assert.equal(manga.mangaInfo.thumbnailUrl, "https://cdn.asurascans.com/covers/logging.webp");
+  assert.equal(manga.mangaInfo.author, undefined);
+  assert.equal(manga.mangaInfo.artist, "Some Artist");
+  assert.ok(Math.abs((manga.mangaInfo.rating ?? 0) - 0.92) < 1e-9);
+  assert.equal(
+    manga.mangaInfo.shareUrl,
+    "https://asurascans.com/comics/logging-10000-years-into-the-future-f212c582",
+  );
+  assert.deepEqual(
+    manga.mangaInfo.tagGroups?.[0]?.tags.map((tag) => tag.id),
+    ["action", "fantasy"],
+  );
+  assert.ok(!manga.mangaInfo.synopsis.includes("<p>"));
+});
+
+void test("parseSeriesApiDetails throws on a payload with no series, so the HTML fallback runs", () => {
+  assert.throws(() => parseSeriesApiDetails({ message: "Not found" }, "x"), /no series/);
+});
+
+void test("parseChapterApiList keeps chapter numbers as ids and the series path for the reader", () => {
+  const sourceManga = parseSeriesApiDetails(
+    SERIES_API_PAYLOAD,
+    "logging-10000-years-into-the-future-f212c582",
+  );
+  const chapters = parseChapterApiList(CHAPTERS_API_PAYLOAD, sourceManga);
+  assert.deepEqual(
+    chapters.map((chapter) => chapter.chapterId),
+    ["2", "1"],
+  );
+  assert.equal(
+    chapters[0]?.additionalInfo?.publicUrl,
+    "/comics/logging-10000-years-into-the-future-f212c582",
+  );
+  assert.equal(chapters[1]?.title, undefined);
+});
+
+void test("parseChapterApiList leaves out early access chapters when hiding them", () => {
+  const sourceManga = parseSeriesApiDetails(
+    SERIES_API_PAYLOAD,
+    "logging-10000-years-into-the-future-f212c582",
+  );
+  const chapters = parseChapterApiList(CHAPTERS_API_PAYLOAD, sourceManga, true);
+  assert.deepEqual(
+    chapters.map((chapter) => chapter.chapterId),
+    ["1"],
+  );
+});
+
+void test("parseChapterApiList throws on an empty list rather than wiping the app's chapters", () => {
+  assert.throws(() => parseChapterApiList({ data: [] }, testChapter.sourceManga), /no chapters/);
+});
+
+void test("hasScrambledPages detects tile data, which forces the HTML reader", () => {
+  assert.equal(hasScrambledPages(UNLOCKED_API_PAYLOAD), false);
+  const scrambled = {
+    chapter: {
+      pages: [{ url: "https://cdn/x.webp", tiles: [2, 0, 1, 3], tile_cols: 2, tile_rows: 2 }],
+    },
+  };
+  assert.equal(hasScrambledPages(scrambled), true);
+});
+
+void test("the early access error is its own class, so API fallback does not swallow it", () => {
+  assert.throws(() => parseChapterApiPayload(LOCKED_API_PAYLOAD, testChapter), EarlyAccessError);
 });
 
 void test("parseChapterApiPayload throws rather than returning a silently blank chapter", () => {

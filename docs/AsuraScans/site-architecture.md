@@ -63,6 +63,30 @@ and still parsed.
   clearance yet — once per clearance, not per chapter. `MainInterceptor` therefore throws only for
   other hosts (images, API); a throw on a site page would pre-empt the retry.
 
+### The API is the read path (alpha.14)
+
+Device, alpha.13: the in-WebView fetch did not help either (the bypass landed on a 404). What did
+work on the same device was nyzzik's independent AsuraScans extension, which never loads an HTML
+page — it reads `api.asurascans.com`. Cloudflare scores clients separately per host: from a Linux
+`curl` the API is challenged too, but from the extension runtime (`npm test`, and the device) the
+API answers while `/comics/*` pages are challenged. Do not judge reachability with `curl`; run the
+suite.
+
+So comics now read the API first and keep the HTML path (with its WebView retry) only as a fallback:
+
+| Method              | Endpoint                                           | Notes                                                  |
+| ------------------- | -------------------------------------------------- | ------------------------------------------------------ |
+| `getMangaDetails`   | `GET /api/series/<slug>` → `{ series }`            | snake_case; `alt_titles` is an array; `_` = no creator |
+| `getChapters`       | `GET /api/series/<slug>/chapters` → `{ data }`     | entries spelled like the series-page island's          |
+| `getChapterDetails` | `GET /api/series/<slug>/chapters/<n>` → `{ data }` | bearer token when logged in, none otherwise            |
+
+Chapter ids stay chapter numbers, so libraries and read history carry over. A page carrying
+`tiles`/`tile_cols`/`tile_rows` is tile-scrambled and needs a canvas pass this extension does not
+have; such a chapter falls back to the HTML reader, which served plain images in the 2026-11-12
+capture. An `EarlyAccessError` is rethrown rather than falling back. nyzzik also sends
+`X-Page-Token: asura-reader-2026`; it was not needed by the suite, and the logged-in endpoint has
+worked without it since alpha.8.
+
 ## Where the data lives
 
 Astro hydrates client components by embedding their props in the markup:

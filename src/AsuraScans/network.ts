@@ -77,6 +77,10 @@ function isSitePage(url: string): boolean {
   );
 }
 
+function isApiUrl(url: string): boolean {
+  return url.startsWith(`${ASURA_API}/`);
+}
+
 export class MainInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
     return {
@@ -88,14 +92,14 @@ export class MainInterceptor extends PaperbackInterceptor {
     };
   }
 
-  // For images and other hosts only: site pages are retried through the WebView by requestPage,
-  // which a throw here would pre-empt
+  // Images only: site pages and the API each have a fallback in their caller, which a throw here
+  // would pre-empt
   override async interceptResponse(
     request: Request,
     response: Response,
     data: ArrayBuffer,
   ): Promise<ArrayBuffer> {
-    if (!isSitePage(request.url) && isChallenge(response)) {
+    if (!isSitePage(request.url) && !isApiUrl(request.url) && isChallenge(response)) {
       throw await cloudflareChallenge(request.url);
     }
     return data;
@@ -258,6 +262,38 @@ async function requestPage(url: string): Promise<FetchedPage> {
   }
 
   throw new Error(`Asura Scans redirected ${url} too many times`);
+}
+
+// On device Cloudflare challenges the HTML pages but not the API, which Asura's own site calls from
+// the browser. See site-architecture.md#cloudflare-challenge.
+async function fetchApiJson(path: string): Promise<unknown> {
+  const [response, data] = await Application.scheduleRequest({
+    url: `${ASURA_API}${path}`,
+    method: "GET",
+  });
+  if (response.status === 429) throw rateLimited();
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Asura Scans returned HTTP ${response.status} for ${path}`);
+  }
+  return JSON.parse(Application.arrayBufferToUTF8String(data));
+}
+
+export function fetchSeriesJson(seriesSlug: string): Promise<unknown> {
+  return fetchApiJson(`/api/series/${seriesSlug}`);
+}
+
+export function fetchSeriesChaptersJson(seriesSlug: string): Promise<unknown> {
+  return fetchApiJson(`/api/series/${seriesSlug}/chapters`);
+}
+
+export async function fetchPublicChapterJson(
+  seriesSlug: string,
+  chapterNumber: string,
+): Promise<unknown> {
+  const parsed = (await fetchApiJson(`/api/series/${seriesSlug}/chapters/${chapterNumber}`)) as {
+    data?: unknown;
+  };
+  return parsed.data ?? parsed;
 }
 
 export type Creators = { authors: string[]; artists: string[] };
