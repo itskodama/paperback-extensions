@@ -9,15 +9,44 @@ deprecation warnings. The hourly `test.yaml` workflow exists to catch drift.
 ## Transport
 
 - Astro v5.16.8, server-rendered. Not Next.js: there is no `__NEXT_DATA__` and no RSC payload.
-- Cloudflare fronts every response (`server: cloudflare`, `cf-ray`), but does **not** challenge.
-  A plain `GET` with an ordinary user-agent returns `200` and complete HTML.
-  No `CLOUDFLARE_BYPASS_PROVIDING`, no `executeInWebView`, no cookie handling.
+- Cloudflare fronts every response (`server: cloudflare`, `cf-ray`), and **challenges series and
+  chapter pages as of 2026-11** — see [Cloudflare challenge](#cloudflare-challenge). It did not
+  when this document was first written.
 - `cdn.asurascans.com` serves page images with **no hotlink protection**. Verified `200` with no
   `Referer` and with a foreign one. The interceptor sets a user-agent; it does not need a referer.
 - `api.asurascans.com` is the JSON API host. Its root `404`s, and most of it (auth, promotion)
   is unused, but the advanced search reads `GET /api/creators` from it — `{ data: { authors: [],
 artists: [] } }`, ~300 authors and ~170 artists — to populate the Creator filter. This is the only
   request the extension makes off the main `asurascans.com` host.
+
+## Cloudflare challenge
+
+Found 2026-11-12. Every chapter opened on device failed with the old "challenging requests
+(HTTP 403)" error, and stayed failed after the user's rate limit in a browser had long cleared.
+The rate limit was a coincidence; the cause is a Cloudflare **managed challenge** on cache misses:
+
+| URL                                         | Result                                             |
+| ------------------------------------------- | -------------------------------------------------- |
+| `/`, `/browse`, `/novels`                   | `200`, `cf-cache-status: HIT`                      |
+| `/comics/<slug>` (series and chapter pages) | `403`, `cf-mitigated: challenge`, "Just a moment…" |
+| `api.asurascans.com/api/*`                  | `200`                                              |
+
+Edge-cached pages are served before the WAF runs, so discover and search keep working while every
+title open fails — expect the challenged set to grow or shrink with cache state, not just with rule
+changes.
+
+Why it could never recover by itself: the old code threw a plain `Error` on `403`, and told the user
+to open the site in a browser. A browser's or the login WebView's `cf_clearance` never reaches the
+extension's request session, and even if it had, it was bound to a different UA than the hardcoded
+iPhone string the interceptor sent. Now the handling is LNORI's (see `docs/LNORI/site-recon.md#getting-past-it`):
+
+- `MainInterceptor.interceptResponse` throws `CloudflareError` on `cf-mitigated: challenge`, so the
+  app shows its bypass banner and the user solves the challenge in the WebView. `requestPage` keeps
+  a `_cf_chl_opt` body check as a backstop.
+- Every request sends `Application.getDefaultUserAgent()`, the UA the WebView solves with.
+- `cloudflareBypassCompleted` stores only `cf_clearance`, in a `CookieStorageInterceptor` subclass
+  that does **not** capture response cookies. The stock one stores every `Set-Cookie`, which would
+  start replaying Asura's rotating auth cookies beside the bearer token.
 
 ## Where the data lives
 

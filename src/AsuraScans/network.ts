@@ -2,26 +2,63 @@
 /* Copyright © 2025 Inkdex */
 /* Copyright © 2026 Kodama */
 
-import { PaperbackInterceptor, type Request, type Response } from "@paperback/types";
+import {
+  CloudflareError,
+  CookieStorageInterceptor,
+  PaperbackInterceptor,
+  type Request,
+  type Response,
+} from "@paperback/types";
 
 import { authorizedFetch } from "./auth.ts";
 import { ASURA_API, ASURA_DOMAIN } from "./models.ts";
 
-const USER_AGENT =
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
-
 const MAX_REDIRECTS = 5;
+
+// Throwing this is what raises the app's bypass banner. cf_clearance is bound to the UA that
+// solved the challenge, so the WebView and every request must send the same default UA.
+// See site-architecture.md#cloudflare-challenge.
+async function cloudflareChallenge(): Promise<CloudflareError> {
+  return new CloudflareError({
+    url: `${ASURA_DOMAIN}/`,
+    method: "GET",
+    headers: { "user-agent": await Application.getDefaultUserAgent() },
+  });
+}
+
+function isChallenge(response: Response): boolean {
+  const mitigated = headerValue(response.headers ?? {}, "cf-mitigated");
+  return mitigated?.toLowerCase().includes("challenge") === true;
+}
 
 export class MainInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
-    request.headers = {
-      ...request.headers,
-      "user-agent": USER_AGENT,
+    return {
+      ...request,
+      headers: {
+        ...request.headers,
+        "user-agent": await Application.getDefaultUserAgent(),
+      },
     };
-    return request;
   }
 
-  // Required: interceptResponse is abstract on PaperbackInterceptor, so this cannot be dropped.
+  // Covers images too, which the app fetches without passing through fetchPage
+  override async interceptResponse(
+    request: Request,
+    response: Response,
+    data: ArrayBuffer,
+  ): Promise<ArrayBuffer> {
+    void request;
+
+    if (isChallenge(response)) throw await cloudflareChallenge();
+    return data;
+  }
+}
+
+// Holds only the cf_clearance handed over by cloudflareBypassCompleted. The stock interceptor
+// also stores every Set-Cookie, which would replay Asura's rotating auth cookies beside the
+// bearer token — do not "simplify" this back to it.
+export class ClearanceCookieInterceptor extends CookieStorageInterceptor {
   override async interceptResponse(
     request: Request,
     response: Response,
@@ -29,7 +66,6 @@ export class MainInterceptor extends PaperbackInterceptor {
   ): Promise<ArrayBuffer> {
     void request;
     void response;
-
     return data;
   }
 }
@@ -122,10 +158,15 @@ async function requestPage(url: string): Promise<FetchedPage> {
       continue;
     }
 
-    if (response.status === 403 || response.status === 503) {
-      throw new Error(
-        `Asura Scans is challenging requests (HTTP ${response.status}). Open the site in a browser, then try again.`,
-      );
+    const html = Application.arrayBufferToUTF8String(data);
+
+    // Backstop for a challenge served without the cf-mitigated header the interceptor keys off
+    if (response.status >= 400 && html.includes("_cf_chl_opt")) {
+      throw await cloudflareChallenge();
+    }
+
+    if (response.status === 429) {
+      throw new Error("Asura Scans is rate limiting requests. Wait a minute, then try again.");
     }
 
     if (response.status < 200 || response.status >= 300) {
@@ -134,7 +175,7 @@ async function requestPage(url: string): Promise<FetchedPage> {
 
     return {
       url: response.url.length > 0 ? response.url : target,
-      html: Application.arrayBufferToUTF8String(data),
+      html,
     };
   }
 
