@@ -15,12 +15,47 @@ import { ASURA_API, ASURA_DOMAIN } from "./models.ts";
 
 const MAX_REDIRECTS = 5;
 
-// Throwing this is what raises the app's bypass banner. cf_clearance is bound to the UA that
-// solved the challenge, so the WebView and every request must send the same default UA.
-// See site-architecture.md#cloudflare-challenge.
-async function cloudflareChallenge(): Promise<CloudflareError> {
+const BYPASS_STATE = "asurascans.lastBypass";
+const BYPASS_GRACE_MS = 90_000;
+
+type BypassRecord = { completedAtMs: number; capturedClearance: boolean };
+
+export function recordBypass(capturedClearance: boolean): void {
+  const record: BypassRecord = { completedAtMs: Date.now(), capturedClearance };
+  Application.setState(record, BYPASS_STATE);
+}
+
+function recentBypass(): BypassRecord | undefined {
+  const stored = Application.getState(BYPASS_STATE) as Partial<BypassRecord> | undefined;
+  if (typeof stored?.completedAtMs !== "number") return undefined;
+  if (Date.now() - stored.completedAtMs > BYPASS_GRACE_MS) return undefined;
+  return {
+    completedAtMs: stored.completedAtMs,
+    capturedClearance: stored.capturedClearance === true,
+  };
+}
+
+// Throwing a CloudflareError is what raises the app's bypass banner. It must open the URL that was
+// challenged: Asura's homepage is edge-cached and never challenged, so a WebView sent there has
+// nothing to solve. cf_clearance is bound to the UA that solved it, hence the default UA here and
+// on every request. A challenge straight after a bypass is reported as text instead, or the
+// banner returns forever. See site-architecture.md#cloudflare-challenge.
+async function cloudflareChallenge(url: string): Promise<Error> {
+  const bypass = recentBypass();
+  if (bypass?.capturedClearance) {
+    return new Error(
+      "Asura Scans still blocks requests after the Cloudflare check passed. Please report this.",
+    );
+  }
+  if (bypass) {
+    return new Error(
+      "The Cloudflare check closed before Asura Scans issued a clearance. Wait for the page " +
+        "to finish loading before tapping Done, then try again.",
+    );
+  }
+
   return new CloudflareError({
-    url: `${ASURA_DOMAIN}/`,
+    url,
     method: "GET",
     headers: { "user-agent": await Application.getDefaultUserAgent() },
   });
@@ -48,9 +83,7 @@ export class MainInterceptor extends PaperbackInterceptor {
     response: Response,
     data: ArrayBuffer,
   ): Promise<ArrayBuffer> {
-    void request;
-
-    if (isChallenge(response)) throw await cloudflareChallenge();
+    if (isChallenge(response)) throw await cloudflareChallenge(request.url);
     return data;
   }
 }
@@ -162,7 +195,7 @@ async function requestPage(url: string): Promise<FetchedPage> {
 
     // Backstop for a challenge served without the cf-mitigated header the interceptor keys off
     if (response.status >= 400 && html.includes("_cf_chl_opt")) {
-      throw await cloudflareChallenge();
+      throw await cloudflareChallenge(target);
     }
 
     if (response.status === 429) {

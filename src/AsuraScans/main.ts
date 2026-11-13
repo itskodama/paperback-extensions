@@ -54,6 +54,7 @@ import {
   fetchNovelChapterJson,
   fetchNovelSearch,
   fetchPage,
+  recordBypass,
 } from "./network.ts";
 import {
   novelCatalogEntry,
@@ -116,9 +117,9 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     void request;
     void localStorage;
 
-    for (const cookie of cookies) {
-      if (cookie.name === "cf_clearance") this.cookieInterceptor.setCookie(cookie);
-    }
+    const clearances = cookies.filter((cookie) => cookie.name === "cf_clearance");
+    for (const cookie of clearances) this.cookieInterceptor.setCookie(cookie);
+    recordBypass(clearances.length > 0);
   }
 
   async getDiscoverSections(): Promise<DiscoverSection[]> {

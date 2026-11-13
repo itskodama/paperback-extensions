@@ -40,9 +40,22 @@ to open the site in a browser. A browser's or the login WebView's `cf_clearance`
 extension's request session, and even if it had, it was bound to a different UA than the hardcoded
 iPhone string the interceptor sent. Now the handling is LNORI's (see `docs/LNORI/site-recon.md#getting-past-it`):
 
+A browser HAR from the same day shows why no check is ever visible: every page loads Cloudflare's
+JavaScript Detections (`/cdn-cgi/challenge-platform/.../jsd/oneshot/...`), whose POST silently
+re-issues `cf_clearance` (`HttpOnly; SameSite=None; Partitioned`, one-year expiry). With that cookie,
+series and chapter pages come back `200`, `cf-cache-status: HIT`; the chapter markup was unchanged
+and still parsed.
+
 - `MainInterceptor.interceptResponse` throws `CloudflareError` on `cf-mitigated: challenge`, so the
   app shows its bypass banner and the user solves the challenge in the WebView. `requestPage` keeps
   a `_cf_chl_opt` body check as a backstop.
+- The bypass WebView opens **the URL that was challenged**, not the homepage. alpha.11 sent it to
+  `/`, which is edge-cached and never challenged, so the WebView showed an ordinary page with
+  nothing to solve and the next chapter failed again.
+- A challenge within 90 s of a completed bypass is a plain error, not another banner, and its
+  wording says whether `cf_clearance` was captured at all. That separates "the WebView never got
+  a clearance" from "it did and `scheduleRequest` still is not accepted" — the second is Comix's
+  case, where the fix was fetching challenged pages through `executeInWebView`.
 - Every request sends `Application.getDefaultUserAgent()`, the UA the WebView solves with.
 - `cloudflareBypassCompleted` stores only `cf_clearance`, in a `CookieStorageInterceptor` subclass
   that does **not** capture response cookies. The stock one stores every `Set-Cookie`, which would
