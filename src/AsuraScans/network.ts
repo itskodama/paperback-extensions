@@ -66,6 +66,17 @@ function isChallenge(response: Response): boolean {
   return mitigated?.toLowerCase().includes("challenge") === true;
 }
 
+// Backstop for a challenge served without the cf-mitigated header
+function isChallengePage(status: number, html: string): boolean {
+  return status >= 400 && (html.includes("_cf_chl_opt") || html.includes("<title>Just a moment"));
+}
+
+function isSitePage(url: string): boolean {
+  return (
+    url === ASURA_DOMAIN || url.startsWith(`${ASURA_DOMAIN}/`) || url.startsWith(`${ASURA_DOMAIN}?`)
+  );
+}
+
 export class MainInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
     return {
@@ -77,13 +88,16 @@ export class MainInterceptor extends PaperbackInterceptor {
     };
   }
 
-  // Covers images too, which the app fetches without passing through fetchPage
+  // For images and other hosts only: site pages are retried through the WebView by requestPage,
+  // which a throw here would pre-empt
   override async interceptResponse(
     request: Request,
     response: Response,
     data: ArrayBuffer,
   ): Promise<ArrayBuffer> {
-    if (isChallenge(response)) throw await cloudflareChallenge(request.url);
+    if (!isSitePage(request.url) && isChallenge(response)) {
+      throw await cloudflareChallenge(request.url);
+    }
     return data;
   }
 }
@@ -176,7 +190,41 @@ export async function fetchPage(url: string): Promise<FetchedPage> {
   }
 }
 
+type WebViewFetcher = (url: string) => Promise<{ status: number; url: string; html: string }>;
+
+let webViewFetcher: WebViewFetcher | undefined;
+
+// Injected from main.ts: webview.ts needs the cookie store main owns, and this layer sits below it
+export function setChallengeFallback(fetcher: WebViewFetcher): void {
+  webViewFetcher = fetcher;
+}
+
+// While challenged, every plain request is a wasted 403 before the WebView retry
+const PREFER_WEBVIEW_MS = 10 * 60_000;
+let preferWebViewUntilMs = 0;
+
+function rateLimited(): Error {
+  return new Error("Asura Scans is rate limiting requests. Wait a minute, then try again.");
+}
+
+// A clearance the WebView holds is not honoured on scheduleRequest, so a challenged page is fetched
+// from inside it; the banner is raised only when that fails too.
+// See site-architecture.md#cloudflare-challenge.
+async function pageViaWebView(url: string): Promise<FetchedPage> {
+  preferWebViewUntilMs = Date.now() + PREFER_WEBVIEW_MS;
+
+  const page = await webViewFetcher?.(url).catch(() => undefined);
+  if (page?.status === 429) throw rateLimited();
+  if (page && page.status >= 200 && page.status < 300 && !isChallengePage(page.status, page.html)) {
+    return { url: page.url, html: page.html };
+  }
+
+  throw await cloudflareChallenge(url);
+}
+
 async function requestPage(url: string): Promise<FetchedPage> {
+  if (Date.now() < preferWebViewUntilMs) return pageViaWebView(url);
+
   let target = url;
 
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
@@ -193,14 +241,11 @@ async function requestPage(url: string): Promise<FetchedPage> {
 
     const html = Application.arrayBufferToUTF8String(data);
 
-    // Backstop for a challenge served without the cf-mitigated header the interceptor keys off
-    if (response.status >= 400 && html.includes("_cf_chl_opt")) {
-      throw await cloudflareChallenge(target);
+    if (isChallenge(response) || isChallengePage(response.status, html)) {
+      return pageViaWebView(target);
     }
 
-    if (response.status === 429) {
-      throw new Error("Asura Scans is rate limiting requests. Wait a minute, then try again.");
-    }
+    if (response.status === 429) throw rateLimited();
 
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`Asura Scans returned HTTP ${response.status} for ${target}`);

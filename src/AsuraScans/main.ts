@@ -55,6 +55,7 @@ import {
   fetchNovelSearch,
   fetchPage,
   recordBypass,
+  setChallengeFallback,
 } from "./network.ts";
 import {
   novelCatalogEntry,
@@ -86,6 +87,7 @@ import {
   novelUrl,
   seriesUrl,
 } from "./urls.ts";
+import { fetchViaWebView } from "./webview.ts";
 
 // Comfortably above the current ~7-title novel catalog: on a mixed search's first page this
 // fetches effectively everything; as a dedicated type=novel page size it's just a normal,
@@ -104,6 +106,8 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
   mainInterceptor = new MainInterceptor("main");
 
   async initialise(): Promise<void> {
+    setChallengeFallback((url) => fetchViaWebView(url, this.cookieInterceptor.cookiesForUrl(url)));
+
     this.mainRateLimiter.registerInterceptor();
     this.cookieInterceptor.registerInterceptor();
     this.mainInterceptor.registerInterceptor();

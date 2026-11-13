@@ -53,13 +53,15 @@ and still parsed.
   `/`, which is edge-cached and never challenged, so the WebView showed an ordinary page with
   nothing to solve and the next chapter failed again.
 - A challenge within 90 s of a completed bypass is a plain error, not another banner, and its
-  wording says whether `cf_clearance` was captured at all. That separates "the WebView never got
-  a clearance" from "it did and `scheduleRequest` still is not accepted" — the second is Comix's
-  case, where the fix was fetching challenged pages through `executeInWebView`.
-- Every request sends `Application.getDefaultUserAgent()`, the UA the WebView solves with.
-- `cloudflareBypassCompleted` stores only `cf_clearance`, in a `CookieStorageInterceptor` subclass
-  that does **not** capture response cookies. The stock one stores every `Set-Cookie`, which would
-  start replaying Asura's rotating auth cookies beside the bearer token.
+  wording says whether `cf_clearance` was captured at all.
+- **The captured clearance is not honoured on `scheduleRequest`** (device, alpha.12: "still blocks
+  requests after the Cloudflare check passed"). Same as Comix: the clearance is bound to more than
+  the cookie and UA. So `requestPage` retries a challenged site page inside the WebView
+  (`webview.ts`: an empty document seeded at the target URL that `fetch`es itself same-origin, no
+  site script runs), and for ten minutes afterwards goes there directly rather than spending a
+  `403` first. The banner is raised only when the WebView is challenged too, i.e. it holds no valid
+  clearance yet — once per clearance, not per chapter. `MainInterceptor` therefore throws only for
+  other hosts (images, API); a throw on a site page would pre-empt the retry.
 
 ## Where the data lives
 
