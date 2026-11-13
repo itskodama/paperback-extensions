@@ -1,5 +1,5 @@
 {
-  "buildTime": "2026-11-13T04:08:25.474Z",
+  "buildTime": "2026-11-13T04:22:10.577Z",
   "builtWith": {
     "toolchain": "1.0.0-alpha.92",
     "types": "1.0.0-alpha.92"
@@ -12,7 +12,7 @@
     {
       "name": "Asura Scans",
       "description": "Read manhwa, manhua, manga and light novels from asurascans.com.",
-      "version": "1.0.0-alpha.16",
+      "version": "1.0.0-alpha.17",
       "icon": "icon.png",
       "language": "en",
       "contentRating": "MATURE",
