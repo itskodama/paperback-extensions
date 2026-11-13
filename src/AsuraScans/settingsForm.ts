@@ -9,10 +9,12 @@ import {
   ToggleRow,
   WebViewRow,
   type Cookie,
+  type FormItemElement,
   type FormSectionElement,
 } from "@paperback/types";
 
 import { getSession, loginWithCookies, logout, type AsuraSession } from "./auth.ts";
+import { runConnectionTests, type ProbeResult } from "./diagnostics.ts";
 import { STATE_KEYS, canReadEarlyAccess, hideEarlyAccessEnabled } from "./settings.ts";
 import { loginUrl } from "./urls.ts";
 
@@ -40,6 +42,9 @@ export function subscriptionSubtitle(session: AsuraSession): string {
 export class AsuraScansSettingsForm extends Form {
   private busy = false;
   private error: string | undefined;
+  private showDiagnostics = false;
+  private testing = false;
+  private testResults: ProbeResult[] = [];
 
   override getSections(): FormSectionElement<unknown>[] {
     // Read live, not cached at construction, so a refresh/logout elsewhere is reflected
@@ -48,7 +53,63 @@ export class AsuraScansSettingsForm extends Form {
     const account = session ? this.accountSection(session) : this.loginSection();
 
     // A subscription can open every early access chapter, so the toggle would do nothing
-    return canReadEarlyAccess() ? [account] : [account, this.chaptersSection()];
+    const sections = canReadEarlyAccess() ? [account] : [account, this.chaptersSection()];
+    return [...sections, this.debugSection()];
+  }
+
+  private debugSection(): FormSectionElement<unknown> {
+    const rows: FormItemElement<unknown>[] = [
+      ToggleRow("debug", {
+        title: "Show connection tests",
+        value: this.showDiagnostics,
+        onValueChange: Application.Selector(this as AsuraScansSettingsForm, "handleDebugChange"),
+      }),
+    ];
+
+    if (this.showDiagnostics) {
+      rows.push(
+        ButtonRow("run-tests", {
+          title: this.testing ? "Testing…" : "Run connection tests",
+          onSelect: Application.Selector(this as AsuraScansSettingsForm, "handleRunTests"),
+        }),
+        ...this.testResults.map((result, index) =>
+          LabelRow(`test-${index}`, {
+            title: result.title,
+            value: result.outcome,
+            ...(result.detail ? { subtitle: result.detail } : {}),
+          }),
+        ),
+      );
+    }
+
+    return Section(
+      {
+        id: "debug",
+        header: "Debug",
+        footer:
+          "Sends one request per change made since alpha.10, to show which one fixed loading. " +
+          "The stored Cloudflare cookie can no longer be tested: alpha.15 removed it.",
+      },
+      rows,
+    );
+  }
+
+  async handleDebugChange(value: boolean): Promise<void> {
+    this.showDiagnostics = value;
+    this.reloadForm();
+  }
+
+  async handleRunTests(): Promise<void> {
+    if (this.testing) return;
+
+    this.testing = true;
+    this.reloadForm();
+    try {
+      this.testResults = await runConnectionTests();
+    } finally {
+      this.testing = false;
+      this.reloadForm();
+    }
   }
 
   private chaptersSection(): FormSectionElement<unknown> {

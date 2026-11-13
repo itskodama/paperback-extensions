@@ -17,16 +17,26 @@ export function forgetStoredClearance(): void {
   Application.setState([], STALE_COOKIE_STATE);
 }
 
+// For the settings connection tests only: "" removes a header the interceptor would otherwise set
+const headerOverrides = new Map<string, Record<string, string>>();
+
+export function setHeaderOverride(url: string, headers: Record<string, string> | undefined): void {
+  if (headers) headerOverrides.set(url, headers);
+  else headerOverrides.delete(url);
+}
+
 export class MainInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
-    return {
-      ...request,
-      headers: {
-        ...request.headers,
-        referer: `${ASURA_DOMAIN}/`,
-        "user-agent": await Application.getDefaultUserAgent(),
-      },
+    const headers: Record<string, string> = {
+      ...request.headers,
+      referer: `${ASURA_DOMAIN}/`,
+      "user-agent": await Application.getDefaultUserAgent(),
+      ...headerOverrides.get(request.url),
     };
+    for (const [name, value] of Object.entries(headers)) {
+      if (value === "") delete headers[name];
+    }
+    return { ...request, headers };
   }
 
   // Required: interceptResponse is abstract on PaperbackInterceptor, so this cannot be dropped.
@@ -41,7 +51,7 @@ export class MainInterceptor extends PaperbackInterceptor {
   }
 }
 
-function isChallenge(response: Response, html: string): boolean {
+export function isChallenge(response: Response, html: string): boolean {
   const mitigated = headerValue(response.headers ?? {}, "cf-mitigated");
   if (mitigated?.toLowerCase().includes("challenge") === true) return true;
   return response.status >= 400 && html.includes("_cf_chl_opt");
