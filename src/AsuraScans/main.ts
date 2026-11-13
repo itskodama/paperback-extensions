@@ -7,13 +7,11 @@ import {
   type AdvancedSearchForm,
   type Chapter,
   type ChapterDetails,
-  type Cookie,
   type DiscoverSection,
   type DiscoverSectionItem,
   type ExtensionImpl,
   type Form,
   type PagedResults,
-  type Request,
   type SearchQuery,
   type SearchResultItem,
   type SortingOption,
@@ -52,17 +50,15 @@ import {
   type SortOption,
 } from "./models.ts";
 import {
-  ClearanceCookieInterceptor,
   MainInterceptor,
   fetchChapterJson,
   fetchNovelChapterJson,
   fetchNovelSearch,
   fetchPage,
+  forgetStoredClearance,
   fetchPublicChapterJson,
   fetchSeriesChaptersJson,
   fetchSeriesJson,
-  recordBypass,
-  setChallengeFallback,
 } from "./network.ts";
 import {
   novelCatalogEntry,
@@ -94,12 +90,61 @@ import {
   novelUrl,
   seriesUrl,
 } from "./urls.ts";
-import { fetchViaWebView } from "./webview.ts";
 
 // Comfortably above the current ~7-title novel catalog: on a mixed search's first page this
 // fetches effectively everything; as a dedicated type=novel page size it's just a normal,
 // generous page. Revisit if the novel count approaches it.
 const NOVEL_SEARCH_LIMIT = 50;
+
+// API first, the HTML page only as a fallback. Both failures are reported, since the page's
+// Cloudflare message alone hides why the API refused. See site-architecture.md#cloudflare-challenge.
+async function apiThenPage<T>(api: () => Promise<T>, page: () => Promise<T>): Promise<T> {
+  let apiError: unknown;
+  try {
+    return await api();
+  } catch (error) {
+    if (error instanceof EarlyAccessError) throw error;
+    apiError = error;
+  }
+
+  try {
+    return await page();
+  } catch (error) {
+    if (error instanceof EarlyAccessError) throw error;
+    throw new Error(`${errorText(error)} The API also failed: ${errorText(apiError)}`);
+  }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// A failed login renewal must not skip the anonymous request, which serves every public chapter
+async function chapterFromApi(chapter: Chapter): Promise<ChapterDetails> {
+  const { mangaId } = chapter.sourceManga;
+  const authorized = getSession()
+    ? await fetchChapterJson(mangaId, chapter.chapterId).catch(() => undefined)
+    : undefined;
+  const payload = authorized ?? (await fetchPublicChapterJson(mangaId, chapter.chapterId));
+
+  if (hasScrambledPages(payload)) throw new Error("Its pages are tile-scrambled.");
+  return parseChapterApiPayload(payload, chapter);
+}
+
+async function chapterFromPage(chapter: Chapter): Promise<ChapterDetails> {
+  const page = await fetchPage(chapterUrl(chapter));
+
+  if (chapterIsLocked(page.html) && getSession()) {
+    try {
+      const json = await fetchChapterJson(chapter.sourceManga.mangaId, chapter.chapterId);
+      if (json !== undefined) return parseChapterApiPayload(json, chapter);
+    } catch {
+      // Falls through to the anonymous early-access error below on any failure here
+    }
+  }
+
+  return parseChapterDetails(page.html, chapter);
+}
 
 export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfig> {
   mainRateLimiter = new BasicRateLimiter("main", {
@@ -108,29 +153,13 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
     ignoreImages: true,
   });
 
-  cookieInterceptor = new ClearanceCookieInterceptor({ storage: "stateManager" });
-
   mainInterceptor = new MainInterceptor("main");
 
   async initialise(): Promise<void> {
-    setChallengeFallback((url) => fetchViaWebView(url, this.cookieInterceptor.cookiesForUrl(url)));
+    forgetStoredClearance();
 
     this.mainRateLimiter.registerInterceptor();
-    this.cookieInterceptor.registerInterceptor();
     this.mainInterceptor.registerInterceptor();
-  }
-
-  async cloudflareBypassCompleted(
-    request: Request,
-    cookies: Cookie[],
-    localStorage: Record<string, string>,
-  ): Promise<void> {
-    void request;
-    void localStorage;
-
-    const clearances = cookies.filter((cookie) => cookie.name === "cf_clearance");
-    for (const cookie of clearances) this.cookieInterceptor.setCookie(cookie);
-    recordBypass(clearances.length > 0);
   }
 
   async getDiscoverSections(): Promise<DiscoverSection[]> {
@@ -327,14 +356,10 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       throw new Error(`Asura Scans no longer lists the novel ${slug}`);
     }
 
-    try {
-      return parseSeriesApiDetails(await fetchSeriesJson(mangaId), mangaId);
-    } catch {
-      // The HTML page is the fallback; see site-architecture.md#cloudflare-challenge
-    }
-
-    const page = await fetchPage(seriesUrl(mangaId));
-    return parseSeriesDetails(page.html, mangaId);
+    return apiThenPage(
+      async () => parseSeriesApiDetails(await fetchSeriesJson(mangaId), mangaId),
+      async () => parseSeriesDetails((await fetchPage(seriesUrl(mangaId))).html, mangaId),
+    );
   }
 
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
@@ -346,15 +371,21 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       return parseNovelChapterList(page.html, sourceManga);
     }
 
-    try {
-      const payload = await fetchSeriesChaptersJson(sourceManga.mangaId);
-      return parseChapterApiList(payload, sourceManga, hidesEarlyAccess());
-    } catch {
-      // Falls back to the HTML page
-    }
-
-    const page = await fetchPage(seriesUrl(sourceManga.mangaId));
-    return parseChapterList(page.html, sourceManga, hidesEarlyAccess());
+    const hideEarlyAccess = hidesEarlyAccess();
+    return apiThenPage(
+      async () =>
+        parseChapterApiList(
+          await fetchSeriesChaptersJson(sourceManga.mangaId),
+          sourceManga,
+          hideEarlyAccess,
+        ),
+      async () =>
+        parseChapterList(
+          (await fetchPage(seriesUrl(sourceManga.mangaId))).html,
+          sourceManga,
+          hideEarlyAccess,
+        ),
+    );
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
@@ -374,31 +405,10 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       return parseNovelChapterDetails(page.html, chapter);
     }
 
-    try {
-      const { mangaId } = chapter.sourceManga;
-      const payload = getSession()
-        ? await fetchChapterJson(mangaId, chapter.chapterId)
-        : await fetchPublicChapterJson(mangaId, chapter.chapterId);
-      if (payload !== undefined && !hasScrambledPages(payload)) {
-        return parseChapterApiPayload(payload, chapter);
-      }
-    } catch (error) {
-      if (error instanceof EarlyAccessError) throw error;
-      // Anything else falls back to the HTML reader
-    }
-
-    const page = await fetchPage(chapterUrl(chapter));
-
-    if (chapterIsLocked(page.html) && getSession()) {
-      try {
-        const json = await fetchChapterJson(chapter.sourceManga.mangaId, chapter.chapterId);
-        if (json !== undefined) return parseChapterApiPayload(json, chapter);
-      } catch {
-        // Falls through to the anonymous early-access error below on any failure here
-      }
-    }
-
-    return parseChapterDetails(page.html, chapter);
+    return apiThenPage(
+      () => chapterFromApi(chapter),
+      () => chapterFromPage(chapter),
+    );
   }
 
   async getSettingsForm(): Promise<Form> {

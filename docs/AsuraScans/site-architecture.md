@@ -35,44 +35,39 @@ Edge-cached pages are served before the WAF runs, so discover and search keep wo
 title open fails — expect the challenged set to grow or shrink with cache state, not just with rule
 changes.
 
-Why it could never recover by itself: the old code threw a plain `Error` on `403`, and told the user
-to open the site in a browser. A browser's or the login WebView's `cf_clearance` never reaches the
-extension's request session, and even if it had, it was bound to a different UA than the hardcoded
-iPhone string the interceptor sent. Now the handling is LNORI's (see `docs/LNORI/site-recon.md#getting-past-it`):
+A browser HAR from the same day shows why no check is ever visible in a browser: every page loads
+Cloudflare's JavaScript Detections (`/cdn-cgi/challenge-platform/.../jsd/oneshot/...`), whose POST
+silently re-issues `cf_clearance` (`HttpOnly; SameSite=None; Partitioned`, one-year expiry). With
+that cookie, series and chapter pages come back `200`, `cf-cache-status: HIT`; the chapter markup
+was unchanged and still parsed.
 
-A browser HAR from the same day shows why no check is ever visible: every page loads Cloudflare's
-JavaScript Detections (`/cdn-cgi/challenge-platform/.../jsd/oneshot/...`), whose POST silently
-re-issues `cf_clearance` (`HttpOnly; SameSite=None; Partitioned`, one-year expiry). With that cookie,
-series and chapter pages come back `200`, `cf-cache-status: HIT`; the chapter markup was unchanged
-and still parsed.
+### Bypassing it failed three times — do not retry without new evidence
 
-- `MainInterceptor.interceptResponse` throws `CloudflareError` on `cf-mitigated: challenge`, so the
-  app shows its bypass banner and the user solves the challenge in the WebView. `requestPage` keeps
-  a `_cf_chl_opt` body check as a backstop.
-- The bypass WebView opens **the URL that was challenged**, not the homepage. alpha.11 sent it to
-  `/`, which is edge-cached and never challenged, so the WebView showed an ordinary page with
-  nothing to solve and the next chapter failed again.
-- A challenge within 90 s of a completed bypass is a plain error, not another banner, and its
-  wording says whether `cf_clearance` was captured at all.
-- **The captured clearance is not honoured on `scheduleRequest`** (device, alpha.12: "still blocks
-  requests after the Cloudflare check passed"). Same as Comix: the clearance is bound to more than
-  the cookie and UA. So `requestPage` retries a challenged site page inside the WebView
-  (`webview.ts`: an empty document seeded at the target URL that `fetch`es itself same-origin, no
-  site script runs), and for ten minutes afterwards goes there directly rather than spending a
-  `403` first. The banner is raised only when the WebView is challenged too, i.e. it holds no valid
-  clearance yet — once per clearance, not per chapter. `MainInterceptor` therefore throws only for
-  other hosts (images, API); a throw on a site page would pre-empt the retry.
+alpha.11-13 tried, on device, in order; each was LNORI's or Comix's working fix:
+
+1. Throw `CloudflareError` so the app shows its bypass banner, send `getDefaultUserAgent()` on
+   every request, keep the `cf_clearance` from `cloudflareBypassCompleted`. The WebView was sent to
+   `/`, which is edge-cached and never challenged, so there was nothing to solve.
+2. Send the WebView to the challenged URL. The clearance was captured and `scheduleRequest` was
+   still challenged with it — it is bound to more than cookie + UA, as Comix found.
+3. Fetch challenged pages from inside the WebView (`executeInWebView`, same-origin `fetch`). Still
+   challenged; the bypass WebView landed on a 404.
+
+All of it was removed in alpha.15, the `CLOUDFLARE_BYPASS_PROVIDING` capability included. A
+challenged page now fails with a plain error. The stored clearance was worse than useless: sent with
+every request, API included, a stale one plausibly got the API challenged too, so `initialise()`
+empties `cookie_store_cookies` (the `CookieStorageInterceptor` state key) on every launch.
 
 ### The API is the read path (alpha.14)
 
-Device, alpha.13: the in-WebView fetch did not help either (the bypass landed on a 404). What did
-work on the same device was nyzzik's independent AsuraScans extension, which never loads an HTML
+What did work on the same device was nyzzik's independent AsuraScans extension, which never loads an HTML
 page — it reads `api.asurascans.com`. Cloudflare scores clients separately per host: from a Linux
 `curl` the API is challenged too, but from the extension runtime (`npm test`, and the device) the
 API answers while `/comics/*` pages are challenged. Do not judge reachability with `curl`; run the
 suite.
 
-So comics now read the API first and keep the HTML path (with its WebView retry) only as a fallback:
+So comics now read the API first and keep the HTML path only as a fallback. When both fail, the
+error carries both reasons, so a report names what the API answered:
 
 | Method              | Endpoint                                           | Notes                                                  |
 | ------------------- | -------------------------------------------------- | ------------------------------------------------------ |
@@ -80,7 +75,9 @@ So comics now read the API first and keep the HTML path (with its WebView retry)
 | `getChapters`       | `GET /api/series/<slug>/chapters` → `{ data }`     | entries spelled like the series-page island's          |
 | `getChapterDetails` | `GET /api/series/<slug>/chapters/<n>` → `{ data }` | bearer token when logged in, none otherwise            |
 
-Chapter ids stay chapter numbers, so libraries and read history carry over. A page carrying
+Chapter ids stay chapter numbers, so libraries and read history carry over. A logged-in chapter
+read that fails (say, a dead refresh token) retries anonymously before falling back, since the
+anonymous endpoint serves every public chapter. A page carrying
 `tiles`/`tile_cols`/`tile_rows` is tile-scrambled and needs a canvas pass this extension does not
 have; such a chapter falls back to the HTML reader, which served plain images in the 2026-11-12
 capture. An `EarlyAccessError` is rethrown rather than falling back. nyzzik also sends

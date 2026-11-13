@@ -16,7 +16,6 @@ export default {
     SourceIntents.SEARCH_RESULT_PROVIDING,
     SourceIntents.CHAPTER_PROVIDING,
     SourceIntents.SETTINGS_FORM_PROVIDING,
-    SourceIntents.CLOUDFLARE_BYPASS_PROVIDING,
   ],
   badges: [
     { label: "Comic", backgroundColor: "#1E40AF", textColor: "#ffffff" },

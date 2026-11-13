@@ -2,83 +2,19 @@
 /* Copyright © 2025 Inkdex */
 /* Copyright © 2026 Kodama */
 
-import {
-  CloudflareError,
-  CookieStorageInterceptor,
-  PaperbackInterceptor,
-  type Request,
-  type Response,
-} from "@paperback/types";
+import { PaperbackInterceptor, type Request, type Response } from "@paperback/types";
 
 import { authorizedFetch } from "./auth.ts";
 import { ASURA_API, ASURA_DOMAIN } from "./models.ts";
 
 const MAX_REDIRECTS = 5;
 
-const BYPASS_STATE = "asurascans.lastBypass";
-const BYPASS_GRACE_MS = 90_000;
+// alpha.11-13 stored a cf_clearance here and sent it with every request; a stale one gets the API
+// challenged too. Nothing reads this key any more. See site-architecture.md#cloudflare-challenge.
+const STALE_COOKIE_STATE = "cookie_store_cookies";
 
-type BypassRecord = { completedAtMs: number; capturedClearance: boolean };
-
-export function recordBypass(capturedClearance: boolean): void {
-  const record: BypassRecord = { completedAtMs: Date.now(), capturedClearance };
-  Application.setState(record, BYPASS_STATE);
-}
-
-function recentBypass(): BypassRecord | undefined {
-  const stored = Application.getState(BYPASS_STATE) as Partial<BypassRecord> | undefined;
-  if (typeof stored?.completedAtMs !== "number") return undefined;
-  if (Date.now() - stored.completedAtMs > BYPASS_GRACE_MS) return undefined;
-  return {
-    completedAtMs: stored.completedAtMs,
-    capturedClearance: stored.capturedClearance === true,
-  };
-}
-
-// Throwing a CloudflareError is what raises the app's bypass banner. It must open the URL that was
-// challenged: Asura's homepage is edge-cached and never challenged, so a WebView sent there has
-// nothing to solve. cf_clearance is bound to the UA that solved it, hence the default UA here and
-// on every request. A challenge straight after a bypass is reported as text instead, or the
-// banner returns forever. See site-architecture.md#cloudflare-challenge.
-async function cloudflareChallenge(url: string): Promise<Error> {
-  const bypass = recentBypass();
-  if (bypass?.capturedClearance) {
-    return new Error(
-      "Asura Scans still blocks requests after the Cloudflare check passed. Please report this.",
-    );
-  }
-  if (bypass) {
-    return new Error(
-      "The Cloudflare check closed before Asura Scans issued a clearance. Wait for the page " +
-        "to finish loading before tapping Done, then try again.",
-    );
-  }
-
-  return new CloudflareError({
-    url,
-    method: "GET",
-    headers: { "user-agent": await Application.getDefaultUserAgent() },
-  });
-}
-
-function isChallenge(response: Response): boolean {
-  const mitigated = headerValue(response.headers ?? {}, "cf-mitigated");
-  return mitigated?.toLowerCase().includes("challenge") === true;
-}
-
-// Backstop for a challenge served without the cf-mitigated header
-function isChallengePage(status: number, html: string): boolean {
-  return status >= 400 && (html.includes("_cf_chl_opt") || html.includes("<title>Just a moment"));
-}
-
-function isSitePage(url: string): boolean {
-  return (
-    url === ASURA_DOMAIN || url.startsWith(`${ASURA_DOMAIN}/`) || url.startsWith(`${ASURA_DOMAIN}?`)
-  );
-}
-
-function isApiUrl(url: string): boolean {
-  return url.startsWith(`${ASURA_API}/`);
+export function forgetStoredClearance(): void {
+  Application.setState([], STALE_COOKIE_STATE);
 }
 
 export class MainInterceptor extends PaperbackInterceptor {
@@ -87,29 +23,13 @@ export class MainInterceptor extends PaperbackInterceptor {
       ...request,
       headers: {
         ...request.headers,
+        referer: `${ASURA_DOMAIN}/`,
         "user-agent": await Application.getDefaultUserAgent(),
       },
     };
   }
 
-  // Images only: site pages and the API each have a fallback in their caller, which a throw here
-  // would pre-empt
-  override async interceptResponse(
-    request: Request,
-    response: Response,
-    data: ArrayBuffer,
-  ): Promise<ArrayBuffer> {
-    if (!isSitePage(request.url) && !isApiUrl(request.url) && isChallenge(response)) {
-      throw await cloudflareChallenge(request.url);
-    }
-    return data;
-  }
-}
-
-// Holds only the cf_clearance handed over by cloudflareBypassCompleted. The stock interceptor
-// also stores every Set-Cookie, which would replay Asura's rotating auth cookies beside the
-// bearer token — do not "simplify" this back to it.
-export class ClearanceCookieInterceptor extends CookieStorageInterceptor {
+  // Required: interceptResponse is abstract on PaperbackInterceptor, so this cannot be dropped.
   override async interceptResponse(
     request: Request,
     response: Response,
@@ -119,6 +39,12 @@ export class ClearanceCookieInterceptor extends CookieStorageInterceptor {
     void response;
     return data;
   }
+}
+
+function isChallenge(response: Response, html: string): boolean {
+  const mitigated = headerValue(response.headers ?? {}, "cf-mitigated");
+  if (mitigated?.toLowerCase().includes("challenge") === true) return true;
+  return response.status >= 400 && html.includes("_cf_chl_opt");
 }
 
 function headerValue(headers: Record<string, string>, name: string): string | undefined {
@@ -194,41 +120,11 @@ export async function fetchPage(url: string): Promise<FetchedPage> {
   }
 }
 
-type WebViewFetcher = (url: string) => Promise<{ status: number; url: string; html: string }>;
-
-let webViewFetcher: WebViewFetcher | undefined;
-
-// Injected from main.ts: webview.ts needs the cookie store main owns, and this layer sits below it
-export function setChallengeFallback(fetcher: WebViewFetcher): void {
-  webViewFetcher = fetcher;
-}
-
-// While challenged, every plain request is a wasted 403 before the WebView retry
-const PREFER_WEBVIEW_MS = 10 * 60_000;
-let preferWebViewUntilMs = 0;
-
 function rateLimited(): Error {
   return new Error("Asura Scans is rate limiting requests. Wait a minute, then try again.");
 }
 
-// A clearance the WebView holds is not honoured on scheduleRequest, so a challenged page is fetched
-// from inside it; the banner is raised only when that fails too.
-// See site-architecture.md#cloudflare-challenge.
-async function pageViaWebView(url: string): Promise<FetchedPage> {
-  preferWebViewUntilMs = Date.now() + PREFER_WEBVIEW_MS;
-
-  const page = await webViewFetcher?.(url).catch(() => undefined);
-  if (page?.status === 429) throw rateLimited();
-  if (page && page.status >= 200 && page.status < 300 && !isChallengePage(page.status, page.html)) {
-    return { url: page.url, html: page.html };
-  }
-
-  throw await cloudflareChallenge(url);
-}
-
 async function requestPage(url: string): Promise<FetchedPage> {
-  if (Date.now() < preferWebViewUntilMs) return pageViaWebView(url);
-
   let target = url;
 
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects++) {
@@ -245,8 +141,9 @@ async function requestPage(url: string): Promise<FetchedPage> {
 
     const html = Application.arrayBufferToUTF8String(data);
 
-    if (isChallenge(response) || isChallengePage(response.status, html)) {
-      return pageViaWebView(target);
+    // No bypass is offered: none of three attempts got past this one. See site-architecture.md.
+    if (isChallenge(response, html)) {
+      throw new Error("Asura Scans' web pages are behind a Cloudflare check.");
     }
 
     if (response.status === 429) throw rateLimited();
