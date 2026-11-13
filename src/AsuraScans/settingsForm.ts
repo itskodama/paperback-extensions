@@ -45,7 +45,10 @@ export class AsuraScansSettingsForm extends Form {
     // Read live, not cached at construction, so a refresh/logout elsewhere is reflected
     const session = getSession();
 
-    return [session ? this.accountSection(session) : this.loginSection(), this.chaptersSection()];
+    const account = session ? this.accountSection(session) : this.loginSection();
+
+    // A subscription can open every early access chapter, so the toggle would do nothing
+    return canReadEarlyAccess() ? [account] : [account, this.chaptersSection()];
   }
 
   private chaptersSection(): FormSectionElement<unknown> {
@@ -53,10 +56,9 @@ export class AsuraScansSettingsForm extends Form {
       {
         id: "chapters",
         header: "Chapters",
-        footer: canReadEarlyAccess()
-          ? "Your subscription can open early access chapters, so they stay listed."
-          : "Early access chapters stay in the list until they unlock, where opening one explains " +
-            "when it will. Turn this on to leave them out of series and Latest Updates instead.",
+        footer:
+          "Early access chapters stay in the list until they unlock, where opening one explains " +
+          "when it will. Turn this on to leave them out of series and Latest Updates instead.",
       },
       [
         ToggleRow("hide-early-access", {
@@ -73,8 +75,6 @@ export class AsuraScansSettingsForm extends Form {
 
   async handleHideEarlyAccessChange(value: boolean): Promise<void> {
     Application.setState(value, STATE_KEYS.hideEarlyAccess);
-    // The footer above depends on it, and a subscription makes the toggle inert.
-    this.reloadForm();
   }
 
   private accountSection(session: AsuraSession): FormSectionElement<unknown> {
