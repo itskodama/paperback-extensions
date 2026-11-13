@@ -58,16 +58,30 @@ challenged page now fails with a plain error. The stored clearance was worse tha
 every request, API included, a stale one plausibly got the API challenged too, so `initialise()`
 empties `cookie_store_cookies` (the `CookieStorageInterceptor` state key) on every launch.
 
-### The API is the read path (alpha.14)
+### Comics read the API, and nothing else
 
-What did work on the same device was nyzzik's independent AsuraScans extension, which never loads an HTML
-page — it reads `api.asurascans.com`. Cloudflare scores clients separately per host: from a Linux
-`curl` the API is challenged too, but from the extension runtime (`npm test`, and the device) the
-API answers while `/comics/*` pages are challenged. Do not judge reachability with `curl`; run the
-suite.
+What did work on the same device was nyzzik's independent AsuraScans extension, which never loads
+an HTML page — it reads `api.asurascans.com`. Cloudflare scores clients separately per host: from a
+Linux `curl` the API is challenged too, but from the extension runtime (`npm test`, and the device)
+the API answers while `/comics/*` pages are challenged. Do not judge reachability with `curl`; run
+the suite.
 
-So comics now read the API first and keep the HTML path only as a fallback. When both fail, the
-error carries both reasons, so a report names what the API answered:
+A temporary settings panel then sent one request per variable on device (three runs, identical):
+
+| Request                                         | Result           |
+| ----------------------------------------------- | ---------------- |
+| API, default UA, with and without a referer     | `200`            |
+| API, alpha.10's hardcoded iPhone UA, either way | `200`            |
+| Series page, as alpha.15 sends it               | `403` challenged |
+| Series page, exactly as alpha.10 sent it        | `403` challenged |
+| Chapter endpoint, anonymous and logged in       | `200`            |
+
+So the fix is the API alone; headers make no difference, and the page cannot be reached with any
+request the extension can make. alpha.14 already read the API yet still failed, and the only
+remaining difference from alpha.15 was the stored `cf_clearance` — most likely the cause, though
+unprovable once deleted. The referer copied from nyzzik was dropped as having no effect; the
+device's default UA was kept as the platform convention. There is no HTML fallback for comics:
+it could never succeed and only added a wasted request.
 
 | Method              | Endpoint                                           | Notes                                                  |
 | ------------------- | -------------------------------------------------- | ------------------------------------------------------ |
@@ -76,13 +90,11 @@ error carries both reasons, so a report names what the API answered:
 | `getChapterDetails` | `GET /api/series/<slug>/chapters/<n>` → `{ data }` | bearer token when logged in, none otherwise            |
 
 Chapter ids stay chapter numbers, so libraries and read history carry over. A logged-in chapter
-read that fails (say, a dead refresh token) retries anonymously before falling back, since the
-anonymous endpoint serves every public chapter. A page carrying
-`tiles`/`tile_cols`/`tile_rows` is tile-scrambled and needs a canvas pass this extension does not
-have; such a chapter falls back to the HTML reader, which served plain images in the 2026-11-12
-capture. An `EarlyAccessError` is rethrown rather than falling back. nyzzik also sends
-`X-Page-Token: asura-reader-2026`; it was not needed by the suite, and the logged-in endpoint has
-worked without it since alpha.8.
+read that fails (say, a dead refresh token) retries anonymously, since the anonymous endpoint serves
+every public chapter. A page carrying `tiles`/`tile_cols`/`tile_rows` is tile-scrambled and needs a
+canvas pass this extension does not have, so such a chapter fails with a plain "cannot read yet"
+error; none has been seen. nyzzik also sends `X-Page-Token: asura-reader-2026`; the API answered
+without it on device, and the logged-in endpoint has worked without it since alpha.8.
 
 ## Where the data lives
 
@@ -138,6 +150,10 @@ Two traps:
 `"chapter-190"` while the same chapter's `nextChapter.slug` reports a UUID.
 
 ## Endpoints
+
+Discover, search and novels still read these pages, which Cloudflare currently serves from its edge
+cache. Comic details, chapter lists and chapter pages moved to the API (see above); the series and
+chapter page notes below are kept for reference, and for when those pages are reachable again.
 
 | Purpose            | Request                                                              | Island keys                                |
 | ------------------ | -------------------------------------------------------------------- | ------------------------------------------ |

@@ -20,15 +20,10 @@ import {
 
 import { getSession } from "./auth.ts";
 import {
-  EarlyAccessError,
-  chapterIsLocked,
   hasScrambledPages,
   parseChapterApiList,
   parseChapterApiPayload,
-  parseChapterDetails,
-  parseChapterList,
   parseSeriesApiDetails,
-  parseSeriesDetails,
 } from "./comics.ts";
 import {
   DISCOVER_COMIC_TYPE,
@@ -80,7 +75,6 @@ import { hidesEarlyAccess } from "./settings.ts";
 import { AsuraScansSettingsForm } from "./settingsForm.ts";
 import {
   browseUrl,
-  chapterUrl,
   homeUrl,
   isNovelMangaId,
   novelCatalogUrl,
@@ -88,63 +82,12 @@ import {
   novelSearchUrl,
   novelSlugFromMangaId,
   novelUrl,
-  seriesUrl,
 } from "./urls.ts";
 
 // Comfortably above the current ~7-title novel catalog: on a mixed search's first page this
 // fetches effectively everything; as a dedicated type=novel page size it's just a normal,
 // generous page. Revisit if the novel count approaches it.
 const NOVEL_SEARCH_LIMIT = 50;
-
-// API first, the HTML page only as a fallback. Both failures are reported, since the page's
-// Cloudflare message alone hides why the API refused. See site-architecture.md#cloudflare-challenge.
-async function apiThenPage<T>(api: () => Promise<T>, page: () => Promise<T>): Promise<T> {
-  let apiError: unknown;
-  try {
-    return await api();
-  } catch (error) {
-    if (error instanceof EarlyAccessError) throw error;
-    apiError = error;
-  }
-
-  try {
-    return await page();
-  } catch (error) {
-    if (error instanceof EarlyAccessError) throw error;
-    throw new Error(`${errorText(error)} The API also failed: ${errorText(apiError)}`);
-  }
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-// A failed login renewal must not skip the anonymous request, which serves every public chapter
-async function chapterFromApi(chapter: Chapter): Promise<ChapterDetails> {
-  const { mangaId } = chapter.sourceManga;
-  const authorized = getSession()
-    ? await fetchChapterJson(mangaId, chapter.chapterId).catch(() => undefined)
-    : undefined;
-  const payload = authorized ?? (await fetchPublicChapterJson(mangaId, chapter.chapterId));
-
-  if (hasScrambledPages(payload)) throw new Error("Its pages are tile-scrambled.");
-  return parseChapterApiPayload(payload, chapter);
-}
-
-async function chapterFromPage(chapter: Chapter): Promise<ChapterDetails> {
-  const page = await fetchPage(chapterUrl(chapter));
-
-  if (chapterIsLocked(page.html) && getSession()) {
-    try {
-      const json = await fetchChapterJson(chapter.sourceManga.mangaId, chapter.chapterId);
-      if (json !== undefined) return parseChapterApiPayload(json, chapter);
-    } catch {
-      // Falls through to the anonymous early-access error below on any failure here
-    }
-  }
-
-  return parseChapterDetails(page.html, chapter);
-}
 
 export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfig> {
   mainRateLimiter = new BasicRateLimiter("main", {
@@ -356,10 +299,9 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       throw new Error(`Asura Scans no longer lists the novel ${slug}`);
     }
 
-    return apiThenPage(
-      async () => parseSeriesApiDetails(await fetchSeriesJson(mangaId), mangaId),
-      async () => parseSeriesDetails((await fetchPage(seriesUrl(mangaId))).html, mangaId),
-    );
+    // Comics come from the API: Cloudflare challenges the HTML pages on device but not it.
+    // See site-architecture.md#cloudflare-challenge.
+    return parseSeriesApiDetails(await fetchSeriesJson(mangaId), mangaId);
   }
 
   async getChapters(sourceManga: SourceManga, sinceDate?: Date): Promise<Chapter[]> {
@@ -371,21 +313,8 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       return parseNovelChapterList(page.html, sourceManga);
     }
 
-    const hideEarlyAccess = hidesEarlyAccess();
-    return apiThenPage(
-      async () =>
-        parseChapterApiList(
-          await fetchSeriesChaptersJson(sourceManga.mangaId),
-          sourceManga,
-          hideEarlyAccess,
-        ),
-      async () =>
-        parseChapterList(
-          (await fetchPage(seriesUrl(sourceManga.mangaId))).html,
-          sourceManga,
-          hideEarlyAccess,
-        ),
-    );
+    const payload = await fetchSeriesChaptersJson(sourceManga.mangaId);
+    return parseChapterApiList(payload, sourceManga, hidesEarlyAccess());
   }
 
   async getChapterDetails(chapter: Chapter): Promise<ChapterDetails> {
@@ -405,10 +334,19 @@ export class AsuraScansExtension implements ExtensionImpl<typeof AsuraScansConfi
       return parseNovelChapterDetails(page.html, chapter);
     }
 
-    return apiThenPage(
-      () => chapterFromApi(chapter),
-      () => chapterFromPage(chapter),
-    );
+    const { mangaId } = chapter.sourceManga;
+    // A failed login renewal must not fail a public chapter the anonymous request would serve
+    const authorized = getSession()
+      ? await fetchChapterJson(mangaId, chapter.chapterId).catch(() => undefined)
+      : undefined;
+    const payload = authorized ?? (await fetchPublicChapterJson(mangaId, chapter.chapterId));
+
+    if (hasScrambledPages(payload)) {
+      throw new Error(
+        `Chapter ${chapter.chapNum} uses scrambled pages, which this extension cannot read yet.`,
+      );
+    }
+    return parseChapterApiPayload(payload, chapter);
   }
 
   async getSettingsForm(): Promise<Form> {

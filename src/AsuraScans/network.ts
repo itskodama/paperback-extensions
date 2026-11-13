@@ -9,34 +9,22 @@ import { ASURA_API, ASURA_DOMAIN } from "./models.ts";
 
 const MAX_REDIRECTS = 5;
 
-// alpha.11-13 stored a cf_clearance here and sent it with every request; a stale one gets the API
-// challenged too. Nothing reads this key any more. See site-architecture.md#cloudflare-challenge.
+// Clears a cf_clearance stored by dev builds that tried a Cloudflare bypass. Remove after a release.
 const STALE_COOKIE_STATE = "cookie_store_cookies";
 
 export function forgetStoredClearance(): void {
   Application.setState([], STALE_COOKIE_STATE);
 }
 
-// For the settings connection tests only: "" removes a header the interceptor would otherwise set
-const headerOverrides = new Map<string, Record<string, string>>();
-
-export function setHeaderOverride(url: string, headers: Record<string, string> | undefined): void {
-  if (headers) headerOverrides.set(url, headers);
-  else headerOverrides.delete(url);
-}
-
 export class MainInterceptor extends PaperbackInterceptor {
   override async interceptRequest(request: Request): Promise<Request> {
-    const headers: Record<string, string> = {
-      ...request.headers,
-      referer: `${ASURA_DOMAIN}/`,
-      "user-agent": await Application.getDefaultUserAgent(),
-      ...headerOverrides.get(request.url),
+    return {
+      ...request,
+      headers: {
+        ...request.headers,
+        "user-agent": await Application.getDefaultUserAgent(),
+      },
     };
-    for (const [name, value] of Object.entries(headers)) {
-      if (value === "") delete headers[name];
-    }
-    return { ...request, headers };
   }
 
   // Required: interceptResponse is abstract on PaperbackInterceptor, so this cannot be dropped.
@@ -51,7 +39,7 @@ export class MainInterceptor extends PaperbackInterceptor {
   }
 }
 
-export function isChallenge(response: Response, html: string): boolean {
+function isChallenge(response: Response, html: string): boolean {
   const mitigated = headerValue(response.headers ?? {}, "cf-mitigated");
   if (mitigated?.toLowerCase().includes("challenge") === true) return true;
   return response.status >= 400 && html.includes("_cf_chl_opt");
@@ -231,8 +219,7 @@ export async function fetchCreators(): Promise<Creators> {
   return creatorsCache;
 }
 
-// The chapter reader's early-access unlock is a separate, uncached JSON endpoint — the HTML page
-// fetched by fetchPage above is a shared Cloudflare edge cache and never varies by auth
+// Same endpoint as fetchPublicChapterJson, with the login, which is what unlocks early access
 export async function fetchChapterJson(
   seriesSlug: string,
   chapterNumber: string,

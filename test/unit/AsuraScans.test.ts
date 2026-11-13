@@ -15,12 +15,9 @@ import {
   type AsuraSession,
 } from "../../src/AsuraScans/auth.ts";
 import {
-  EarlyAccessError,
-  chapterIsLocked,
   hasScrambledPages,
   parseChapterApiList,
   parseChapterApiPayload,
-  parseChapterList,
   parseSeriesApiDetails,
 } from "../../src/AsuraScans/comics.ts";
 import { formatCount } from "../../src/AsuraScans/format.ts";
@@ -48,27 +45,6 @@ import {
   novelSlugFromMangaId,
   novelUrl,
 } from "../../src/AsuraScans/urls.ts";
-
-const LOCKED_WITH_UNLOCK_TIME = `
-<astro-island props="{&quot;pages&quot;:[1,[]],&quot;chapterId&quot;:[0,173],&quot;isLocked&quot;:[0,true],&quot;isPremium&quot;:[0,true],&quot;unlockTime&quot;:[0,&quot;2026-07-28T23:10:15Z&quot;]}"></astro-island>
-`;
-
-const LOCKED_WITHOUT_UNLOCK_TIME = `
-<astro-island props="{&quot;pages&quot;:[1,[]],&quot;chapterId&quot;:[0,173],&quot;isLocked&quot;:[0,true]}"></astro-island>
-`;
-
-const UNLOCKED = `
-<astro-island props="{&quot;pages&quot;:[1,[]],&quot;chapterId&quot;:[0,5],&quot;isLocked&quot;:[0,false],&quot;isPremium&quot;:[0,false]}"></astro-island>
-`;
-
-void test("chapterIsLocked is true when isLocked is set, regardless of unlockTime", () => {
-  assert.equal(chapterIsLocked(LOCKED_WITH_UNLOCK_TIME), true);
-  assert.equal(chapterIsLocked(LOCKED_WITHOUT_UNLOCK_TIME), true);
-});
-
-void test("chapterIsLocked is false once neither isLocked nor isPremium is set", () => {
-  assert.equal(chapterIsLocked(UNLOCKED), false);
-});
 
 const testChapter: Chapter = {
   chapterId: "173",
@@ -228,7 +204,7 @@ void test("parseSeriesApiDetails throws on a payload with no series, so the HTML
   assert.throws(() => parseSeriesApiDetails({ message: "Not found" }, "x"), /no series/);
 });
 
-void test("parseChapterApiList keeps chapter numbers as ids and the series path for the reader", () => {
+void test("parseChapterApiList keeps chapter numbers as ids", () => {
   const sourceManga = parseSeriesApiDetails(
     SERIES_API_PAYLOAD,
     "logging-10000-years-into-the-future-f212c582",
@@ -238,23 +214,7 @@ void test("parseChapterApiList keeps chapter numbers as ids and the series path 
     chapters.map((chapter) => chapter.chapterId),
     ["2", "1"],
   );
-  assert.equal(
-    chapters[0]?.additionalInfo?.publicUrl,
-    "/comics/logging-10000-years-into-the-future-f212c582",
-  );
   assert.equal(chapters[1]?.title, undefined);
-});
-
-void test("parseChapterApiList leaves out early access chapters when hiding them", () => {
-  const sourceManga = parseSeriesApiDetails(
-    SERIES_API_PAYLOAD,
-    "logging-10000-years-into-the-future-f212c582",
-  );
-  const chapters = parseChapterApiList(CHAPTERS_API_PAYLOAD, sourceManga, true);
-  assert.deepEqual(
-    chapters.map((chapter) => chapter.chapterId),
-    ["1"],
-  );
 });
 
 void test("parseChapterApiList throws on an empty list rather than wiping the app's chapters", () => {
@@ -269,10 +229,6 @@ void test("hasScrambledPages detects tile data, which forces the HTML reader", (
     },
   };
   assert.equal(hasScrambledPages(scrambled), true);
-});
-
-void test("the early access error is its own class, so API fallback does not swallow it", () => {
-  assert.throws(() => parseChapterApiPayload(LOCKED_API_PAYLOAD, testChapter), EarlyAccessError);
 });
 
 void test("parseChapterApiPayload throws rather than returning a silently blank chapter", () => {
@@ -908,15 +864,19 @@ void test("subscriptionSubtitle ignores the status entirely without a subscripti
   assert.equal(subscriptionSubtitle(none), "No active subscription");
 });
 
-// The series island and the updates feed spell the markers identically; both are ORed so one
+// The chapter list and the updates feed spell the markers identically; both are ORed so one
 // field going missing cannot hide a lock. Verified live: is_premium is true exactly when
 // early_access_until is in the future, across 307 chapters of three series.
-const SERIES_CHAPTERS = `
-<astro-island props="{&quot;publicUrl&quot;:[0,&quot;/comics/test&quot;],&quot;chapters&quot;:[1,[{&quot;number&quot;:[0,3],&quot;is_premium&quot;:[0,true],&quot;early_access_until&quot;:[0,&quot;2099-01-01T00:00:00Z&quot;]},{&quot;number&quot;:[0,2],&quot;is_premium&quot;:[0,false],&quot;early_access_until&quot;:[0,&quot;2020-01-01T00:00:00Z&quot;]},{&quot;number&quot;:[0,1],&quot;is_premium&quot;:[0,false]}]]}"></astro-island>
-`;
+const SERIES_CHAPTERS = {
+  data: [
+    { number: 3, is_premium: true, early_access_until: "2099-01-01T00:00:00Z" },
+    { number: 2, is_premium: false, early_access_until: "2020-01-01T00:00:00Z" },
+    { number: 1, is_premium: false },
+  ],
+};
 
-void test("parseChapterList lists every chapter, early access included, by default", () => {
-  const chapters = parseChapterList(SERIES_CHAPTERS, testChapter.sourceManga);
+void test("parseChapterApiList lists every chapter, early access included, by default", () => {
+  const chapters = parseChapterApiList(SERIES_CHAPTERS, testChapter.sourceManga);
 
   assert.deepEqual(
     chapters.map((chapter) => chapter.chapNum),
@@ -924,8 +884,8 @@ void test("parseChapterList lists every chapter, early access included, by defau
   );
 });
 
-void test("parseChapterList drops only the still-locked chapter when asked to", () => {
-  const chapters = parseChapterList(SERIES_CHAPTERS, testChapter.sourceManga, true);
+void test("parseChapterApiList drops only the still-locked chapter when asked to", () => {
+  const chapters = parseChapterApiList(SERIES_CHAPTERS, testChapter.sourceManga, true);
 
   // 2 has a past early_access_until and 1 has none, so both are free and stay.
   assert.deepEqual(

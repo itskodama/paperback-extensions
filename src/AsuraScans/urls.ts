@@ -57,12 +57,6 @@ export function browseUrl(query: BrowseQuery): string {
     : `${ASURA_DOMAIN}/browse`;
 }
 
-export function chapterUrl(chapter: Chapter): string {
-  const publicUrl = chapter.additionalInfo?.publicUrl;
-  const base = publicUrl ? `${ASURA_DOMAIN}${publicUrl}` : seriesUrl(chapter.sourceManga.mangaId);
-  return `${base}/chapter/${chapter.chapterId}`;
-}
-
 // A novel and a comic can share the same slug (the comics route resolves any slug, see above), so
 // novel mangaIds get their own namespace — otherwise a manga viewed once as one type stays stuck
 // as that type in the app's own per-manga cache forever, since the cache key would be identical
